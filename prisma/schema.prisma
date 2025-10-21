@@ -1,0 +1,328 @@
+// Galileo - Natural Language to SQL System
+// Prisma Schema for Metadata Storage
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// 业务域表 (P1: 跨库关系推断辅助)
+// ============================================
+model BusinessDomain {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique @db.VarChar(100)
+  description String?  @db.Text
+  ownerTeam   String?  @map("owner_team") @db.VarChar(100)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  databases DatabaseMeta[]
+
+  @@index([name])
+  @@map("business_domains")
+}
+
+// ============================================
+// 数据源配置表
+// ============================================
+model DataSource {
+  id                Int       @id @default(autoincrement())
+  name              String    @unique @db.VarChar(100)
+  type              String    @db.VarChar(50)
+  host              String    @db.VarChar(255)
+  port              Int
+  username          String    @db.VarChar(100)
+  passwordEncrypted String    @map("password_encrypted") @db.Text
+  status            Status    @default(active)
+  lastSyncAt        DateTime? @map("last_sync_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  databases DatabaseMeta[]
+
+  @@index([status])
+  @@index([lastSyncAt])
+  @@map("data_sources")
+}
+
+// ============================================
+// 数据库元数据表
+// ============================================
+model DatabaseMeta {
+  id                  Int       @id @default(autoincrement())
+  sourceId            Int       @map("source_id")
+  databaseName        String    @map("database_name") @db.VarChar(100)
+  domainId            Int?      @map("domain_id")
+  semanticDescription String?   @map("semantic_description") @db.Text
+  lastSyncedAt        DateTime? @map("last_synced_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  source DataSource       @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  domain BusinessDomain?  @relation(fields: [domainId], references: [id], onDelete: SetNull)
+  tables TableMeta[]
+
+  @@unique([sourceId, databaseName])
+  @@index([sourceId])
+  @@index([domainId])
+  @@index([lastSyncedAt])
+  @@map("databases_meta")
+}
+
+// ============================================
+// 表元数据表
+// ============================================
+model TableMeta {
+  id                  Int       @id @default(autoincrement())
+  databaseId          Int       @map("database_id")
+  tableName           String    @map("table_name") @db.VarChar(100)
+  tableComment        String?   @map("table_comment") @db.Text
+  semanticDescription String?   @map("semantic_description") @db.Text
+  semanticPriority    Int       @default(3) @map("semantic_priority") @db.TinyInt
+  rowCount            BigInt    @default(0) @map("row_count")
+  structureHash       String?   @map("structure_hash") @db.Char(64)
+  createdTime         DateTime? @map("created_time")
+  updatedTime         DateTime? @map("updated_time")
+  lastSyncedAt        DateTime? @map("last_synced_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  database            DatabaseMeta           @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  columns             ColumnMeta[]
+  sourceRelationships ExplicitRelationship[] @relation("SourceTable")
+  targetRelationships ExplicitRelationship[] @relation("TargetTable")
+  sourceInferred      InferredRelationship[] @relation("InferredSourceTable")
+  targetInferred      InferredRelationship[] @relation("InferredTargetTable")
+  schemaSnapshots     SchemaSnapshot[]
+
+  @@unique([databaseId, tableName])
+  @@index([databaseId])
+  @@index([tableName])
+  @@index([semanticPriority])
+  @@index([structureHash])
+  @@fulltext([semanticDescription])
+  @@map("tables_meta")
+}
+
+// ============================================
+// 字段元数据表
+// ============================================
+model ColumnMeta {
+  id                  Int            @id @default(autoincrement())
+  tableId             Int            @map("table_id")
+  columnName          String         @map("column_name") @db.VarChar(100)
+  dataType            String         @map("data_type") @db.VarChar(50)
+  columnType          String         @map("column_type") @db.VarChar(255)
+  columnComment       String?        @map("column_comment") @db.Text
+  semanticDescription String?        @map("semantic_description") @db.Text
+  semanticSource      SemanticSource @default(rule) @map("semantic_source")
+  isNullable          Boolean        @default(true) @map("is_nullable")
+  isPrimaryKey        Boolean        @default(false) @map("is_primary_key")
+  isUnique            Boolean        @default(false) @map("is_unique")
+  defaultValue        String?        @map("default_value") @db.Text
+  ordinalPosition     Int            @map("ordinal_position")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+
+  table               TableMeta              @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  sourceRelationships ExplicitRelationship[] @relation("SourceColumn")
+  targetRelationships ExplicitRelationship[] @relation("TargetColumn")
+  sourceInferred      InferredRelationship[] @relation("InferredSourceColumn")
+  targetInferred      InferredRelationship[] @relation("InferredTargetColumn")
+
+  @@unique([tableId, columnName])
+  @@index([tableId])
+  @@index([columnName])
+  @@index([dataType])
+  @@index([semanticSource])
+  @@fulltext([semanticDescription])
+  @@map("columns_meta")
+}
+
+// ============================================
+// 显式关系表（外键）(P0优化: 移除外键约束,仅保留索引)
+// ============================================
+model ExplicitRelationship {
+  id               Int              @id @default(autoincrement())
+  sourceTableId    Int              @map("source_table_id")
+  sourceColumnId   Int              @map("source_column_id")
+  targetTableId    Int              @map("target_table_id")
+  targetColumnId   Int              @map("target_column_id")
+  constraintName   String?          @map("constraint_name") @db.VarChar(255)
+  relationshipType RelationshipType @default(ONE_TO_MANY) @map("relationship_type")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  sourceTable  TableMeta  @relation("SourceTable", fields: [sourceTableId], references: [id], onDelete: Cascade)
+  targetTable  TableMeta  @relation("TargetTable", fields: [targetTableId], references: [id], onDelete: Cascade)
+  sourceColumn ColumnMeta @relation("SourceColumn", fields: [sourceColumnId], references: [id], onDelete: Cascade)
+  targetColumn ColumnMeta @relation("TargetColumn", fields: [targetColumnId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceTableId, sourceColumnId, targetTableId, targetColumnId])
+  @@index([sourceTableId])
+  @@index([targetTableId])
+  @@index([sourceColumnId])
+  @@index([targetColumnId])
+  @@index([sourceTableId, sourceColumnId])
+  @@map("explicit_relationships")
+}
+
+// ============================================
+// AI 推断关系表 (P0优化: 移除外键约束)
+// ============================================
+model InferredRelationship {
+  id               Int              @id @default(autoincrement())
+  sourceTableId    Int              @map("source_table_id")
+  sourceColumnId   Int              @map("source_column_id")
+  targetTableId    Int              @map("target_table_id")
+  targetColumnId   Int              @map("target_column_id")
+  confidenceScore  Decimal          @map("confidence_score") @db.Decimal(3, 2)
+  relationshipType RelationshipType @default(ONE_TO_MANY) @map("relationship_type")
+  inferenceMethod  InferenceMethod  @default(rule) @map("inference_method")
+  reasoning        String?          @db.Text
+  isVerified       Boolean          @default(false) @map("is_verified")
+  verifiedBy       String?          @map("verified_by") @db.VarChar(100)
+  verifiedAt       DateTime?        @map("verified_at")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  sourceTable  TableMeta  @relation("InferredSourceTable", fields: [sourceTableId], references: [id], onDelete: Cascade)
+  targetTable  TableMeta  @relation("InferredTargetTable", fields: [targetTableId], references: [id], onDelete: Cascade)
+  sourceColumn ColumnMeta @relation("InferredSourceColumn", fields: [sourceColumnId], references: [id], onDelete: Cascade)
+  targetColumn ColumnMeta @relation("InferredTargetColumn", fields: [targetColumnId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceTableId, sourceColumnId, targetTableId, targetColumnId])
+  @@index([sourceTableId])
+  @@index([targetTableId])
+  @@index([confidenceScore])
+  @@index([isVerified])
+  @@index([inferenceMethod])
+  @@map("inferred_relationships")
+}
+
+// ============================================
+// 元数据变更历史表
+// ============================================
+model MetadataChange {
+  id         BigInt     @id @default(autoincrement())
+  changeType ChangeType @map("change_type")
+  entityType EntityType @map("entity_type")
+  entityId   Int        @map("entity_id")
+  oldValue   Json?      @map("old_value")
+  newValue   Json?      @map("new_value")
+  changedAt  DateTime   @default(now()) @map("changed_at")
+
+  @@index([entityType, entityId])
+  @@index([changeType])
+  @@index([changedAt])
+  @@map("metadata_changes")
+}
+
+// ============================================
+// 元数据快照表 (P1优化: 支持版本回溯)
+// ============================================
+model MetadataSnapshot {
+  id           BigInt       @id @default(autoincrement())
+  snapshotType SnapshotType @map("snapshot_type")
+  entityId     Int          @map("entity_id")
+  version      Int
+  snapshotData Json         @map("snapshot_data")
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  @@index([snapshotType, entityId, version])
+  @@index([createdAt])
+  @@map("metadata_snapshots")
+}
+
+// ============================================
+// 结构快照表 (P0优化: DDL哈希变更检测)
+// ============================================
+model SchemaSnapshot {
+  id            BigInt    @id @default(autoincrement())
+  tableId       Int       @map("table_id")
+  structureHash String    @map("structure_hash") @db.Char(64)
+  snapshotDdl   String    @map("snapshot_ddl") @db.Text
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  table TableMeta @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@index([tableId, structureHash])
+  @@index([createdAt])
+  @@map("schema_snapshots")
+}
+
+// ============================================
+// 数据字典表 (P1优化: 预定义标准字段语义)
+// ============================================
+model DataDictionary {
+  id              Int      @id @default(autoincrement())
+  fieldPattern    String   @unique @map("field_pattern") @db.VarChar(100)
+  semanticMeaning String   @map("semantic_meaning") @db.Text
+  targetTable     String?  @map("target_table") @db.VarChar(100)
+  targetColumn    String?  @map("target_column") @db.VarChar(100)
+  confidence      Decimal  @default(0.85) @db.Decimal(3, 2)
+  isEnabled       Boolean  @default(true) @map("is_enabled")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([fieldPattern])
+  @@index([isEnabled])
+  @@map("data_dictionary")
+}
+
+// ============================================
+// 枚举类型定义
+// ============================================
+
+enum Status {
+  active
+  inactive
+  error
+}
+
+enum RelationshipType {
+  ONE_TO_ONE   @map("one-to-one")
+  ONE_TO_MANY  @map("one-to-many")
+  MANY_TO_MANY @map("many-to-many")
+}
+
+enum SemanticSource {
+  rule
+  ai
+  manual
+}
+
+enum InferenceMethod {
+  rule
+  ai
+  hybrid
+}
+
+enum ChangeType {
+  database_added
+  database_removed
+  table_added
+  table_removed
+  table_modified
+  column_added
+  column_removed
+  column_modified
+}
+
+enum EntityType {
+  database
+  table
+  column
+}
+
+enum SnapshotType {
+  database
+  table
+  column
+}

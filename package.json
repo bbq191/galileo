@@ -1,0 +1,51 @@
+{
+  "name": "galileo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Natural language to SQL conversion system",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "lint:fix": "next lint --fix",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "db:reset": "prisma migrate reset",
+    "test:collector": "tsx lib/metadata/collectors/__tests__/mysql-collector.test.ts",
+    "test:relationship": "tsx lib/metadata/inference/__tests__/relationship-inference.test.ts",
+    "test:repository": "tsx lib/metadata/storage/__tests__/metadata-repository.test.ts",
+    "test:change-tracker": "tsx lib/metadata/storage/__tests__/change-tracker.test.ts",
+    "test:sync": "tsx lib/metadata/sync/__tests__/metadata-sync-service.test.ts",
+    "test:all": "npm run test:collector && npm run test:relationship && npm run test:repository && npm run test:change-tracker && npm run test:sync"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.17.1",
+    "crypto-js": "^4.2.0",
+    "mysql2": "^3.15.2",
+    "next": "^14.2.15",
+    "prisma": "^6.17.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/crypto-js": "^4.2.2",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "autoprefixer": "^10.4.20",
+    "daisyui": "^5.3.7",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.15",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.20.6",
+    "typescript": "^5.7.2"
+  }
+}
