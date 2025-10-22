@@ -19,3 +19,4 @@ export type { RelationshipInferencerConfig } from './relationship-inferencer';
 
 export { NamingAnalyzer, BUILTIN_NAMING_PATTERNS } from './naming-analyzer';
 export { RulesEngine, BUILTIN_INFERENCE_RULES } from './rules-engine';
+export { AIInferencer } from './ai-inferencer';

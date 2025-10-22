@@ -12,6 +12,7 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
+    "db:migrate:ai": "tsx scripts/run-ai-migrations.ts",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset",
@@ -20,7 +21,9 @@
     "test:repository": "tsx lib/metadata/storage/__tests__/metadata-repository.test.ts",
     "test:change-tracker": "tsx lib/metadata/storage/__tests__/change-tracker.test.ts",
     "test:sync": "tsx lib/metadata/sync/__tests__/metadata-sync-service.test.ts",
-    "test:all": "npm run test:collector && npm run test:relationship && npm run test:repository && npm run test:change-tracker && npm run test:sync"
+    "test:semantic": "tsx lib/ai/__tests__/semantic-annotator.test.ts",
+    "test:batch": "tsx lib/ai/__tests__/batch-processor-enhanced.test.ts",
+    "test:all": "npm run test:collector && npm run test:relationship && npm run test:repository && npm run test:change-tracker && npm run test:sync && npm run test:semantic && npm run test:batch"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -7,6 +7,7 @@ import type { ColumnInfo } from '../types';
 import type { InferredRelationship, InferenceResult, RelationshipType } from './types';
 import { NamingAnalyzer } from './naming-analyzer';
 import { RulesEngine } from './rules-engine';
+import { AIInferencer } from './ai-inferencer';
 
 /**
  * 关系推断器配置
@@ -21,11 +22,20 @@ export interface RelationshipInferencerConfig {
   /** 是否启用规则引擎 */
   enableRulesEngine?: boolean;
 
+  /** 是否启用 AI 推断 */
+  enableAIInference?: boolean;
+
+  /** AI 推断的最小置信度阈值 */
+  aiMinConfidence?: number;
+
   /** 是否跨数据库推断 */
   crossDatabase?: boolean;
 
   /** 最大检查字段对数（性能优化） */
   maxPairsToCheck?: number;
+
+  /** 批量 AI 推断的批次大小 */
+  aiBatchSize?: number;
 }
 
 /**
@@ -35,8 +45,11 @@ const DEFAULT_CONFIG: Required<RelationshipInferencerConfig> = {
   minConfidence: 0.70,
   enableNamingAnalysis: true,
   enableRulesEngine: true,
+  enableAIInference: true,
+  aiMinConfidence: 0.75,
   crossDatabase: true,
   maxPairsToCheck: 10000,
+  aiBatchSize: 5,
 };
 
 /**
@@ -46,11 +59,13 @@ export class RelationshipInferencer {
   private config: Required<RelationshipInferencerConfig>;
   private namingAnalyzer: NamingAnalyzer;
   private rulesEngine: RulesEngine;
+  private aiInferencer: AIInferencer;
 
   constructor(config: RelationshipInferencerConfig = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.namingAnalyzer = new NamingAnalyzer();
     this.rulesEngine = new RulesEngine();
+    this.aiInferencer = new AIInferencer();
   }
 
   /**
@@ -188,6 +203,25 @@ export class RelationshipInferencer {
       if (checkedPairs >= this.config.maxPairsToCheck) {
         break;
       }
+    }
+
+    // AI 推断阶段：对规则引擎未覆盖的字段进行 AI 推断
+    if (this.config.enableAIInference) {
+      console.log(`\n========================================`);
+      console.log(`AI 推断阶段`);
+      console.log(`========================================`);
+
+      const aiRelationships = await this.performAIInference(
+        allColumns,
+        columnsByTable,
+        tableNames,
+        relationships
+      );
+
+      relationships.push(...aiRelationships);
+
+      console.log(`AI 推断出关系: ${aiRelationships.length}`);
+      console.log(`========================================\n`);
     }
 
     const endTime = Date.now();
@@ -356,6 +390,127 @@ export class RelationshipInferencer {
     ];
 
     return nonForeignKeyPatterns.some((pattern) => pattern.test(column.columnName));
+  }
+
+  /**
+   * 使用 AI 进行关系推断
+   * 对规则引擎未覆盖或低置信度的字段对进行 AI 推断
+   */
+  private async performAIInference(
+    allColumns: ColumnInfo[],
+    columnsByTable: Record<string, ColumnInfo[]>,
+    tableNames: string[],
+    existingRelationships: InferredRelationship[]
+  ): Promise<InferredRelationship[]> {
+    const aiRelationships: InferredRelationship[] = [];
+
+    // 收集潜在的外键候选字段（规则引擎未处理的）
+    const candidatePairs: Array<{ source: ColumnInfo; target: ColumnInfo }> = [];
+
+    // 构建已推断关系的查找表
+    const existingRelationshipSet = new Set(
+      existingRelationships.map(
+        (r) => `${r.sourceTable}.${r.sourceColumn}->${r.targetTable}.${r.targetColumn}`
+      )
+    );
+
+    // 遍历所有表，查找可能的外键候选
+    for (const sourceTable of tableNames) {
+      const sourceColumns = columnsByTable[sourceTable];
+
+      for (const sourceColumn of sourceColumns) {
+        // 使用 AI 推断器判断是否为外键候选
+        if (!this.aiInferencer.isForeignKeyCandidate(sourceColumn)) {
+          continue;
+        }
+
+        // 遍历所有可能的目标表
+        for (const targetTable of tableNames) {
+          // 跳过同一张表（自引用由规则引擎处理）
+          if (targetTable === sourceTable) {
+            continue;
+          }
+
+          const targetColumns = columnsByTable[targetTable];
+
+          // 查找主键或唯一键作为目标
+          for (const targetColumn of targetColumns) {
+            if (!this.aiInferencer.isPrimaryKeyCandidate(targetColumn)) {
+              continue;
+            }
+
+            // 检查是否已被规则引擎处理
+            const relationshipKey = `${sourceColumn.tableName}.${sourceColumn.columnName}->${targetColumn.tableName}.${targetColumn.columnName}`;
+            if (existingRelationshipSet.has(relationshipKey)) {
+              continue;
+            }
+
+            // 添加到候选列表
+            candidatePairs.push({
+              source: sourceColumn,
+              target: targetColumn,
+            });
+
+            // 限制候选数量
+            if (candidatePairs.length >= 100) {
+              break;
+            }
+          }
+
+          if (candidatePairs.length >= 100) {
+            break;
+          }
+        }
+
+        if (candidatePairs.length >= 100) {
+          break;
+        }
+      }
+
+      if (candidatePairs.length >= 100) {
+        break;
+      }
+    }
+
+    console.log(`AI 候选字段对: ${candidatePairs.length}`);
+
+    if (candidatePairs.length === 0) {
+      return aiRelationships;
+    }
+
+    // 批量处理
+    const batchSize = this.config.aiBatchSize;
+    for (let i = 0; i < candidatePairs.length; i += batchSize) {
+      const batch = candidatePairs.slice(i, i + batchSize);
+      console.log(`处理 AI 推断批次 ${Math.floor(i / batchSize) + 1}/${Math.ceil(candidatePairs.length / batchSize)} (${batch.length} 个字段对)...`);
+
+      try {
+        const results = await this.aiInferencer.inferRelationshipsBatch(batch);
+
+        // 过滤有效结果
+        for (const result of results) {
+          if (
+            result &&
+            result.confidenceScore >= this.config.aiMinConfidence
+          ) {
+            aiRelationships.push(result);
+            console.log(
+              `✓ AI 推断: ${result.sourceTable}.${result.sourceColumn} → ${result.targetTable}.${result.targetColumn} (置信度: ${result.confidenceScore.toFixed(2)})`
+            );
+          }
+        }
+      } catch (error) {
+        console.error(`AI 推断批次失败:`, error);
+        // 继续处理下一批
+      }
+
+      // 批次间延迟
+      if (i + batchSize < candidatePairs.length) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+
+    return aiRelationships;
   }
 
   /**

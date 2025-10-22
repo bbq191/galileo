@@ -8,6 +8,7 @@
 import { NamingAnalyzer, BUILTIN_NAMING_PATTERNS } from '../naming-analyzer';
 import { RulesEngine, BUILTIN_INFERENCE_RULES } from '../rules-engine';
 import { RelationshipInferencer } from '../relationship-inferencer';
+import { AIInferencer } from '../ai-inferencer';
 import type { ColumnInfo } from '../../types';
 
 /**
@@ -296,6 +297,108 @@ async function testTableMatching() {
 }
 
 /**
+ * 测试 AI 推断器
+ */
+async function testAIInferencer() {
+  console.log('\n========================================');
+  console.log('测试 5: AI 推断器');
+  console.log('========================================\n');
+
+  const inferencer = new AIInferencer();
+
+  // 测试外键候选检测
+  console.log('外键候选检测:');
+  const fkCandidates = [
+    createTestColumn('orders', 'user_id', 'int'),
+    createTestColumn('orders', 'customer_uuid', 'varchar'),
+    createTestColumn('orders', 'created_by', 'int'),
+    createTestColumn('orders', 'name', 'varchar'), // 不是外键
+    createTestColumn('orders', 'created_at', 'datetime'), // 不是外键
+  ];
+
+  for (const col of fkCandidates) {
+    const isFk = inferencer.isForeignKeyCandidate(col);
+    console.log(`  ${col.columnName}: ${isFk ? '✓ 是外键候选' : '✗ 不是外键候选'}`);
+  }
+
+  // 测试主键候选检测
+  console.log('\n主键候选检测:');
+  const pkCandidates = [
+    createTestColumn('users', 'id', 'int', 'PRI'),
+    createTestColumn('users', 'user_id', 'int'),
+    createTestColumn('users', 'name', 'varchar'),
+  ];
+
+  for (const col of pkCandidates) {
+    const isPk = inferencer.isPrimaryKeyCandidate(col);
+    console.log(`  ${col.columnName}: ${isPk ? '✓ 是主键候选' : '✗ 不是主键候选'}`);
+  }
+
+  console.log('\n注意: AI 推断需要 Ollama 服务运行，此测试仅检查基本逻辑');
+  console.log('完整 AI 推断测试需要在集成测试中验证');
+}
+
+/**
+ * 测试混合推断（规则 + AI）
+ */
+async function testHybridInference() {
+  console.log('\n========================================');
+  console.log('测试 6: 混合推断（规则 + AI）');
+  console.log('========================================\n');
+
+  const inferencer = new RelationshipInferencer({
+    minConfidence: 0.7,
+    enableAIInference: true,
+    aiMinConfidence: 0.75,
+    aiBatchSize: 3,
+  });
+
+  console.log('配置:');
+  const config = inferencer.getConfig();
+  console.log(`  规则引擎: ${config.enableRulesEngine ? '✓ 启用' : '✗ 禁用'}`);
+  console.log(`  命名分析: ${config.enableNamingAnalysis ? '✓ 启用' : '✗ 禁用'}`);
+  console.log(`  AI 推断: ${config.enableAIInference ? '✓ 启用' : '✗ 禁用'}`);
+  console.log(`  最小置信度: ${config.minConfidence}`);
+  console.log(`  AI 最小置信度: ${config.aiMinConfidence}`);
+  console.log(`  AI 批次大小: ${config.aiBatchSize}`);
+
+  // 模拟数据库字段（包含一些非标准命名）
+  const columns: ColumnInfo[] = [
+    // users 表
+    createTestColumn('users', 'id', 'int', 'PRI'),
+    createTestColumn('users', 'name', 'varchar'),
+    createTestColumn('users', 'email', 'varchar'),
+
+    // orders 表
+    createTestColumn('orders', 'id', 'int', 'PRI'),
+    createTestColumn('orders', 'user_id', 'int'), // 标准外键 - 规则引擎
+    createTestColumn('orders', 'buyer', 'int'), // 非标准命名 - AI 推断
+    createTestColumn('orders', 'total_amount', 'decimal'),
+  ];
+
+  console.log('\n开始推断...');
+  console.log('注意: AI 推断部分需要 Ollama 服务');
+
+  try {
+    const result = await inferencer.inferRelationships('test_db', columns);
+
+    console.log('\n推断结果:');
+    console.log(`总字段数: ${result.stats.totalColumns}`);
+    console.log(`推断出关系: ${result.stats.inferredCount}`);
+
+    console.log('\n推断的关系:');
+    for (const rel of result.relationships) {
+      console.log(
+        `  ${rel.sourceTable}.${rel.sourceColumn} → ${rel.targetTable}.${rel.targetColumn} (${rel.inferenceMethod}, 置信度: ${rel.confidenceScore.toFixed(2)})`
+      );
+    }
+  } catch (error) {
+    console.log('\n⚠️  混合推断测试需要 Ollama 服务运行');
+    console.log('跳过 AI 推断部分的测试');
+  }
+}
+
+/**
  * 运行所有测试
  */
 async function runAllTests() {
@@ -310,6 +413,8 @@ async function runAllTests() {
   await testRulesEngine();
   await testTableMatching();
   await testRelationshipInferencer();
+  await testAIInferencer();
+  await testHybridInference();
 
   console.log('\n========================================');
   console.log('所有测试完成');
