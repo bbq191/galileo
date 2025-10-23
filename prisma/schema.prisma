@@ -39,6 +39,7 @@ model DataSource {
   port              Int
   username          String    @db.VarChar(100)
   passwordEncrypted String    @map("password_encrypted") @db.Text
+  targetDatabases   Json?     @map("target_databases") // 指定要同步的数据库列表，留空则同步所有
   status            Status    @default(active)
   lastSyncAt        DateTime? @map("last_sync_at")
   createdAt         DateTime  @default(now()) @map("created_at")

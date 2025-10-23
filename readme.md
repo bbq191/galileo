@@ -203,9 +203,38 @@ ollama serve
 
 ### 数据库连接错误
 
+#### 常规问题
 - 检查 `.env` 中的 `DATABASE_URL` 配置
 - 确保 MariaDB/MySQL 服务正在运行
 - 验证用户名和密码正确
+
+#### 认证插件不兼容 ⚠️
+
+**错误提示**：`Server requests authentication using unknown plugin auth_gssapi_client`
+
+**原因**：MariaDB/MySQL 使用不兼容的认证插件
+
+**快速修复**（5分钟）：
+```sql
+-- 连接到数据库
+mysql -u root -p
+
+-- 修改用户认证方式
+ALTER USER 'your_username'@'your_host'
+  IDENTIFIED WITH mysql_native_password BY 'your_password';
+FLUSH PRIVILEGES;
+
+-- 或创建新用户（推荐）
+CREATE USER 'galileo_readonly'@'%'
+  IDENTIFIED WITH mysql_native_password BY 'Galileo@2025!Secure';
+GRANT SELECT ON *.* TO 'galileo_readonly'@'%';
+GRANT SELECT ON information_schema.* TO 'galileo_readonly'@'%';
+FLUSH PRIVILEGES;
+```
+
+**详细文档**：
+- 快速指南：[docs/QUICK-FIX-AUTH.md](./docs/QUICK-FIX-AUTH.md)
+- 完整指南：[docs/fix-database-auth-guide.md](./docs/fix-database-auth-guide.md)
 
 ### 模块未找到错误
 

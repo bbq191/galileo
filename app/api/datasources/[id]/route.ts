@@ -59,6 +59,8 @@ export async function GET(
       data: {
         ...dataSource,
         passwordEncrypted: undefined, // 不返回密码
+        databases: dataSource.targetDatabases ? (dataSource.targetDatabases as string[]) : [],
+        targetDatabases: undefined, // 不直接返回内部字段
         connectionStats: stats,
         isConnected: hasConnection,
       },
@@ -97,6 +99,8 @@ export async function PUT(
         username: body.username,
         // 如果提供了新密码，则更新
         ...(body.password && { passwordEncrypted: body.password }),
+        // 更新目标数据库列表
+        targetDatabases: body.databases && body.databases.length > 0 ? body.databases : null,
       },
     });
 

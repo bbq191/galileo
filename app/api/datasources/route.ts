@@ -33,6 +33,8 @@ export async function GET(request: NextRequest) {
       return {
         ...ds,
         passwordEncrypted: undefined, // 不返回密码
+        databases: ds.targetDatabases ? (ds.targetDatabases as string[]) : [],
+        targetDatabases: undefined, // 不直接返回内部字段
         connectionStats: stats,
         isConnected: hasConnection,
       };
@@ -113,6 +115,7 @@ export async function POST(request: NextRequest) {
         port: config.port,
         username: config.username,
         passwordEncrypted: '', // 临时值
+        targetDatabases: config.databases && config.databases.length > 0 ? config.databases : null,
         status: 'inactive',
       },
     });
