@@ -11,8 +11,8 @@ export default function Home() {
         </p>
 
         <div className="flex gap-4 justify-center">
-          <button className="btn btn-primary">开始使用</button>
-          <button className="btn btn-outline">了解更多</button>
+          <a href="/datasources" className="btn btn-primary">数据源管理</a>
+          <a href="/metadata" className="btn btn-outline">元数据浏览</a>
         </div>
 
         <div className="mt-12 stats shadow">
