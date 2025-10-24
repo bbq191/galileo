@@ -101,11 +101,11 @@ export default function MetadataTree({
   };
 
   return (
-    <div className="space-y-2 max-h-[calc(100vh-300px)] overflow-y-auto">
+    <div className="space-y-2 max-h-[calc(100vh-300px)] md:max-h-[calc(100vh-300px)] overflow-y-auto">
       {dataSources.length === 0 ? (
-        <div className="text-center py-8 text-base-content/60">
-          <p>暂无数据源</p>
-          <a href="/datasources" className="btn btn-sm btn-primary mt-4">
+        <div className="text-center py-6 md:py-8 text-base-content/60">
+          <p className="text-sm md:text-base">暂无数据源</p>
+          <a href="/datasources" className="btn btn-xs md:btn-sm btn-primary mt-3 md:mt-4">
             添加数据源
           </a>
         </div>

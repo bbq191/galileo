@@ -136,7 +136,7 @@ export default function TableDetail({ table }: TableDetailProps) {
       {/* 操作按钮 */}
       <div className="flex gap-2">
         <a
-          href={`/relationships?tableId=${table.id}`}
+          href={`/relationships?tableId=${table.id}&databaseId=${table.databaseId}`}
           className="btn btn-primary btn-sm"
         >
           <svg

@@ -247,9 +247,9 @@ export default function DataSourcesPage() {
     <div className="min-h-screen bg-base-200">
       {/* 页面头部 */}
       <div className="navbar bg-base-100 shadow-lg">
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <a href="/" className="btn btn-ghost normal-case text-xl">Galileo</a>
-          <div className="breadcrumbs text-sm ml-4">
+          <div className="breadcrumbs text-sm ml-2 md:ml-4 hidden sm:block">
             <ul>
               <li><a href="/">首页</a></li>
               <li>数据源管理</li>
@@ -257,17 +257,17 @@ export default function DataSourcesPage() {
           </div>
         </div>
         <div className="flex-none gap-2">
-          <button className="btn btn-primary" onClick={handleAdd}>
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+          <button className="btn btn-primary btn-sm md:btn-md" onClick={handleAdd}>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 md:mr-2" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
             </svg>
-            添加数据源
+            <span className="hidden md:inline">添加数据源</span>
           </button>
         </div>
       </div>
 
       {/* 主要内容区 */}
-      <div className="container mx-auto p-6">
+      <div className="container mx-auto p-4 md:p-6">
         <div className="card bg-base-100 shadow-xl">
           <div className="card-body">
             <h2 className="card-title text-2xl mb-4">

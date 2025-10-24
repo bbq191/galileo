@@ -138,9 +138,9 @@ export default function MetadataPage() {
     <div className="min-h-screen bg-base-200">
       {/* 页面头部 */}
       <div className="navbar bg-base-100 shadow-lg">
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <a href="/" className="btn btn-ghost normal-case text-xl">Galileo</a>
-          <div className="breadcrumbs text-sm ml-4">
+          <div className="breadcrumbs text-sm ml-2 md:ml-4 hidden sm:block">
             <ul>
               <li><a href="/">首页</a></li>
               <li>元数据浏览</li>
@@ -149,31 +149,32 @@ export default function MetadataPage() {
         </div>
         <div className="flex-none gap-2">
           <a href="/datasources" className="btn btn-outline btn-sm">
-            数据源管理
+            <span className="hidden sm:inline">数据源管理</span>
+            <span className="sm:hidden">数据源</span>
           </a>
         </div>
       </div>
 
       {/* 搜索栏 */}
-      <div className="container mx-auto p-6">
+      <div className="container mx-auto p-4 md:p-6">
         <div className="card bg-base-100 shadow-xl mb-6">
-          <div className="card-body">
+          <div className="card-body p-4 md:p-6">
             <div className="form-control">
               <div className="input-group">
                 <input
                   type="text"
                   placeholder="搜索数据库、表或字段..."
-                  className="input input-bordered flex-1"
+                  className="input input-bordered flex-1 input-sm md:input-md"
                   value={searchQuery}
                   onChange={handleSearchChange}
                 />
                 <button
-                  className="btn btn-square btn-primary"
+                  className="btn btn-square btn-primary btn-sm md:btn-md"
                   onClick={() => handleSearch(searchQuery)}
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
-                    className="h-6 w-6"
+                    className="h-5 w-5 md:h-6 md:w-6"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"
@@ -188,7 +189,7 @@ export default function MetadataPage() {
                 </button>
               </div>
               <label className="label">
-                <span className="label-text-alt">
+                <span className="label-text-alt text-xs">
                   输入至少 2 个字符开始搜索，搜索范围：数据库名、表名、字段名
                 </span>
               </label>
@@ -325,20 +326,20 @@ export default function MetadataPage() {
           </div>
         )}
 
-        {/* 主要内容区 - 双栏布局 */}
+        {/* 主要内容区 - 响应式双栏布局 */}
         {!searchResults && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="flex flex-col lg:grid lg:grid-cols-3 gap-4 md:gap-6">
             {/* 左侧：元数据树 */}
-            <div className="lg:col-span-1">
-              <div className="card bg-base-100 shadow-xl sticky top-6">
-                <div className="card-body">
-                  <h2 className="card-title">元数据树</h2>
+            <div className="lg:col-span-1 order-2 lg:order-1">
+              <div className="card bg-base-100 shadow-xl lg:sticky lg:top-6">
+                <div className="card-body p-4 md:p-6">
+                  <h2 className="card-title text-lg md:text-xl">元数据树</h2>
                   {loading ? (
-                    <div className="flex justify-center items-center py-12">
-                      <span className="loading loading-spinner loading-lg"></span>
+                    <div className="flex justify-center items-center py-8 md:py-12">
+                      <span className="loading loading-spinner loading-md md:loading-lg"></span>
                     </div>
                   ) : error ? (
-                    <div className="alert alert-error">
+                    <div className="alert alert-error text-sm">
                       <span>{error}</span>
                     </div>
                   ) : (
@@ -357,16 +358,16 @@ export default function MetadataPage() {
             </div>
 
             {/* 右侧：详情展示 */}
-            <div className="lg:col-span-2">
+            <div className="lg:col-span-2 order-1 lg:order-2">
               {selectedTable ? (
                 <>
                   {/* 表详情 */}
-                  <div className="card bg-base-100 shadow-xl mb-6">
-                    <div className="card-body">
+                  <div className="card bg-base-100 shadow-xl mb-4 md:mb-6">
+                    <div className="card-body p-4 md:p-6">
                       <div className="flex items-center justify-between mb-4">
-                        <h2 className="card-title">表详情</h2>
+                        <h2 className="card-title text-lg md:text-xl">表详情</h2>
                         <button
-                          className="btn btn-sm btn-ghost"
+                          className="btn btn-xs md:btn-sm btn-ghost"
                           onClick={handleClearSelection}
                         >
                           清除选择
@@ -378,19 +379,19 @@ export default function MetadataPage() {
 
                   {/* 字段列表 */}
                   <div className="card bg-base-100 shadow-xl">
-                    <div className="card-body">
-                      <h2 className="card-title">字段列表</h2>
+                    <div className="card-body p-4 md:p-6">
+                      <h2 className="card-title text-lg md:text-xl">字段列表</h2>
                       <ColumnList tableId={selectedTable.id} />
                     </div>
                   </div>
                 </>
               ) : (
                 <div className="card bg-base-100 shadow-xl">
-                  <div className="card-body">
-                    <div className="text-center py-12">
+                  <div className="card-body p-4 md:p-6">
+                    <div className="text-center py-8 md:py-12">
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
-                        className="h-24 w-24 mx-auto text-base-300 mb-4"
+                        className="h-16 w-16 md:h-24 md:w-24 mx-auto text-base-300 mb-4"
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
@@ -402,11 +403,11 @@ export default function MetadataPage() {
                           d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                         />
                       </svg>
-                      <h3 className="text-lg font-bold mb-2">请选择一个表</h3>
-                      <p className="text-base-content/60 mb-4">
+                      <h3 className="text-base md:text-lg font-bold mb-2">请选择一个表</h3>
+                      <p className="text-sm md:text-base text-base-content/60 mb-4">
                         从左侧树形结构中选择一个表，查看详细信息
                       </p>
-                      <div className="text-sm text-base-content/40">
+                      <div className="text-xs md:text-sm text-base-content/40">
                         💡 提示：您也可以使用上方的搜索功能快速查找元数据
                       </div>
                     </div>

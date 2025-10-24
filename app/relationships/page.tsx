@@ -194,11 +194,11 @@ export default function RelationshipsPage() {
     <div className="min-h-screen bg-base-200">
       {/* 页面头部 */}
       <div className="navbar bg-base-100 shadow-lg">
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <a href="/" className="btn btn-ghost normal-case text-xl">
             Galileo
           </a>
-          <div className="breadcrumbs text-sm ml-4">
+          <div className="breadcrumbs text-sm ml-2 md:ml-4 hidden sm:block">
             <ul>
               <li>
                 <a href="/">首页</a>
@@ -207,30 +207,32 @@ export default function RelationshipsPage() {
             </ul>
           </div>
         </div>
-        <div className="flex-none gap-2">
-          <a href="/datasources" className="btn btn-outline btn-sm">
-            数据源管理
+        <div className="flex-none gap-1 md:gap-2">
+          <a href="/datasources" className="btn btn-outline btn-xs md:btn-sm">
+            <span className="hidden md:inline">数据源管理</span>
+            <span className="md:hidden">数据源</span>
           </a>
-          <a href="/metadata" className="btn btn-outline btn-sm">
-            元数据浏览
+          <a href="/metadata" className="btn btn-outline btn-xs md:btn-sm">
+            <span className="hidden md:inline">元数据浏览</span>
+            <span className="md:hidden">元数据</span>
           </a>
         </div>
       </div>
 
       {/* 控制面板 */}
-      <div className="container mx-auto p-6">
-        <div className="card bg-base-100 shadow-xl mb-6">
-          <div className="card-body">
-            <h2 className="card-title">图谱配置</h2>
+      <div className="container mx-auto p-4 md:p-6">
+        <div className="card bg-base-100 shadow-xl mb-4 md:mb-6">
+          <div className="card-body p-4 md:p-6">
+            <h2 className="card-title text-lg md:text-xl">图谱配置</h2>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
               {/* 数据源选择 */}
               <div className="form-control">
                 <label className="label">
-                  <span className="label-text">数据源</span>
+                  <span className="label-text text-sm md:text-base">数据源</span>
                 </label>
                 <select
-                  className="select select-bordered"
+                  className="select select-bordered select-sm md:select-md"
                   value={selectedSourceId || ''}
                   onChange={(e) =>
                     setSelectedSourceId(e.target.value ? parseInt(e.target.value) : null)
@@ -248,10 +250,10 @@ export default function RelationshipsPage() {
               {/* 数据库选择 */}
               <div className="form-control">
                 <label className="label">
-                  <span className="label-text">数据库</span>
+                  <span className="label-text text-sm md:text-base">数据库</span>
                 </label>
                 <select
-                  className="select select-bordered"
+                  className="select select-bordered select-sm md:select-md"
                   value={selectedDatabaseId || ''}
                   onChange={(e) =>
                     setSelectedDatabaseId(e.target.value ? parseInt(e.target.value) : null)
@@ -443,12 +445,12 @@ export default function RelationshipsPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <div className="flex flex-col lg:grid lg:grid-cols-4 gap-4 md:gap-6">
             {/* 左侧：关系图谱 */}
-            <div className="lg:col-span-3">
+            <div className="lg:col-span-3 order-1">
               <div className="card bg-base-100 shadow-xl">
                 <div className="card-body p-0">
-                  <div style={{ height: '600px' }}>
+                  <div style={{ height: '400px' }} className="md:h-[500px] lg:h-[600px]">
                     <RelationshipGraph
                       key={graphKey}
                       tableId={selectedTableId || undefined}
@@ -465,7 +467,7 @@ export default function RelationshipsPage() {
             </div>
 
             {/* 右侧：详情面板 */}
-            <div className="lg:col-span-1 space-y-6">
+            <div className="lg:col-span-1 order-2 space-y-4 md:space-y-6">
               {/* 关系详情 */}
               <RelationshipDetail
                 selectedNode={selectedNode}
