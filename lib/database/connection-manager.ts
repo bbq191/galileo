@@ -21,10 +21,51 @@ class ConnectionManager {
   private pools: Map<string, ConnectionPool> = new Map();
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private readonly HEALTH_CHECK_INTERVAL = 60000; // 60 秒
+  private isInitialized = false;
+  private initPromise: Promise<void> | null = null;
 
   constructor() {
     // 启动定期健康检查
     this.startHealthCheck();
+  }
+
+  /**
+   * 确保 ConnectionManager 已初始化（懒加载）
+   */
+  private async ensureInitialized(): Promise<void> {
+    if (this.isInitialized) {
+      return;
+    }
+
+    // 如果正在初始化，等待初始化完成
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+
+    // 开始初始化
+    this.initPromise = this.initialize();
+    await this.initPromise;
+  }
+
+  /**
+   * 初始化连接管理器，从数据库加载活跃连接
+   */
+  private async initialize(): Promise<void> {
+    if (this.isInitialized) {
+      return;
+    }
+
+    console.log('[ConnectionManager] Initializing...');
+
+    try {
+      await this.loadConnectionsFromDatabase();
+      this.isInitialized = true;
+      console.log('[ConnectionManager] Initialized successfully');
+    } catch (error) {
+      console.error('[ConnectionManager] Initialization failed:', error);
+      // 即使失败也标记为已初始化，避免重复尝试
+      this.isInitialized = true;
+    }
   }
 
   /**
@@ -71,6 +112,8 @@ class ConnectionManager {
    * 测试连接
    */
   async testConnection(id: string): Promise<HealthCheckResult> {
+    await this.ensureInitialized();
+
     const pool = this.pools.get(id);
     if (!pool) {
       throw new Error(`Connection ${id} not found`);
@@ -83,6 +126,8 @@ class ConnectionManager {
    * 获取连接池
    */
   async getConnection(id: string): Promise<ConnectionPool> {
+    await this.ensureInitialized();
+
     const pool = this.pools.get(id);
     if (!pool) {
       throw new Error(`Connection ${id} not found`);
@@ -130,7 +175,9 @@ class ConnectionManager {
   /**
    * 获取连接统计信息
    */
-  getConnectionStats(id: string): ConnectionStats {
+  async getConnectionStats(id: string): Promise<ConnectionStats> {
+    await this.ensureInitialized();
+
     const pool = this.pools.get(id);
     if (!pool) {
       throw new Error(`Connection ${id} not found`);
@@ -143,6 +190,8 @@ class ConnectionManager {
    * 获取所有连接的健康状态
    */
   async getAllHealthStatus(): Promise<Map<string, HealthCheckResult>> {
+    await this.ensureInitialized();
+
     const results = new Map<string, HealthCheckResult>();
 
     const entries = Array.from(this.pools.entries());
@@ -311,7 +360,8 @@ class ConnectionManager {
   /**
    * 检查连接是否存在
    */
-  hasConnection(id: string): boolean {
+  async hasConnection(id: string): Promise<boolean> {
+    await this.ensureInitialized();
     return this.pools.has(id);
   }
 }

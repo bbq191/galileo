@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
         };
       }
 
-      results.tables = await prisma.tableMeta.findMany({
+      const tables = await prisma.tableMeta.findMany({
         where,
         take: type === 'table' ? limit : 10,
         skip: type === 'table' ? skip : 0,
@@ -122,6 +122,12 @@ export async function GET(request: NextRequest) {
         },
         orderBy: { tableName: 'asc' },
       });
+
+      // 转换 BigInt 为字符串
+      results.tables = tables.map((table) => ({
+        ...table,
+        rowCount: table.rowCount ? table.rowCount.toString() : '0',
+      }));
     }
 
     // 搜索列

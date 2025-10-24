@@ -25,7 +25,7 @@ export async function POST(
     const { id } = await context.params;
 
     // 检查连接是否存在于 connectionManager 中
-    if (connectionManager.hasConnection(id)) {
+    if (await connectionManager.hasConnection(id)) {
       // 如果连接已存在，直接测试
       const healthCheck = await connectionManager.testConnection(id);
 
@@ -97,12 +97,16 @@ export async function POST(
       if (healthCheck.healthy) {
         // 测试成功，将连接添加到 connectionManager（如果还不存在）
         try {
-          if (!connectionManager.hasConnection(id)) {
+          if (!(await connectionManager.hasConnection(id))) {
+            console.log(`[Test] Creating connection for data source ${id}...`);
             await connectionManager.createConnection(config);
+            console.log(`[Test] Connection ${id} created and added to manager`);
+          } else {
+            console.log(`[Test] Connection ${id} already exists in manager`);
           }
         } catch (error) {
           // 连接可能已存在，忽略错误
-          console.warn('连接已存在，跳过创建:', error);
+          console.warn('[Test] 连接已存在或创建失败，跳过创建:', error);
         }
 
         return NextResponse.json({

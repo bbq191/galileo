@@ -44,11 +44,37 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    if (!connectionManager.hasConnection(id)) {
-      return NextResponse.json(
-        { status: 'error', message: 'Connection not available. Please test connection first.' },
-        { status: 400 }
-      );
+    // 检查连接是否存在，如果不存在则尝试从数据库重新加载
+    if (!(await connectionManager.hasConnection(id))) {
+      console.log(`[Sync] Connection ${id} not found in memory, attempting to create...`);
+
+      try {
+        // 创建连接配置
+        const config: DatabaseConfig = {
+          id: dataSource.id.toString(),
+          name: dataSource.name,
+          type: dataSource.type as any,
+          host: dataSource.host,
+          port: dataSource.port,
+          username: dataSource.username,
+          password: dataSource.passwordEncrypted,
+          databases: [],
+        };
+
+        // 创建连接
+        await connectionManager.createConnection(config);
+        console.log(`[Sync] Connection ${id} created successfully`);
+      } catch (error) {
+        console.error(`[Sync] Failed to create connection ${id}:`, error);
+        return NextResponse.json(
+          {
+            status: 'error',
+            message: 'Failed to establish database connection. Please test connection first.',
+            error: error instanceof Error ? error.message : 'Unknown error'
+          },
+          { status: 400 }
+        );
+      }
     }
 
     const pool = await connectionManager.getConnection(id);

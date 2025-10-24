@@ -10,6 +10,8 @@ export default function DataSourcesPage() {
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editingDataSource, setEditingDataSource] = useState<any | null>(null);
+  const [testingConnections, setTestingConnections] = useState<Set<number>>(new Set());
+  const [syncingDataSources, setSyncingDataSources] = useState<Set<number>>(new Set());
 
   // 加载数据源列表
   const loadDataSources = async () => {
@@ -81,7 +83,14 @@ export default function DataSourcesPage() {
 
   // 测试连接
   const handleTestConnection = async (id: number) => {
+    // 防止重复点击
+    if (testingConnections.has(id)) {
+      return;
+    }
+
     try {
+      setTestingConnections(prev => new Set(prev).add(id));
+
       const response = await fetch(`/api/datasources/${id}/test`, {
         method: 'POST',
       });
@@ -90,18 +99,33 @@ export default function DataSourcesPage() {
 
       if (result.status === 'success') {
         alert('连接测试成功！');
+        // 刷新列表以查看更新的连接状态
+        await loadDataSources();
       } else {
         alert(`连接测试失败：${result.message || result.error}`);
       }
     } catch (err) {
       console.error('Error testing connection:', err);
       alert(err instanceof Error ? err.message : 'Failed to test connection');
+    } finally {
+      setTestingConnections(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
     }
   };
 
   // 触发同步
   const handleSync = async (id: number) => {
+    // 防止重复点击
+    if (syncingDataSources.has(id)) {
+      return;
+    }
+
     try {
+      setSyncingDataSources(prev => new Set(prev).add(id));
+
       const response = await fetch(`/api/datasources/${id}/sync`, {
         method: 'POST',
       });
@@ -109,15 +133,27 @@ export default function DataSourcesPage() {
       const result = await response.json();
 
       if (result.status === 'success') {
-        alert('同步任务已触发！');
+        const stats = result.data;
+        const message = `同步成功！\n\n数据库: ${stats.databasesAdded} 个新增, ${stats.databasesUpdated} 个更新\n表: ${stats.tablesAdded} 个新增, ${stats.tablesUpdated} 个更新\n列: ${stats.columnsAdded} 个新增, ${stats.columnsUpdated} 个更新\n\n耗时: ${stats.duration}ms`;
+        alert(message);
         // 刷新列表以查看更新的同步状态
         await loadDataSources();
       } else {
-        alert(`同步失败：${result.message || result.error}`);
+        // 显示详细错误信息
+        const errorMsg = result.error
+          ? `${result.message}\n\n详细错误: ${result.error}`
+          : result.message;
+        alert(`同步失败：${errorMsg}`);
       }
     } catch (err) {
       console.error('Error triggering sync:', err);
       alert(err instanceof Error ? err.message : 'Failed to trigger sync');
+    } finally {
+      setSyncingDataSources(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
     }
   };
 
@@ -178,6 +214,8 @@ export default function DataSourcesPage() {
                 onDelete={handleDelete}
                 onTestConnection={handleTestConnection}
                 onSync={handleSync}
+                testingConnections={testingConnections}
+                syncingDataSources={syncingDataSources}
               />
             )}
 

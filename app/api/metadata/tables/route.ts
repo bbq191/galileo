@@ -39,9 +39,15 @@ export async function GET(request: NextRequest) {
       orderDirection,
     });
 
+    // 转换 BigInt 为字符串，避免 JSON 序列化错误
+    const serializedData = result.data.map((table) => ({
+      ...table,
+      rowCount: table.rowCount ? table.rowCount.toString() : '0',
+    }));
+
     return NextResponse.json({
       status: 'success',
-      data: result.data,
+      data: serializedData,
       pagination: {
         total: result.total,
         page: result.page,

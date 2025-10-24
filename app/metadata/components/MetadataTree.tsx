@@ -63,11 +63,13 @@ export default function MetadataTree({
   const loadTables = async (databaseId: number) => {
     try {
       setLoadingTables(true);
-      const response = await fetch(`/api/metadata/tables?databaseId=${databaseId}`);
+      // 设置 limit=1000 以获取所有表（树形显示不需要分页）
+      const response = await fetch(`/api/metadata/tables?databaseId=${databaseId}&limit=1000`);
       const result = await response.json();
 
       if (result.status === 'success') {
         setTables(result.data || []);
+        console.log(`[MetadataTree] Loaded ${result.data?.length || 0} tables for database ${databaseId}`);
       }
     } catch (err) {
       console.error('Error loading tables:', err);

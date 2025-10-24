@@ -22,23 +22,31 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
     });
 
-    // 获取连接池统计信息
-    const dataSourcesWithStats = dataSources.map((ds) => {
-      const id = ds.id.toString();
-      const hasConnection = connectionManager.hasConnection(id);
-      const stats = hasConnection
-        ? connectionManager.getConnectionStats(id)
-        : null;
+    console.log(`[GET /api/datasources] Found ${dataSources.length} data sources`);
+    console.log(`[GET /api/datasources] ConnectionManager has ${connectionManager.getConnectionCount()} connections`);
 
-      return {
-        ...ds,
-        passwordEncrypted: undefined, // 不返回密码
-        databases: ds.targetDatabases ? (ds.targetDatabases as string[]) : [],
-        targetDatabases: undefined, // 不直接返回内部字段
-        connectionStats: stats,
-        isConnected: hasConnection,
-      };
-    });
+    // 获取连接池统计信息（需要异步处理）
+    const dataSourcesWithStats = await Promise.all(
+      dataSources.map(async (ds) => {
+        const id = ds.id.toString();
+        const hasConnection = await connectionManager.hasConnection(id);
+
+        console.log(`[GET /api/datasources] Data source ${id} (${ds.name}): hasConnection=${hasConnection}`);
+
+        const stats = hasConnection
+          ? await connectionManager.getConnectionStats(id)
+          : null;
+
+        return {
+          ...ds,
+          passwordEncrypted: undefined, // 不返回密码
+          databases: ds.targetDatabases ? (ds.targetDatabases as string[]) : [],
+          targetDatabases: undefined, // 不直接返回内部字段
+          connectionStats: stats,
+          isConnected: hasConnection,
+        };
+      })
+    );
 
     return NextResponse.json({
       status: 'success',
