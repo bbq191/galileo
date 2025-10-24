@@ -12,6 +12,7 @@ export default function DataSourcesPage() {
   const [editingDataSource, setEditingDataSource] = useState<any | null>(null);
   const [testingConnections, setTestingConnections] = useState<Set<number>>(new Set());
   const [syncingDataSources, setSyncingDataSources] = useState<Set<number>>(new Set());
+  const [inferringRelationships, setInferringRelationships] = useState<Set<number>>(new Set());
 
   // 加载数据源列表
   const loadDataSources = async () => {
@@ -157,6 +158,84 @@ export default function DataSourcesPage() {
     }
   };
 
+  // 推断关系
+  const handleInferRelationships = async (dataSource: any) => {
+    // 防止重复点击
+    if (inferringRelationships.has(dataSource.id)) {
+      return;
+    }
+
+    try {
+      setInferringRelationships(prev => new Set(prev).add(dataSource.id));
+
+      // 获取数据源配置的数据库列表
+      const databases = dataSource.databases && dataSource.databases.length > 0
+        ? dataSource.databases
+        : []; // 空数组表示推断所有数据库
+
+      const response = await fetch('/api/metadata/relationships/infer', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          dataSourceId: dataSource.id.toString(),
+          databases: databases,
+          crossDatabase: false,
+          minConfidence: 0.7,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.status === 'success') {
+        const data = result.data;
+
+        // 处理不同的返回数据结构
+        let relationshipsCount = 0;
+        let durationMs = 0;
+        let savedCount = 0;
+
+        // 单数据库推断：data.relationships
+        if (data.relationships) {
+          relationshipsCount = data.relationships.length;
+          durationMs = data.stats?.duration || data.duration || 0;
+        }
+        // 多数据库推断：data.results
+        else if (data.results) {
+          relationshipsCount = data.results.reduce((sum: number, r: any) =>
+            sum + (r.relationships?.length || 0), 0
+          );
+          durationMs = data.results.reduce((sum: number, r: any) =>
+            sum + (r.stats?.duration || r.duration || 0), 0
+          );
+        }
+
+        // 获取保存结果
+        if (data.saveResult) {
+          savedCount = data.saveResult.successCount || 0;
+        }
+
+        const dbInfo = databases.length > 0
+          ? `数据库: ${databases.join(', ')}\n`
+          : '所有数据库\n';
+        const message = `关系推断完成！\n\n${dbInfo}推断出 ${relationshipsCount} 个关系\n已保存 ${savedCount} 个关系到数据库\n耗时: ${durationMs}ms`;
+        alert(message);
+      } else {
+        alert(`关系推断失败：${result.message || result.error}`);
+      }
+    } catch (err) {
+      console.error('Error inferring relationships:', err);
+      alert(err instanceof Error ? err.message : 'Failed to infer relationships');
+    } finally {
+      setInferringRelationships(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(dataSource.id);
+        return newSet;
+      });
+    }
+  };
+
   // 表单提交成功后的回调
   const handleFormSuccess = async () => {
     setShowModal(false);
@@ -214,8 +293,10 @@ export default function DataSourcesPage() {
                 onDelete={handleDelete}
                 onTestConnection={handleTestConnection}
                 onSync={handleSync}
+                onInferRelationships={handleInferRelationships}
                 testingConnections={testingConnections}
                 syncingDataSources={syncingDataSources}
+                inferringRelationships={inferringRelationships}
               />
             )}
 

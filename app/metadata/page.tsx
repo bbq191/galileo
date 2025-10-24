@@ -15,10 +15,40 @@ export default function MetadataPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // 从URL参数加载表ID
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tableId = params.get('tableId');
+
+    if (tableId) {
+      loadTableById(parseInt(tableId));
+    }
+  }, []);
+
+  // 根据表ID加载表信息
+  const loadTableById = async (tableId: number) => {
+    try {
+      const response = await fetch(`/api/metadata/tables?tableId=${tableId}`);
+      const result = await response.json();
+
+      if (result.status === 'success' && result.data && result.data.length > 0) {
+        const table = result.data[0];
+        setSelectedTable(table);
+        setSelectedDatabase(table.databaseId);
+        // 加载数据源信息以便正确显示
+        loadDataSources();
+      }
+    } catch (err) {
+      console.error('Error loading table by ID:', err);
+    }
+  };
+
   // 加载数据源列表
   useEffect(() => {
-    loadDataSources();
-  }, []);
+    if (!selectedTable) {
+      loadDataSources();
+    }
+  }, [selectedTable]);
 
   const loadDataSources = async () => {
     try {

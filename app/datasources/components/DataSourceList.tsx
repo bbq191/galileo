@@ -7,6 +7,7 @@ interface DataSource {
   host: string;
   port: number;
   username: string;
+  databases?: string[];
   status: 'active' | 'inactive' | 'error';
   lastSyncAt: string | null;
   createdAt: string;
@@ -24,8 +25,10 @@ interface DataSourceListProps {
   onDelete: (id: number) => void;
   onTestConnection: (id: number) => void;
   onSync: (id: number) => void;
+  onInferRelationships: (dataSource: DataSource) => void;
   testingConnections: Set<number>;
   syncingDataSources: Set<number>;
+  inferringRelationships: Set<number>;
 }
 
 export default function DataSourceList({
@@ -34,8 +37,10 @@ export default function DataSourceList({
   onDelete,
   onTestConnection,
   onSync,
+  onInferRelationships,
   testingConnections,
   syncingDataSources,
+  inferringRelationships,
 }: DataSourceListProps) {
   // 获取状态徽章
   const getStatusBadge = (status: string) => {
@@ -167,6 +172,22 @@ export default function DataSourceList({
                     ) : (
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                  </button>
+
+                  {/* 推断关系按钮 */}
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    onClick={() => onInferRelationships(ds)}
+                    disabled={inferringRelationships.has(ds.id)}
+                    title="推断关系"
+                  >
+                    {inferringRelationships.has(ds.id) ? (
+                      <span className="loading loading-spinner loading-xs"></span>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1h4v1a2 2 0 11-4 0zM12 14c.015-.34.208-.646.477-.859a4 4 0 10-4.954 0c.27.213.462.519.476.859h4.002z" />
                       </svg>
                     )}
                   </button>

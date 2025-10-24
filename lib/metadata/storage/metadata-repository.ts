@@ -4,6 +4,7 @@
  */
 
 import prisma from '@/lib/prisma/client';
+import { changeTracker } from './change-tracker';
 import type {
   CreateDatabaseMetaInput,
   UpdateDatabaseMetaInput,
@@ -108,7 +109,10 @@ export class MetadataRepository {
    * 创建或更新数据库元数据
    */
   async upsertDatabase(input: CreateDatabaseMetaInput): Promise<DatabaseMeta> {
-    return await prisma.databaseMeta.upsert({
+    // 查询是否已存在
+    const existing = await this.getDatabaseByName(input.sourceId, input.databaseName);
+
+    const result = await prisma.databaseMeta.upsert({
       where: {
         sourceId_databaseName: {
           sourceId: input.sourceId,
@@ -128,6 +132,18 @@ export class MetadataRepository {
         lastSyncedAt: new Date(),
       },
     });
+
+    // 记录变更
+    try {
+      if (!existing) {
+        await changeTracker.trackDatabaseChange('database_added', result);
+      }
+    } catch (error) {
+      console.error('记录数据库变更失败:', error);
+      // 不影响主流程
+    }
+
+    return result;
   }
 
   // ==================== 表元数据 ====================
@@ -254,7 +270,10 @@ export class MetadataRepository {
    * 创建或更新表元数据
    */
   async upsertTable(input: CreateTableMetaInput): Promise<TableMeta> {
-    return await prisma.tableMeta.upsert({
+    // 查询是否已存在
+    const existing = await this.getTableByName(input.databaseId, input.tableName);
+
+    const result = await prisma.tableMeta.upsert({
       where: {
         databaseId_tableName: {
           databaseId: input.databaseId,
@@ -284,6 +303,20 @@ export class MetadataRepository {
         lastSyncedAt: new Date(),
       },
     });
+
+    // 记录变更
+    try {
+      if (!existing) {
+        await changeTracker.trackTableChange('table_added', result);
+      } else {
+        await changeTracker.detectTableChanges(existing, result);
+      }
+    } catch (error) {
+      console.error('记录表变更失败:', error);
+      // 不影响主流程
+    }
+
+    return result;
   }
 
   // ==================== 字段元数据 ====================
@@ -366,7 +399,10 @@ export class MetadataRepository {
    * 创建或更新字段元数据
    */
   async upsertColumn(input: CreateColumnMetaInput): Promise<ColumnMeta> {
-    return await prisma.columnMeta.upsert({
+    // 查询是否已存在
+    const existing = await this.getColumnByName(input.tableId, input.columnName);
+
+    const result = await prisma.columnMeta.upsert({
       where: {
         tableId_columnName: {
           tableId: input.tableId,
@@ -400,6 +436,20 @@ export class MetadataRepository {
         ordinalPosition: input.ordinalPosition,
       },
     });
+
+    // 记录变更
+    try {
+      if (!existing) {
+        await changeTracker.trackColumnChange('column_added', result);
+      } else {
+        await changeTracker.detectColumnChanges(existing, result);
+      }
+    } catch (error) {
+      console.error('记录字段变更失败:', error);
+      // 不影响主流程
+    }
+
+    return result;
   }
 
   /**
@@ -648,6 +698,45 @@ export class MetadataRepository {
         reasoning: input.reasoning,
       },
     });
+  }
+
+  /**
+   * 批量保存推断关系
+   */
+  async batchSaveInferredRelationships(
+    inputs: CreateInferredRelationshipInput[]
+  ): Promise<BatchSaveResult> {
+    const startTime = Date.now();
+    let successCount = 0;
+    let failureCount = 0;
+    const errors: Array<{ entity: string; error: string }> = [];
+
+    console.log(`开始批量保存 ${inputs.length} 个推断关系...`);
+
+    for (const input of inputs) {
+      try {
+        await this.upsertInferredRelationship(input);
+        successCount++;
+      } catch (error) {
+        failureCount++;
+        const entity = `${input.sourceTableId}.${input.sourceColumnId} -> ${input.targetTableId}.${input.targetColumnId}`;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        errors.push({ entity, error: errorMessage });
+        console.error(`保存推断关系失败 [${entity}]:`, errorMessage);
+      }
+    }
+
+    const duration = Date.now() - startTime;
+
+    console.log(`批量保存完成: 成功 ${successCount}, 失败 ${failureCount}, 耗时 ${duration}ms`);
+
+    return {
+      successCount,
+      failureCount,
+      skippedCount: 0,
+      errors,
+      duration,
+    };
   }
 
   // ==================== 元数据变更记录 ====================

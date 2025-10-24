@@ -13,12 +13,39 @@ import { metadataRepository } from '@/lib/metadata/storage';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+    const tableId = searchParams.get('tableId');
     const databaseId = searchParams.get('databaseId');
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '20');
     const search = searchParams.get('search') || undefined;
     const orderBy = searchParams.get('orderBy') || 'tableName';
     const orderDirection = (searchParams.get('orderDirection') || 'asc') as 'asc' | 'desc';
+
+    // 如果提供了 tableId, 直接查询单个表
+    if (tableId) {
+      const table = await metadataRepository.getTableById(parseInt(tableId));
+
+      if (!table) {
+        return NextResponse.json(
+          {
+            status: 'error',
+            message: 'Table not found',
+          },
+          { status: 404 }
+        );
+      }
+
+      // 转换 BigInt 为字符串
+      const serializedTable = {
+        ...table,
+        rowCount: table.rowCount ? table.rowCount.toString() : '0',
+      };
+
+      return NextResponse.json({
+        status: 'success',
+        data: [serializedTable], // 返回数组格式以保持一致性
+      });
+    }
 
     if (!databaseId) {
       return NextResponse.json(

@@ -13,6 +13,7 @@ export default function Home() {
         <div className="flex gap-4 justify-center">
           <a href="/datasources" className="btn btn-primary">数据源管理</a>
           <a href="/metadata" className="btn btn-outline">元数据浏览</a>
+          <a href="/relationships" className="btn btn-outline">关系图谱</a>
         </div>
 
         <div className="mt-12 stats shadow">

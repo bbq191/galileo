@@ -14,6 +14,27 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const sourceId = searchParams.get('sourceId');
+    const databaseId = searchParams.get('databaseId');
+
+    // 如果提供了 databaseId, 直接查询单个数据库
+    if (databaseId) {
+      const database = await metadataRepository.getDatabaseById(parseInt(databaseId));
+
+      if (!database) {
+        return NextResponse.json(
+          {
+            status: 'error',
+            message: 'Database not found',
+          },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({
+        status: 'success',
+        data: [database], // 返回数组格式以保持一致性
+      });
+    }
 
     if (!sourceId) {
       return NextResponse.json(

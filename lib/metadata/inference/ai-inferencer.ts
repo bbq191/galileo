@@ -128,8 +128,10 @@ export class AIInferencer {
       return {
         sourceTable: sourceColumn.tableName,
         sourceColumn: sourceColumn.columnName,
+        sourceDatabaseName: sourceColumn.databaseName,
         targetTable: targetColumn.tableName,
         targetColumn: targetColumn.columnName,
+        targetDatabaseName: targetColumn.databaseName,
         relationshipType: result.type as RelationshipType,
         confidenceScore: result.confidence,
         inferenceMethod: 'ai',
@@ -193,8 +195,10 @@ export class AIInferencer {
         return {
           sourceTable: pair.source.tableName,
           sourceColumn: pair.source.columnName,
+          sourceDatabaseName: pair.source.databaseName,
           targetTable: pair.target.tableName,
           targetColumn: pair.target.columnName,
+          targetDatabaseName: pair.target.databaseName,
           relationshipType: result.type as RelationshipType,
           confidenceScore: result.confidence,
           inferenceMethod: 'ai',
@@ -270,30 +274,58 @@ export class AIInferencer {
         throw new Error('未找到 JSON 响应');
       }
 
-      const parsed = JSON.parse(jsonMatch[0]);
+      let jsonStr = jsonMatch[0];
 
-      // 验证必需字段
-      if (
-        typeof parsed.hasRelationship !== 'boolean' ||
-        typeof parsed.confidence !== 'number'
-      ) {
-        throw new Error('AI 响应格式不正确');
+      // 尝试修复常见的 JSON 格式问题
+      try {
+        // 1. 移除多余的逗号（如 ,} 或 ,]）
+        jsonStr = jsonStr.replace(/,\s*([}\]])/g, '$1');
+
+        // 2. 修复缺少引号的属性名（如果有）
+        jsonStr = jsonStr.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
+
+        // 3. 修复未加引号的值：unknown, undefined, NaN 等
+        jsonStr = jsonStr.replace(/:\s*(unknown|undefined|NaN)\s*([,}\]])/gi, ': null$2');
+
+        // 4. 移除注释（如果有）
+        jsonStr = jsonStr.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+
+        const parsed = JSON.parse(jsonStr);
+
+        // 如果 hasRelationship 是 null（从 unknown 转换而来），设为 false
+        if (parsed.hasRelationship === null || parsed.hasRelationship === undefined) {
+          parsed.hasRelationship = false;
+        }
+
+        // 验证必需字段
+        if (
+          typeof parsed.hasRelationship !== 'boolean' ||
+          typeof parsed.confidence !== 'number'
+        ) {
+          throw new Error('AI 响应格式不正确');
+        }
+
+        // 归一化置信度
+        parsed.confidence = Math.max(0, Math.min(1, parsed.confidence));
+
+        // 默认值
+        if (!parsed.type) {
+          parsed.type = 'one-to-many';
+        }
+        if (!parsed.reasoning) {
+          parsed.reasoning = 'AI 推断';
+        }
+
+        return parsed as AIInferenceResult;
+      } catch (parseError) {
+        // 如果修复后仍然无法解析，记录详细错误
+        console.error('JSON 解析失败，修复后的JSON:', jsonStr);
+        throw parseError;
       }
-
-      // 归一化置信度
-      parsed.confidence = Math.max(0, Math.min(1, parsed.confidence));
-
-      // 默认值
-      if (!parsed.type) {
-        parsed.type = 'one-to-many';
-      }
-      if (!parsed.reasoning) {
-        parsed.reasoning = 'AI 推断';
-      }
-
-      return parsed as AIInferenceResult;
     } catch (error) {
-      console.error('AI 响应解析失败:', error, '\n原始响应:', response);
+      console.error('AI 响应解析失败:', error);
+      console.error('原始响应:', response);
+      console.error('错误详情:', error instanceof Error ? error.message : String(error));
       throw new Error('AI 响应解析失败');
     }
   }
@@ -311,38 +343,79 @@ export class AIInferencer {
         throw new Error('未找到 JSON 数组响应');
       }
 
-      const parsed = JSON.parse(jsonMatch[0]);
+      let jsonStr = jsonMatch[0];
 
-      if (!Array.isArray(parsed)) {
-        throw new Error('AI 响应不是数组');
+      // 尝试修复常见的 JSON 格式问题
+      try {
+        // 1. 移除多余的逗号（如 ,} 或 ,]）
+        jsonStr = jsonStr.replace(/,\s*([}\]])/g, '$1');
+
+        // 2. 修复缺少引号的属性名（如果有）
+        jsonStr = jsonStr.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
+
+        // 3. 修复未加引号的值：unknown, undefined, NaN 等
+        jsonStr = jsonStr.replace(/:\s*(unknown|undefined|NaN)\s*([,}\]])/gi, ': null$2');
+
+        // 4. 移除注释（如果有）
+        jsonStr = jsonStr.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+
+        const parsed = JSON.parse(jsonStr);
+
+        if (!Array.isArray(parsed)) {
+          throw new Error('AI 响应不是数组');
+        }
+
+        // 验证和归一化每个结果
+        const validResults: Array<AIInferenceResult & { pairIndex: number }> = [];
+
+        for (const item of parsed) {
+          try {
+            // 如果 hasRelationship 是 null（从 unknown 转换而来），设为 false
+            if (item.hasRelationship === null || item.hasRelationship === undefined) {
+              item.hasRelationship = false;
+            }
+
+            // 验证必需字段
+            if (
+              typeof item.pairIndex !== 'number' ||
+              typeof item.hasRelationship !== 'boolean' ||
+              typeof item.confidence !== 'number'
+            ) {
+              console.warn('跳过格式不正确的批量响应项:', item);
+              continue;
+            }
+
+            // 归一化置信度
+            item.confidence = Math.max(0, Math.min(1, item.confidence));
+
+            // 默认值
+            if (!item.type) {
+              item.type = 'one-to-many';
+            }
+            if (!item.reasoning) {
+              item.reasoning = 'AI 推断';
+            }
+
+            validResults.push(item);
+          } catch (itemError) {
+            console.warn('处理批量响应项时出错:', itemError, item);
+            continue;
+          }
+        }
+
+        return validResults;
+      } catch (parseError) {
+        // 如果修复后仍然无法解析，记录详细错误
+        console.error('JSON 解析失败，修复后的JSON:', jsonStr);
+        throw parseError;
       }
-
-      // 验证和归一化每个结果
-      return parsed.map((item) => {
-        if (
-          typeof item.pairIndex !== 'number' ||
-          typeof item.hasRelationship !== 'boolean' ||
-          typeof item.confidence !== 'number'
-        ) {
-          throw new Error('批量响应项格式不正确');
-        }
-
-        // 归一化置信度
-        item.confidence = Math.max(0, Math.min(1, item.confidence));
-
-        // 默认值
-        if (!item.type) {
-          item.type = 'one-to-many';
-        }
-        if (!item.reasoning) {
-          item.reasoning = 'AI 推断';
-        }
-
-        return item;
-      });
     } catch (error) {
-      console.error('批量 AI 响应解析失败:', error, '\n原始响应:', response);
-      throw new Error('批量 AI 响应解析失败');
+      console.error('批量 AI 响应解析失败:', error);
+      console.error('原始响应:', response);
+      console.error('错误详情:', error instanceof Error ? error.message : String(error));
+
+      // 返回空数组而不是抛出异常，允许推断继续进行
+      return [];
     }
   }
 

@@ -4,11 +4,17 @@
  */
 
 import seedDataDictionary from './seeds/data-dictionary';
+import seedBusinessDomains from './seeds/business-domains';
 
 async function main() {
   console.log('========================================');
   console.log('开始执行数据库种子数据初始化...');
   console.log('========================================\n');
+
+  // 初始化业务域
+  await seedBusinessDomains();
+
+  console.log('');
 
   // 初始化数据字典
   await seedDataDictionary();
