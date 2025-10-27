@@ -95,6 +95,15 @@ export class RelationshipGraphBuilder {
         select: { id: true },
       });
       tables.forEach((t) => tableIds.add(t.id));
+
+      // 对于数据库视图，也要查找跨库关系的目标表
+      // 这样可以显示跨库关系
+      await this.findCrossDatabaseRelatedTables(
+        Array.from(tableIds),
+        tableIds,
+        includeInferred,
+        minConfidence
+      );
     } else {
       throw new Error('Either tableId or databaseId is required');
     }
@@ -197,6 +206,96 @@ export class RelationshipGraphBuilder {
         )
       );
     }
+  }
+
+  /**
+   * 查找跨数据库关系的目标表
+   * 用于在数据库视图中显示跨库关系
+   */
+  private async findCrossDatabaseRelatedTables(
+    sourceTableIds: number[],
+    visited: Set<number>,
+    includeInferred: boolean,
+    minConfidence: number
+  ): Promise<void> {
+    // 批量查询显式关系和推断关系
+    const [explicitRels, inferredRels] = await Promise.all([
+      prisma.explicitRelationship.findMany({
+        where: {
+          OR: [
+            { sourceTableId: { in: sourceTableIds } },
+            { targetTableId: { in: sourceTableIds } },
+          ],
+        },
+        select: {
+          sourceTableId: true,
+          targetTableId: true,
+          sourceTable: {
+            select: {
+              databaseId: true,
+            },
+          },
+          targetTable: {
+            select: {
+              databaseId: true,
+            },
+          },
+        },
+      }),
+      includeInferred
+        ? prisma.inferredRelationship.findMany({
+            where: {
+              OR: [
+                { sourceTableId: { in: sourceTableIds } },
+                { targetTableId: { in: sourceTableIds } },
+              ],
+              confidenceScore: { gte: minConfidence },
+            },
+            select: {
+              sourceTableId: true,
+              targetTableId: true,
+              sourceTable: {
+                select: {
+                  databaseId: true,
+                },
+              },
+              targetTable: {
+                select: {
+                  databaseId: true,
+                },
+              },
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    // 收集跨库关系的目标表 ID
+    const crossDbTableIds = new Set<number>();
+
+    explicitRels.forEach((rel) => {
+      // 检查是否为跨库关系
+      if (rel.sourceTable.databaseId !== rel.targetTable.databaseId) {
+        if (sourceTableIds.includes(rel.sourceTableId)) {
+          crossDbTableIds.add(rel.targetTableId);
+        } else if (sourceTableIds.includes(rel.targetTableId)) {
+          crossDbTableIds.add(rel.sourceTableId);
+        }
+      }
+    });
+
+    inferredRels.forEach((rel) => {
+      // 检查是否为跨库关系
+      if (rel.sourceTable.databaseId !== rel.targetTable.databaseId) {
+        if (sourceTableIds.includes(rel.sourceTableId)) {
+          crossDbTableIds.add(rel.targetTableId);
+        } else if (sourceTableIds.includes(rel.targetTableId)) {
+          crossDbTableIds.add(rel.sourceTableId);
+        }
+      }
+    });
+
+    // 添加到已访问集合
+    crossDbTableIds.forEach((id) => visited.add(id));
   }
 
   /**

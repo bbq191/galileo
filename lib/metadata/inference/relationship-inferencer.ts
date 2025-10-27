@@ -275,43 +275,186 @@ export class RelationshipInferencer {
 
     const startTime = Date.now();
     const relationships: InferredRelationship[] = [];
+    const rulesUsedMap = new Map<string, number>();
 
     console.log(`\n========================================`);
     console.log(`开始推断跨数据库关系`);
     console.log(`========================================`);
 
-    // 收集所有表名和字段
-    const allTableNames: string[] = [];
+    // 收集所有表名和字段，按数据库分组
     const allColumns: ColumnInfo[] = [];
+    const columnsByDatabase = new Map<string, Record<string, ColumnInfo[]>>();
 
     for (const [dbName, columns] of databases) {
       allColumns.push(...columns);
-      const tables = this.groupColumnsByTable(columns);
-      allTableNames.push(...Object.keys(tables));
+      const tableGroups = this.groupColumnsByTable(columns);
+      columnsByDatabase.set(dbName, tableGroups);
     }
 
     console.log(`数据库数: ${databases.size}`);
-    console.log(`总表数: ${allTableNames.length}`);
     console.log(`总字段数: ${allColumns.length}\n`);
 
-    // 使用相同的推断逻辑，但允许跨数据库匹配
-    // TODO: 实现跨数据库推断逻辑
+    let checkedPairs = 0;
+
+    // 遍历每个数据库作为源
+    for (const [sourceDbName, sourceTableGroups] of columnsByDatabase) {
+      const sourceTableNames = Object.keys(sourceTableGroups);
+
+      // 遍历源数据库的每个表
+      for (const sourceTable of sourceTableNames) {
+        const sourceColumns = sourceTableGroups[sourceTable];
+
+        // 遍历源表的每个字段
+        for (const sourceColumn of sourceColumns) {
+          // 性能优化：跳过不太可能是外键的字段
+          if (this.shouldSkipColumn(sourceColumn)) {
+            continue;
+          }
+
+          // 使用命名分析获取可能的目标表
+          if (this.config.enableNamingAnalysis) {
+            const analysis = this.namingAnalyzer.analyze(sourceColumn.columnName);
+
+            if (analysis.targetTable) {
+              // 在所有数据库中查找匹配的表
+              for (const [targetDbName, targetTableGroups] of columnsByDatabase) {
+                const targetTableNames = Object.keys(targetTableGroups);
+
+                // 智能查找匹配的表
+                const matchedTable = this.namingAnalyzer.findMatchingTable(
+                  analysis.targetTable,
+                  targetTableNames
+                );
+
+                if (matchedTable) {
+                  const targetColumns = targetTableGroups[matchedTable];
+                  const targetColumn = targetColumns.find(
+                    (col) => col.columnName.toLowerCase() === analysis.targetColumn.toLowerCase()
+                  );
+
+                  if (targetColumn) {
+                    checkedPairs++;
+
+                    // 使用规则引擎验证
+                    const evaluation = this.config.enableRulesEngine
+                      ? this.rulesEngine.evaluate(sourceColumn, targetColumn)
+                      : { isRelated: true, confidence: analysis.confidence, reasoning: [], matchedRules: [] };
+
+                    if (evaluation.isRelated && evaluation.confidence >= this.config.minConfidence) {
+                      const relationship = this.createInferredRelationship(
+                        sourceColumn,
+                        targetColumn,
+                        evaluation.confidence,
+                        analysis.pattern?.description || '跨库命名模式匹配',
+                        'rule'
+                      );
+
+                      relationships.push(relationship);
+
+                      // 统计规则使用
+                      evaluation.matchedRules.forEach((ruleName) => {
+                        rulesUsedMap.set(ruleName, (rulesUsedMap.get(ruleName) || 0) + 1);
+                      });
+
+                      console.log(
+                        `✓ 跨库关系: ${sourceDbName}.${sourceColumn.tableName}.${sourceColumn.columnName} → ${targetDbName}.${targetColumn.tableName}.${targetColumn.columnName} (置信度: ${evaluation.confidence})`
+                      );
+                    }
+                  }
+                }
+
+                // 限制检查数量
+                if (checkedPairs >= this.config.maxPairsToCheck) {
+                  break;
+                }
+              }
+            }
+          }
+
+          // 限制检查数量
+          if (checkedPairs >= this.config.maxPairsToCheck) {
+            break;
+          }
+        }
+
+        if (checkedPairs >= this.config.maxPairsToCheck) {
+          break;
+        }
+      }
+
+      if (checkedPairs >= this.config.maxPairsToCheck) {
+        console.log(`\n⚠️  达到最大检查数量限制: ${this.config.maxPairsToCheck}`);
+        break;
+      }
+    }
+
+    // AI 推断阶段：对规则引擎未覆盖的字段进行 AI 推断
+    if (this.config.enableAIInference) {
+      console.log(`\n========================================`);
+      console.log(`AI 跨库推断阶段`);
+      console.log(`========================================`);
+
+      // 构建所有表的字段映射
+      const allTableColumns: Record<string, ColumnInfo[]> = {};
+      const allTableNames: string[] = [];
+
+      for (const [dbName, tableGroups] of columnsByDatabase) {
+        for (const [tableName, columns] of Object.entries(tableGroups)) {
+          const fullTableName = `${dbName}.${tableName}`;
+          allTableColumns[fullTableName] = columns;
+          allTableNames.push(fullTableName);
+        }
+      }
+
+      const aiRelationships = await this.performAIInference(
+        allColumns,
+        allTableColumns,
+        allTableNames,
+        relationships
+      );
+
+      relationships.push(...aiRelationships);
+
+      console.log(`AI 推断出跨库关系: ${aiRelationships.length}`);
+      console.log(`========================================\n`);
+    }
 
     const endTime = Date.now();
     const duration = endTime - startTime;
 
+    // 统计
+    const stats = {
+      totalColumns: allColumns.length,
+      checkedPairs,
+      inferredCount: relationships.length,
+      highConfidenceCount: relationships.filter((r) => r.confidenceScore >= 0.8).length,
+      mediumConfidenceCount: relationships.filter(
+        (r) => r.confidenceScore >= 0.6 && r.confidenceScore < 0.8
+      ).length,
+      lowConfidenceCount: relationships.filter((r) => r.confidenceScore < 0.6).length,
+      duration,
+    };
+
+    const rulesUsed = Array.from(rulesUsedMap.entries()).map(([ruleName, matchCount]) => ({
+      ruleName,
+      matchCount,
+    }));
+
+    console.log(`\n========================================`);
+    console.log(`跨库推断完成`);
+    console.log(`========================================`);
+    console.log(`检查字段对: ${checkedPairs}`);
+    console.log(`推断出关系: ${stats.inferredCount}`);
+    console.log(`  - 高置信度 (≥0.8): ${stats.highConfidenceCount}`);
+    console.log(`  - 中置信度 (0.6-0.8): ${stats.mediumConfidenceCount}`);
+    console.log(`  - 低置信度 (<0.6): ${stats.lowConfidenceCount}`);
+    console.log(`耗时: ${duration}ms`);
+    console.log(`========================================\n`);
+
     return {
       relationships,
-      stats: {
-        totalColumns: allColumns.length,
-        checkedPairs: 0,
-        inferredCount: relationships.length,
-        highConfidenceCount: 0,
-        mediumConfidenceCount: 0,
-        lowConfidenceCount: 0,
-        duration,
-      },
-      rulesUsed: [],
+      stats,
+      rulesUsed,
     };
   }
 

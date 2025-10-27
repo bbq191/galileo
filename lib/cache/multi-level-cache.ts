@@ -10,6 +10,32 @@ import { CACHE_CONFIGS, generateCacheKey, cacheStats } from './cache-config';
 import type { CacheConfig } from './cache-config';
 
 /**
+ * 自定义 JSON 序列化，支持 BigInt
+ */
+function serializeJSON(value: any): string {
+  return JSON.stringify(value, (_, val) => {
+    // 将 BigInt 转换为字符串并标记
+    if (typeof val === 'bigint') {
+      return { __type: 'bigint', value: val.toString() };
+    }
+    return val;
+  });
+}
+
+/**
+ * 自定义 JSON 反序列化，还原 BigInt
+ */
+function deserializeJSON<T>(json: string): T {
+  return JSON.parse(json, (_, val) => {
+    // 还原 BigInt
+    if (val && typeof val === 'object' && val.__type === 'bigint') {
+      return BigInt(val.value);
+    }
+    return val;
+  });
+}
+
+/**
  * L1 缓存条目
  */
 interface L1CacheEntry<T> {
@@ -296,7 +322,7 @@ export class MultiLevelCache {
         return null;
       }
 
-      return JSON.parse(data) as T;
+      return deserializeJSON<T>(data);
     } catch (error) {
       console.error('[Cache] L2 缓存读取失败:', error);
       return null;
@@ -309,7 +335,7 @@ export class MultiLevelCache {
   private async setL2(key: string, value: any, ttl: number): Promise<void> {
     try {
       const redis = getRedisClient();
-      await redis.setex(key, ttl, JSON.stringify(value));
+      await redis.setex(key, ttl, serializeJSON(value));
     } catch (error) {
       console.error('[Cache] L2 缓存写入失败:', error);
     }

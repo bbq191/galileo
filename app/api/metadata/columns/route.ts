@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { metadataRepository } from '@/lib/metadata/storage';
+import { cachedMetadataRepository } from '@/lib/metadata/storage/cached-metadata-repository';
 
 /**
  * GET /api/metadata/columns
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 获取字段列表
-    const columns = await metadataRepository.getColumnsByTable(parseInt(tableId));
+    const columns = await cachedMetadataRepository.getTableColumns(parseInt(tableId));
 
     return NextResponse.json({
       status: 'success',

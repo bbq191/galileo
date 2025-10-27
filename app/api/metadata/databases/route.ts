@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { metadataRepository } from '@/lib/metadata/storage';
+import { cachedMetadataRepository } from '@/lib/metadata/storage/cached-metadata-repository';
 
 /**
  * GET /api/metadata/databases
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 
     // 如果提供了 databaseId, 直接查询单个数据库
     if (databaseId) {
-      const database = await metadataRepository.getDatabaseById(parseInt(databaseId));
+      const database = await cachedMetadataRepository.getDatabaseById(parseInt(databaseId));
 
       if (!database) {
         return NextResponse.json(
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 获取数据库列表
-    const databases = await metadataRepository.getDatabasesBySource(parseInt(sourceId));
+    const databases = await cachedMetadataRepository.getDatabasesBySource(parseInt(sourceId));
 
     return NextResponse.json({
       status: 'success',

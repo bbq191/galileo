@@ -181,7 +181,7 @@ export default function DataSourcesPage() {
         body: JSON.stringify({
           dataSourceId: dataSource.id.toString(),
           databases: databases,
-          crossDatabase: false,
+          crossDatabase: true, // 启用跨库推断以支持跨库查询场景
           minConfidence: 0.7,
         }),
       });

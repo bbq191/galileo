@@ -9,6 +9,7 @@ import { CollectorFactory } from '@/lib/metadata/collectors';
 import { RelationshipInferencer } from '@/lib/metadata/inference';
 import type { ColumnInfo } from '@/lib/metadata/types';
 import { metadataRepository } from '@/lib/metadata/storage';
+import { cachedMetadataRepository } from '@/lib/metadata/storage/cached-metadata-repository';
 import type { InferredRelationship } from '@/lib/metadata/inference/types';
 import type { CreateInferredRelationshipInput } from '@/lib/metadata/storage/types';
 import { Prisma } from '@/app/generated/prisma';

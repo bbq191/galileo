@@ -30,7 +30,7 @@ export class CachedMetadataRepository {
    */
   async getTableColumns(tableId: number): Promise<ColumnMeta[]> {
     return await multiLevelCache.get('column_meta', { tableId }, async () => {
-      return await metadataRepository.getTableColumns(tableId);
+      return await metadataRepository.getColumnsByTable(tableId);
     });
   }
 
@@ -74,28 +74,36 @@ export class CachedMetadataRepository {
 
   /**
    * 获取表的显式关系（带缓存）
+   * 包括作为源表和目标表的所有关系
    */
   async getExplicitRelationshipsByTable(tableId: number) {
     return await multiLevelCache.get(
       'explicit_relationships',
       { tableId },
       async () => {
-        return await metadataRepository.getExplicitRelationshipsByTable(tableId);
+        // 获取作为源表和目标表的所有关系
+        const [asSource, asTarget] = await Promise.all([
+          metadataRepository.getExplicitRelationshipsBySourceTable(tableId),
+          metadataRepository.getExplicitRelationshipsByTargetTable(tableId),
+        ]);
+        return [...asSource, ...asTarget];
       }
     );
   }
 
   /**
    * 获取表的推断关系（带缓存）
+   * 仅返回作为源表的推断关系，且置信度大于等于 minConfidence
    */
   async getInferredRelationshipsByTable(tableId: number, minConfidence: number = 0.7) {
     return await multiLevelCache.get(
       'inferred_relationships',
       { tableId, minConfidence },
       async () => {
-        return await metadataRepository.getInferredRelationshipsByTable(
-          tableId,
-          minConfidence
+        const relationships = await metadataRepository.getInferredRelationshipsBySourceTable(tableId);
+        // 过滤置信度
+        return relationships.filter(rel =>
+          parseFloat(rel.confidenceScore.toString()) >= minConfidence
         );
       }
     );
@@ -180,29 +188,11 @@ export class CachedMetadataRepository {
   // ==================== 其他直接透传方法 ====================
 
   /**
-   * 批量保存表元数据
-   */
-  async batchSaveTables(databaseId: number, tables: any[]) {
-    const result = await metadataRepository.batchSaveTables(databaseId, tables);
-    await this.invalidateDatabaseCache(databaseId);
-    return result;
-  }
-
-  /**
    * 批量保存列元数据
    */
   async batchSaveColumns(tableId: number, columns: any[]) {
-    const result = await metadataRepository.batchSaveColumns(tableId, columns);
+    const result = await metadataRepository.batchUpsertColumns(columns);
     await this.invalidateTableCache(tableId);
-    return result;
-  }
-
-  /**
-   * 批量保存显式关系
-   */
-  async batchSaveExplicitRelationships(relationships: any[]) {
-    const result = await metadataRepository.batchSaveExplicitRelationships(relationships);
-    await this.invalidateRelationshipCache();
     return result;
   }
 

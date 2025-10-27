@@ -139,7 +139,7 @@ export default function RelationshipsPage() {
 
   const loadTables = async (databaseId: number) => {
     try {
-      const response = await fetch(`/api/metadata/tables?databaseId=${databaseId}`);
+      const response = await fetch(`/api/metadata/tables?databaseId=${databaseId}&limit=10000`);
       const result = await response.json();
 
       if (result.status === 'success') {
@@ -272,7 +272,7 @@ export default function RelationshipsPage() {
               {/* 表选择 */}
               <div className="form-control">
                 <label className="label">
-                  <span className="label-text">中心表 (可选)</span>
+                  <span className="label-text text-sm md:text-base">中心表 (可选)</span>
                   {selectedTableId && (
                     <button
                       className="btn btn-xs btn-ghost"
@@ -304,7 +304,7 @@ export default function RelationshipsPage() {
                   )}
                 </label>
                 <select
-                  className="select select-bordered"
+                  className="select select-bordered select-sm md:select-md"
                   value={selectedTableId || ''}
                   onChange={(e) => {
                     const newTableId = e.target.value ? parseInt(e.target.value) : null;
@@ -333,7 +333,7 @@ export default function RelationshipsPage() {
               {/* 关系深度 */}
               <div className="form-control">
                 <label className="label">
-                  <span className="label-text">关系深度: {depth}</span>
+                  <span className="label-text text-sm md:text-base">关系深度: {depth}</span>
                 </label>
                 <input
                   type="range"
@@ -360,7 +360,7 @@ export default function RelationshipsPage() {
               {/* 包含推断关系 */}
               <div className="form-control">
                 <label className="label cursor-pointer">
-                  <span className="label-text">包含推断关系</span>
+                  <span className="label-text text-sm md:text-base">包含推断关系</span>
                   <input
                     type="checkbox"
                     className="toggle toggle-primary"
@@ -373,7 +373,7 @@ export default function RelationshipsPage() {
               {/* 最小置信度 */}
               <div className="form-control">
                 <label className="label">
-                  <span className="label-text">
+                  <span className="label-text text-sm md:text-base">
                     最小置信度: {(minConfidence * 100).toFixed(0)}%
                   </span>
                 </label>

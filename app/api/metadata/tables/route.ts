@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { metadataRepository } from '@/lib/metadata/storage';
+import { cachedMetadataRepository } from '@/lib/metadata/storage/cached-metadata-repository';
 
 /**
  * GET /api/metadata/tables
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
 
     // 如果提供了 tableId, 直接查询单个表
     if (tableId) {
-      const table = await metadataRepository.getTableById(parseInt(tableId));
+      const table = await cachedMetadataRepository.getTableById(parseInt(tableId));
 
       if (!table) {
         return NextResponse.json(
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 分页获取表列表
-    const result = await metadataRepository.getTablesPaginated(parseInt(databaseId), {
+    const result = await cachedMetadataRepository.getTablesPaginated(parseInt(databaseId), {
       page,
       limit,
       search,
