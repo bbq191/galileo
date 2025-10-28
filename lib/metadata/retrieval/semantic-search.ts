@@ -5,15 +5,28 @@
 
 import { PrismaClient } from '@prisma/client';
 import { TableSearchResult, SearchOptions } from './types';
+import { VectorSearchService } from '@/lib/vector/vector-search-service';
 
 /**
  * 语义搜索引擎
  */
 export class SemanticSearch {
   private prisma: PrismaClient;
+  private vectorSearch?: VectorSearchService;
+  private useVectorSearch: boolean;
 
-  constructor() {
+  constructor(options: { enableVectorSearch?: boolean } = {}) {
     this.prisma = new PrismaClient();
+    this.useVectorSearch = options.enableVectorSearch !== false;
+
+    // 初始化向量搜索（可选）
+    if (this.useVectorSearch) {
+      this.vectorSearch = new VectorSearchService();
+      this.vectorSearch.initialize().catch(err => {
+        console.warn('向量搜索初始化失败，将只使用关键词搜索:', err.message);
+        this.useVectorSearch = false;
+      });
+    }
   }
 
   /**
@@ -27,20 +40,30 @@ export class SemanticSearch {
     const threshold = options.threshold || 0.3;
 
     try {
-      // 1. 精确匹配
+      // 1. 精确匹配（优先级最高）
       const exactMatches = await this.findExactTableMatches(query, limit);
       if (exactMatches.length > 0) {
         return exactMatches;
       }
 
-      // 2. 模糊匹配
-      const fuzzyMatches = await this.findFuzzyTableMatches(query, limit);
+      // 2. 并行执行关键词搜索和向量搜索
+      const [keywordResults, vectorResults] = await Promise.all([
+        this.findFuzzyTableMatches(query, limit),
+        this.findVectorTableMatches(query, limit),
+      ]);
 
-      // 3. 过滤低分结果
-      const filteredMatches = fuzzyMatches.filter(m => m.score >= threshold);
+      // 3. 合并结果
+      const mergedResults = this.mergeSearchResults(
+        keywordResults,
+        vectorResults,
+        0.6 // 向量搜索权重
+      );
 
-      // 4. 按分数排序
-      return filteredMatches.sort((a, b) => b.score - a.score);
+      // 4. 过滤低分结果
+      const filteredMatches = mergedResults.filter(m => m.score >= threshold);
+
+      // 5. 按分数排序
+      return filteredMatches.sort((a, b) => b.score - a.score).slice(0, limit);
     } catch (error) {
       console.error('搜索表时出错:', error);
       return [];
@@ -242,9 +265,121 @@ export class SemanticSearch {
   }
 
   /**
+   * 使用向量搜索查找表
+   */
+  private async findVectorTableMatches(
+    query: string,
+    limit: number
+  ): Promise<TableSearchResult[]> {
+    if (!this.useVectorSearch || !this.vectorSearch) {
+      return [];
+    }
+
+    try {
+      const vectorResults = await this.vectorSearch.searchTables(query, {
+        limit,
+        threshold: 0.4, // 向量相似度阈值
+      });
+
+      // 获取完整的表信息
+      const tableIds = vectorResults
+        .map(r => r.item.id)
+        .filter(id => id !== undefined);
+
+      const tables = await this.prisma.tableMeta.findMany({
+        where: {
+          id: { in: tableIds },
+        },
+        include: {
+          database: true,
+          columns: true,
+        },
+      });
+
+      // 构建结果
+      return vectorResults.map(vr => {
+        const table = tables.find((t: any) => t.id === vr.item.id);
+        if (!table) {
+          return null;
+        }
+
+        return {
+          table,
+          score: vr.score,
+          matchReason: '向量语义匹配',
+        };
+      }).filter(r => r !== null) as TableSearchResult[];
+    } catch (error) {
+      console.warn('向量搜索失败:', error);
+      return [];
+    }
+  }
+
+  /**
+   * 合并关键词搜索和向量搜索的结果
+   */
+  private mergeSearchResults(
+    keywordResults: TableSearchResult[],
+    vectorResults: TableSearchResult[],
+    vectorWeight: number = 0.6
+  ): TableSearchResult[] {
+    const resultMap = new Map<number, TableSearchResult>();
+
+    // 1. 处理关键词搜索结果
+    for (const result of keywordResults) {
+      const tableId = result.table.id;
+      resultMap.set(tableId, {
+        ...result,
+        score: result.score * (1 - vectorWeight),
+      });
+    }
+
+    // 2. 合并向量搜索结果
+    for (const result of vectorResults) {
+      const tableId = result.table.id;
+      const existing = resultMap.get(tableId);
+
+      if (existing) {
+        // 表已存在，合并分数
+        existing.score += result.score * vectorWeight;
+        existing.matchReason = `${existing.matchReason} + ${result.matchReason}`;
+      } else {
+        // 新表，添加到结果
+        resultMap.set(tableId, {
+          ...result,
+          score: result.score * vectorWeight,
+        });
+      }
+    }
+
+    // 3. 归一化分数（确保最高分为 1.0）
+    const results = Array.from(resultMap.values());
+    if (results.length > 0) {
+      const maxScore = Math.max(...results.map(r => r.score));
+      if (maxScore > 1.0) {
+        results.forEach(r => {
+          r.score = r.score / maxScore;
+        });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * 获取向量搜索服务
+   */
+  getVectorSearchService(): VectorSearchService | undefined {
+    return this.vectorSearch;
+  }
+
+  /**
    * 关闭数据库连接
    */
   async disconnect(): Promise<void> {
     await this.prisma.$disconnect();
+    if (this.vectorSearch) {
+      await this.vectorSearch.close();
+    }
   }
 }

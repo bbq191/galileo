@@ -5,6 +5,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { TableContext, ColumnContext, MetadataContext, RelationshipContext } from './types';
+import { connectionManager } from '@/lib/database';
 
 /**
  * 上下文构建器
@@ -94,20 +95,61 @@ export class ContextBuilder {
     columnName: string,
     limit: number
   ): Promise<any[]> {
-    // 注意：这里需要实际执行 SQL 查询
-    // 为了安全，这里只是占位实现
-    // 实际应该通过 connection manager 获取连接并查询
     try {
-      // TODO: 实现实际的数据查询
-      // const connection = await getConnection(table.database.sourceId);
-      // const [rows] = await connection.query(
-      //   `SELECT DISTINCT \`${columnName}\` FROM \`${table.database.databaseName}\`.\`${table.tableName}\` LIMIT ${limit}`
-      // );
-      // return rows.map((r: any) => r[columnName]);
+      // 检查表是否有必需的数据库信息
+      if (!table.database?.sourceId || !table.database?.databaseName || !table.tableName) {
+        console.warn(`表信息不完整，无法获取示例数据:`, {
+          hasSourceId: !!table.database?.sourceId,
+          hasDatabaseName: !!table.database?.databaseName,
+          hasTableName: !!table.tableName
+        });
+        return [];
+      }
 
-      return []; // 暂时返回空数组
-    } catch (error) {
-      console.warn(`获取示例数据失败 (${table.tableName}.${columnName}):`, error);
+      const sourceId = table.database.sourceId.toString();
+
+      // 检查连接是否存在
+      const hasConnection = await connectionManager.hasConnection(sourceId);
+      if (!hasConnection) {
+        console.warn(`数据源连接不存在: ${sourceId}`);
+        return [];
+      }
+
+      // 获取连接池
+      const pool = await connectionManager.getConnection(sourceId);
+      const connection = await pool.getConnection();
+
+      try {
+        // 构建安全的查询 SQL
+        const sql = `
+          SELECT DISTINCT \`${columnName}\`
+          FROM \`${table.database.databaseName}\`.\`${table.tableName}\`
+          WHERE \`${columnName}\` IS NOT NULL
+          LIMIT ${limit}
+        `;
+
+        // 执行查询
+        const [rows] = await connection.query(sql) as any;
+
+        // 释放连接
+        connection.release();
+
+        // 提取示例值
+        if (Array.isArray(rows) && rows.length > 0) {
+          return rows.map((r: any) => r[columnName]).filter(v => v !== null && v !== undefined);
+        }
+
+        return [];
+      } catch (queryError) {
+        // 确保连接被释放
+        connection.release();
+        throw queryError;
+      }
+    } catch (error: any) {
+      // 只在非预期错误时记录警告
+      if (error.code !== 'ER_NO_SUCH_TABLE' && error.code !== 'ER_BAD_DB_ERROR') {
+        console.warn(`获取示例数据失败 (${table.tableName}.${columnName}):`, error.message);
+      }
       return [];
     }
   }
