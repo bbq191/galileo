@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 
 interface ColumnListProps {
   tableId: number;
@@ -12,11 +12,7 @@ export default function ColumnList({ tableId }: ColumnListProps) {
   const [error, setError] = useState<string | null>(null);
   const [expandedColumn, setExpandedColumn] = useState<number | null>(null);
 
-  useEffect(() => {
-    loadColumns();
-  }, [tableId]);
-
-  const loadColumns = async () => {
+  const loadColumns = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -35,7 +31,11 @@ export default function ColumnList({ tableId }: ColumnListProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [tableId]);
+
+  useEffect(() => {
+    loadColumns();
+  }, [loadColumns]);
 
   const toggleColumn = (columnId: number) => {
     setExpandedColumn(expandedColumn === columnId ? null : columnId);

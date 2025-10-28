@@ -440,7 +440,7 @@ export default function RelationshipsPage() {
                   <a href="/datasources" className="link link-hover mx-1">
                     数据源管理页面
                   </a>
-                  点击"同步元数据"按钮采集表关系,或使用"推断关系"功能生成AI推断的关系。
+                  点击&ldquo;同步元数据&rdquo;按钮采集表关系,或使用&ldquo;推断关系&rdquo;功能生成AI推断的关系。
                 </div>
               </div>
             </div>

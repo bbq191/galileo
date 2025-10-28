@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import MetadataTree from './components/MetadataTree';
 import TableDetail from './components/TableDetail';
 import ColumnList from './components/ColumnList';
@@ -15,42 +15,8 @@ export default function MetadataPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // 从URL参数加载表ID
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const tableId = params.get('tableId');
-
-    if (tableId) {
-      loadTableById(parseInt(tableId));
-    }
-  }, []);
-
-  // 根据表ID加载表信息
-  const loadTableById = async (tableId: number) => {
-    try {
-      const response = await fetch(`/api/metadata/tables?tableId=${tableId}`);
-      const result = await response.json();
-
-      if (result.status === 'success' && result.data && result.data.length > 0) {
-        const table = result.data[0];
-        setSelectedTable(table);
-        setSelectedDatabase(table.databaseId);
-        // 加载数据源信息以便正确显示
-        loadDataSources();
-      }
-    } catch (err) {
-      console.error('Error loading table by ID:', err);
-    }
-  };
-
   // 加载数据源列表
-  useEffect(() => {
-    if (!selectedTable) {
-      loadDataSources();
-    }
-  }, [selectedTable]);
-
-  const loadDataSources = async () => {
+  const loadDataSources = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -73,7 +39,42 @@ export default function MetadataPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // 根据表ID加载表信息
+  const loadTableById = useCallback(async (tableId: number) => {
+    try {
+      const response = await fetch(`/api/metadata/tables?tableId=${tableId}`);
+      const result = await response.json();
+
+      if (result.status === 'success' && result.data && result.data.length > 0) {
+        const table = result.data[0];
+        setSelectedTable(table);
+        setSelectedDatabase(table.databaseId);
+        // 加载数据源信息以便正确显示
+        loadDataSources();
+      }
+    } catch (err) {
+      console.error('Error loading table by ID:', err);
+    }
+  }, [loadDataSources]);
+
+  // 从URL参数加载表ID
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tableId = params.get('tableId');
+
+    if (tableId) {
+      loadTableById(parseInt(tableId));
+    }
+  }, [loadTableById]);
+
+  // 加载数据源列表
+  useEffect(() => {
+    if (!selectedTable) {
+      loadDataSources();
+    }
+  }, [selectedTable, loadDataSources]);
 
   // 搜索元数据
   const handleSearch = async (query: string) => {

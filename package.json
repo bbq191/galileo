@@ -38,10 +38,18 @@
     "test:vector-integration": "tsx lib/vector/__tests__/integration.test.ts",
     "test:vector": "npm run test:embedding && npm run test:vector-store && npm run test:vector-service && npm run test:vector-integration",
     "test:retrieval": "npm run test:semantic-search && npm run test:metadata-retriever && npm run test:context-builder && npm run test:relevance-ranker",
+    "test:intent-recognizer": "tsx lib/nlp/intent-recognizer/__tests__/intent-recognizer.test.ts",
+    "test:sql-generator": "tsx lib/sql/generator/__tests__/sql-generator.test.ts",
+    "test:multi-step-generator": "tsx lib/sql/generator/__tests__/multi-step-generator.test.ts",
+    "test:cross-db-handler": "tsx lib/sql/generator/__tests__/cross-db-handler.test.ts",
+    "test:sql": "npm run test:sql-generator && npm run test:multi-step-generator && npm run test:cross-db-handler",
+    "test:sql-validator": "tsx lib/sql/validator/__tests__/sql-validator.test.ts",
+    "test:security-checker": "tsx lib/sql/validator/__tests__/security-checker.test.ts",
+    "test:timeout-handler": "tsx lib/sql/executor/__tests__/timeout-handler.test.ts",
+    "test:result-formatter": "tsx lib/sql/executor/__tests__/result-formatter.test.ts",
+    "test:query-executor": "tsx lib/sql/executor/__tests__/query-executor.test.ts",
+    "test:executor": "npm run test:timeout-handler && npm run test:result-formatter && npm run test:query-executor",
     "test:all": "npm run test:collector && npm run test:relationship && npm run test:repository && npm run test:change-tracker && npm run test:sync && npm run test:semantic && npm run test:batch && npm run test:change-detector && npm run test:incremental-updater && npm run test:sync-scheduler && npm run test:retrieval && npm run test:vector"
-  },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.17.1",
@@ -53,6 +61,7 @@
     "mysql2": "^3.15.2",
     "next": "^14.2.15",
     "node-cron": "^4.2.1",
+    "node-sql-parser": "^5.3.13",
     "prisma": "^6.17.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

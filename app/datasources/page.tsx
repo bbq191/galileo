@@ -314,7 +314,7 @@ export default function DataSourcesPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
                 </svg>
                 <h3 className="text-lg font-bold mb-2">暂无数据源</h3>
-                <p className="text-base-content/60 mb-4">点击"添加数据源"按钮创建第一个数据源</p>
+                <p className="text-base-content/60 mb-4">点击&ldquo;添加数据源&rdquo;按钮创建第一个数据源</p>
                 <button className="btn btn-primary" onClick={handleAdd}>
                   添加数据源
                 </button>

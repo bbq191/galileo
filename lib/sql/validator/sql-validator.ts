@@ -1,0 +1,295 @@
+/**
+ * SQL 验证器主模块
+ *
+ * 整合语法验证、安全检查、性能分析和权限检查
+ */
+
+import { Parser } from 'node-sql-parser';
+import {
+  ValidationResult,
+  ValidationError,
+  UserPermissions,
+  TableReference,
+  ColumnReference,
+} from './types';
+import { MetadataContext } from '@/lib/metadata/retrieval/types';
+import { SecurityChecker } from './security-checker';
+import { PerformanceAnalyzer } from './performance-analyzer';
+import { PermissionChecker } from './permission-checker';
+
+export class SQLValidator {
+  private parser: Parser;
+  private securityChecker: SecurityChecker;
+  private performanceAnalyzer: PerformanceAnalyzer;
+  private permissionChecker: PermissionChecker;
+
+  constructor() {
+    this.parser = new Parser();
+    this.securityChecker = new SecurityChecker();
+    this.performanceAnalyzer = new PerformanceAnalyzer();
+    this.permissionChecker = new PermissionChecker();
+  }
+
+  /**
+   * 验证 SQL 查询
+   */
+  async validate(
+    sql: string,
+    context: MetadataContext,
+    userPermissions?: UserPermissions
+  ): Promise<ValidationResult> {
+    const result: ValidationResult = {
+      isValid: true,
+      errors: [],
+      warnings: [],
+      securityIssues: [],
+      optimizationSuggestions: [],
+      estimatedCost: { complexity: 'low' }
+    };
+
+    // 1. 语法验证
+    const syntaxErrors = await this.validateSyntax(sql);
+    result.errors.push(...syntaxErrors);
+
+    if (syntaxErrors.length > 0) {
+      result.isValid = false;
+      return result;
+    }
+
+    // 2. 安全检查
+    const securityIssues = await this.securityChecker.check(sql);
+    result.securityIssues.push(...securityIssues);
+
+    if (securityIssues.some(issue => issue.severity === 'critical')) {
+      result.isValid = false;
+      result.errors.push({
+        type: 'security',
+        message: '检测到严重安全问题，查询被拒绝'
+      });
+      return result;
+    }
+
+    // 3. 权限检查
+    if (userPermissions) {
+      const permissionErrors = await this.permissionChecker.check(sql, userPermissions, context);
+      result.errors.push(...permissionErrors);
+
+      if (permissionErrors.length > 0) {
+        result.isValid = false;
+        return result;
+      }
+    }
+
+    // 4. 语义验证（表、字段是否存在）
+    const semanticErrors = await this.validateSemantics(sql, context);
+    result.errors.push(...semanticErrors);
+
+    if (semanticErrors.length > 0) {
+      result.isValid = false;
+      return result;
+    }
+
+    // 5. 性能分析
+    const performanceAnalysis = await this.performanceAnalyzer.analyze(sql, context);
+    result.warnings.push(...performanceAnalysis.warnings);
+    result.optimizationSuggestions.push(...performanceAnalysis.suggestions);
+    result.estimatedCost = performanceAnalysis.estimatedCost;
+
+    return result;
+  }
+
+  /**
+   * 语法验证
+   */
+  private async validateSyntax(sql: string): Promise<ValidationError[]> {
+    try {
+      this.parser.astify(sql, { database: 'MySQL' });
+      return [];
+    } catch (error: any) {
+      return [{
+        type: 'syntax',
+        message: `SQL 语法错误: ${error.message}`,
+        position: error.location ? {
+          line: error.location.start?.line || 0,
+          column: error.location.start?.column || 0
+        } : undefined
+      }];
+    }
+  }
+
+  /**
+   * 语义验证
+   */
+  private async validateSemantics(
+    sql: string,
+    context: MetadataContext
+  ): Promise<ValidationError[]> {
+    const errors: ValidationError[] = [];
+
+    try {
+      const ast = this.parser.astify(sql, { database: 'MySQL' });
+      const statements = Array.isArray(ast) ? ast : [ast];
+
+      for (const statement of statements) {
+        // 提取查询中使用的表和字段
+        const usedTables = this.extractTables(statement);
+        const usedColumns = this.extractColumns(statement);
+
+        // 检查表是否存在
+        for (const table of usedTables) {
+          const exists = context.tables.some(t =>
+            t.tableName === table.name &&
+            (!table.database || t.databaseName === table.database)
+          );
+
+          if (!exists) {
+            errors.push({
+              type: 'semantic',
+              message: `表 ${table.database ? table.database + '.' : ''}${table.name} 不存在或未在元数据中找到`
+            });
+          }
+        }
+
+        // 检查字段是否存在
+        for (const column of usedColumns) {
+          // 找到对应的表
+          let table = context.tables.find(t => t.tableName === column.table);
+
+          // 如果没有指定表名，尝试在所有表中查找
+          if (!table && !column.table && usedTables.length === 1) {
+            table = context.tables.find(t => t.tableName === usedTables[0].name);
+          }
+
+          if (table) {
+            const columnExists = table.columns.some(c => c.columnName === column.name);
+            if (!columnExists && column.name !== '*') {
+              errors.push({
+                type: 'semantic',
+                message: `字段 ${column.table ? column.table + '.' : ''}${column.name} 在表中不存在`
+              });
+            }
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('Semantic validation error:', error);
+      // 语法错误已经在语法验证阶段捕获
+    }
+
+    return errors;
+  }
+
+  /**
+   * 从 AST 提取表引用
+   */
+  private extractTables(ast: any): TableReference[] {
+    const tables: TableReference[] = [];
+
+    if (!ast.from) return tables;
+
+    const processFromItem = (from: any) => {
+      if (from.table) {
+        tables.push({
+          database: from.db,
+          name: from.table,
+          alias: from.as
+        });
+      }
+
+      // 处理 JOIN
+      if (from.join) {
+        processFromItem(from.join);
+      }
+    };
+
+    const fromList = Array.isArray(ast.from) ? ast.from : [ast.from];
+    fromList.forEach(processFromItem);
+
+    return tables;
+  }
+
+  /**
+   * 从 AST 提取列引用
+   */
+  private extractColumns(ast: any): ColumnReference[] {
+    const columns: ColumnReference[] = [];
+
+    // 从 SELECT 子句提取
+    if (ast.columns) {
+      for (const col of ast.columns) {
+        if (col.expr?.type === 'column_ref') {
+          const column = col.expr.column;
+          if (typeof column === 'string') {
+            columns.push({
+              name: column,
+              alias: col.as
+            });
+          } else if (column && typeof column === 'object') {
+            columns.push({
+              table: col.expr.table,
+              name: column.column || column,
+              alias: col.as
+            });
+          }
+        }
+      }
+    }
+
+    // 从 WHERE 子句提取
+    if (ast.where) {
+      this.extractColumnsFromNode(ast.where, columns);
+    }
+
+    // 从 GROUP BY 提取
+    if (ast.groupby && Array.isArray(ast.groupby)) {
+      for (const group of ast.groupby) {
+        if (group.type === 'column_ref') {
+          const column = group.column;
+          if (typeof column === 'string') {
+            columns.push({ name: column });
+          }
+        }
+      }
+    }
+
+    // 从 ORDER BY 提取
+    if (ast.orderby && Array.isArray(ast.orderby)) {
+      for (const order of ast.orderby) {
+        if (order.expr?.type === 'column_ref') {
+          const column = order.expr.column;
+          if (typeof column === 'string') {
+            columns.push({ name: column });
+          }
+        }
+      }
+    }
+
+    return columns;
+  }
+
+  /**
+   * 递归从节点提取列引用
+   */
+  private extractColumnsFromNode(node: any, columns: ColumnReference[]) {
+    if (!node) return;
+
+    if (node.type === 'column_ref') {
+      const column = node.column;
+      if (typeof column === 'string') {
+        columns.push({
+          table: node.table,
+          name: column
+        });
+      }
+    }
+
+    // 递归处理子节点
+    if (node.left) this.extractColumnsFromNode(node.left, columns);
+    if (node.right) this.extractColumnsFromNode(node.right, columns);
+    if (node.args && Array.isArray(node.args)) {
+      for (const arg of node.args) {
+        this.extractColumnsFromNode(arg, columns);
+      }
+    }
+  }
+}

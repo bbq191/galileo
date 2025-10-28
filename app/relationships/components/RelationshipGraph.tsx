@@ -102,6 +102,7 @@ export default function RelationshipGraph({
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tableId, databaseId, depth, includeInferred, minConfidence]);
 
   // 转换为 ReactFlow 数据格式

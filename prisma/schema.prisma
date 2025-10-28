@@ -3,7 +3,7 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../app/generated/prisma"
+  output   = "../node_modules/.prisma/client"
 }
 
 datasource db {
@@ -326,4 +326,36 @@ enum SnapshotType {
   database
   table
   column
+}
+
+// ============================================
+// 查询审计日志表 (Phase 2 - Week 9)
+// ============================================
+model QueryAuditLog {
+  id                     BigInt   @id @default(autoincrement())
+  userId                 String?  @map("user_id") @db.VarChar(100)
+  userName               String?  @map("user_name") @db.VarChar(100)
+  sessionId              String   @map("session_id") @db.VarChar(100)
+  naturalLanguageQuery   String   @map("natural_language_query") @db.Text
+  intent                 Json
+  generatedSql           String   @map("generated_sql") @db.Text
+  executionSuccess       Boolean  @map("execution_success")
+  executionError         String?  @map("execution_error") @db.Text
+  rowCount               Int?     @map("row_count")
+  usedDatabases          Json     @map("used_databases")
+  usedTables             Json     @map("used_tables")
+  intentRecognitionTime  Int      @map("intent_recognition_time") // ms
+  sqlGenerationTime      Int      @map("sql_generation_time") // ms
+  validationTime         Int      @map("validation_time") // ms
+  executionTime          Int      @map("execution_time") // ms
+  totalTime              Int      @map("total_time") // ms
+  ipAddress              String?  @map("ip_address") @db.VarChar(50)
+  userAgent              String?  @map("user_agent") @db.Text
+  timestamp              DateTime @default(now())
+
+  @@index([userId])
+  @@index([timestamp])
+  @@index([executionSuccess])
+  @@index([sessionId])
+  @@map("query_audit_logs")
 }
