@@ -84,3 +84,95 @@ export interface AuditStats {
   successRate: number;
   avgExecutionTime: number;
 }
+
+/**
+ * 分页审计日志结果
+ */
+export interface PaginatedAuditLogs {
+  data: AuditLog[];
+  pagination: {
+    page: number;
+    limit: number;
+    totalCount: number;
+    totalPages: number;
+  };
+}
+
+/**
+ * 时间范围统计
+ */
+export interface TimeRangeStats {
+  date: string;
+  totalQueries: number;
+  successQueries: number;
+  failedQueries: number;
+  avgExecutionTime: number;
+}
+
+/**
+ * 用户查询统计
+ */
+export interface UserQueryStats {
+  userId: string;
+  userName?: string;
+  totalQueries: number;
+  successQueries: number;
+  failedQueries: number;
+  avgExecutionTime: number;
+  lastQueryTime: Date;
+}
+
+/**
+ * 热门查询
+ */
+export interface PopularQuery {
+  naturalLanguageQuery: string;
+  count: number;
+  avgExecutionTime: number;
+  successRate: number;
+  lastUsed: Date;
+}
+
+/**
+ * 数据库使用统计
+ */
+export interface DatabaseUsageStats {
+  databaseName: string;
+  queryCount: number;
+  avgExecutionTime: number;
+  successRate: number;
+}
+
+/**
+ * 表使用统计
+ */
+export interface TableUsageStats {
+  tableName: string;
+  databaseName: string;
+  queryCount: number;
+  avgExecutionTime: number;
+  successRate: number;
+}
+
+/**
+ * 查询模式分析
+ */
+export interface QueryPattern {
+  pattern: string;
+  description: string;
+  count: number;
+  avgExecutionTime: number;
+  successRate: number;
+  examples: string[];
+}
+
+/**
+ * 性能趋势分析
+ */
+export interface PerformanceTrend {
+  date: string;
+  avgExecutionTime: number;
+  queryCount: number;
+  successRate: number;
+  slowQueryCount: number;
+}

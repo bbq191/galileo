@@ -11,7 +11,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import type { AuditLog, AuditLogFilters, AuditStats } from './types';
+import type { AuditLog, AuditLogFilters, AuditStats, PaginatedAuditLogs } from './types';
 
 export class AuditLogger {
   private prisma: PrismaClient;
@@ -31,13 +31,13 @@ export class AuditLogger {
           userName: logEntry.userName,
           sessionId: logEntry.sessionId,
           naturalLanguageQuery: logEntry.naturalLanguageQuery,
-          intent: logEntry.intent as any,
+          intent: JSON.stringify(logEntry.intent),
           generatedSql: logEntry.generatedSQL,
           executionSuccess: logEntry.executionResult.success,
           executionError: logEntry.executionResult.error,
           rowCount: logEntry.executionResult.rowCount,
-          usedDatabases: logEntry.metadata.usedDatabases,
-          usedTables: logEntry.metadata.usedTables,
+          usedDatabases: JSON.stringify(logEntry.metadata.usedDatabases),
+          usedTables: JSON.stringify(logEntry.metadata.usedTables),
           intentRecognitionTime: logEntry.performance.intentRecognitionTime,
           sqlGenerationTime: logEntry.performance.sqlGenerationTime,
           validationTime: logEntry.performance.validationTime,
@@ -52,6 +52,82 @@ export class AuditLogger {
       // 审计日志失败不应该阻塞主流程
       console.error('[AuditLogger] Failed to write audit log:', error);
     }
+  }
+
+  /**
+   * 查询审计日志（带分页信息）
+   */
+  async queryWithPagination(filters: AuditLogFilters): Promise<PaginatedAuditLogs> {
+    const where: any = {};
+
+    if (filters.userId) {
+      where.userId = filters.userId;
+    }
+
+    if (filters.success !== undefined) {
+      where.executionSuccess = filters.success;
+    }
+
+    if (filters.startDate || filters.endDate) {
+      where.timestamp = {};
+      if (filters.startDate) {
+        where.timestamp.gte = filters.startDate;
+      }
+      if (filters.endDate) {
+        where.timestamp.lte = filters.endDate;
+      }
+    }
+
+    const page = filters.page || 1;
+    const limit = filters.limit || 50;
+
+    const [logs, totalCount] = await Promise.all([
+      this.prisma.queryAuditLog.findMany({
+        where,
+        orderBy: { timestamp: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.queryAuditLog.count({ where }),
+    ]);
+
+    return {
+      data: logs.map((log) => ({
+        id: Number(log.id),
+        userId: log.userId || undefined,
+        userName: log.userName || undefined,
+        sessionId: log.sessionId,
+        naturalLanguageQuery: log.naturalLanguageQuery,
+        intent: JSON.parse(log.intent),
+        generatedSQL: log.generatedSql,
+        executionResult: {
+          success: log.executionSuccess,
+          rowCount: log.rowCount || undefined,
+          error: log.executionError || undefined,
+        },
+        metadata: {
+          usedDatabases: JSON.parse(log.usedDatabases),
+          usedTables: JSON.parse(log.usedTables),
+          usedColumns: [],
+        },
+        performance: {
+          intentRecognitionTime: log.intentRecognitionTime,
+          sqlGenerationTime: log.sqlGenerationTime,
+          validationTime: log.validationTime,
+          executionTime: log.executionTime,
+          totalTime: log.totalTime,
+        },
+        timestamp: log.timestamp,
+        ipAddress: log.ipAddress || undefined,
+        userAgent: log.userAgent || undefined,
+      })),
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages: Math.ceil(totalCount / limit),
+      },
+    };
   }
 
   /**
@@ -91,7 +167,7 @@ export class AuditLogger {
       userName: log.userName || undefined,
       sessionId: log.sessionId,
       naturalLanguageQuery: log.naturalLanguageQuery,
-      intent: log.intent as any,
+      intent: JSON.parse(log.intent),
       generatedSQL: log.generatedSql,
       executionResult: {
         success: log.executionSuccess,
@@ -99,8 +175,8 @@ export class AuditLogger {
         error: log.executionError || undefined,
       },
       metadata: {
-        usedDatabases: log.usedDatabases as string[],
-        usedTables: log.usedTables as string[],
+        usedDatabases: JSON.parse(log.usedDatabases),
+        usedTables: JSON.parse(log.usedTables),
         usedColumns: [],
       },
       performance: {
@@ -229,7 +305,7 @@ export class AuditLogger {
       userName: log.userName || undefined,
       sessionId: log.sessionId,
       naturalLanguageQuery: log.naturalLanguageQuery,
-      intent: log.intent as any,
+      intent: JSON.parse(log.intent),
       generatedSQL: log.generatedSql,
       executionResult: {
         success: log.executionSuccess,
@@ -237,8 +313,8 @@ export class AuditLogger {
         error: log.executionError || undefined,
       },
       metadata: {
-        usedDatabases: log.usedDatabases as string[],
-        usedTables: log.usedTables as string[],
+        usedDatabases: JSON.parse(log.usedDatabases),
+        usedTables: JSON.parse(log.usedTables),
         usedColumns: [],
       },
       performance: {

@@ -10,4 +10,12 @@ export type {
   AuditLogFilters,
   AuditStats,
   QueryIntent,
+  PaginatedAuditLogs,
+  TimeRangeStats,
+  UserQueryStats,
+  PopularQuery,
+  DatabaseUsageStats,
+  TableUsageStats,
+  QueryPattern,
+  PerformanceTrend,
 } from './types';

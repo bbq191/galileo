@@ -5,7 +5,7 @@
 
 import crypto from 'crypto';
 import connectionManager from '@/lib/database/connection-manager';
-import { multiLevelCache } from '@/lib/cache/multi-level-cache';
+import { queryCacheManager } from '@/lib/cache/query-cache-manager';
 import { withTimeout } from './timeout-handler';
 import { resultFormatter } from './result-formatter';
 import type { MetadataContext } from '@/lib/metadata/retrieval/types';
@@ -50,8 +50,7 @@ export class QueryExecutor {
     try {
       // 1. 检查缓存
       if (mergedOptions.enableCache) {
-        const cacheKey = mergedOptions.cacheKey || this.generateCacheKey(sql);
-        const cached = await this.getCachedResult<T>(cacheKey);
+        const cached = await queryCacheManager.getResult<T>(sql);
 
         if (cached) {
           console.log(`[QueryExecutor] 缓存命中: ${queryId}`);
@@ -115,10 +114,9 @@ export class QueryExecutor {
         },
       };
 
-      // 7. 缓存结果（小结果集）
-      if (mergedOptions.enableCache && formattedData.length < 1000) {
-        const cacheKey = mergedOptions.cacheKey || this.generateCacheKey(sql);
-        await this.cacheResult(cacheKey, result);
+      // 7. 缓存结果（由 queryCacheManager 内部判断是否缓存）
+      if (mergedOptions.enableCache) {
+        await queryCacheManager.setResult(sql, result);
       }
 
       console.log(
@@ -306,44 +304,6 @@ export class QueryExecutor {
    */
   private generateQueryId(sql: string): string {
     return crypto.createHash('md5').update(sql).digest('hex').substring(0, 8);
-  }
-
-  /**
-   * 从缓存获取结果
-   */
-  private async getCachedResult<T>(
-    cacheKey: string
-  ): Promise<ExecutionResult<T> | null> {
-    try {
-      // 使用简单的缓存配置
-      const cached = await multiLevelCache.get<ExecutionResult<T>>(
-        'search_result', // 复用搜索结果的缓存配置
-        { query_hash: cacheKey },
-        async () => {
-          // 返回 null 表示缓存未命中
-          throw new Error('Cache miss');
-        }
-      );
-
-      return cached;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * 缓存结果
-   */
-  private async cacheResult<T>(
-    cacheKey: string,
-    result: ExecutionResult<T>
-  ): Promise<void> {
-    try {
-      await multiLevelCache.set('search_result', { query_hash: cacheKey }, result);
-      console.log(`[QueryExecutor] 结果已缓存: ${cacheKey}`);
-    } catch (error) {
-      console.error('[QueryExecutor] 缓存结果失败:', error);
-    }
   }
 
   /**

@@ -10,7 +10,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import type { AuditLog } from './types';
+import type { AuditLog, PopularQuery, TableUsageStats, TimeRangeStats } from './types';
 
 export interface QueryPattern {
   pattern: string;
@@ -351,7 +351,7 @@ export class AuditAnalyzer {
       userName: log.userName || undefined,
       sessionId: log.sessionId,
       naturalLanguageQuery: log.naturalLanguageQuery,
-      intent: log.intent as any,
+      intent: JSON.parse(log.intent),
       generatedSQL: log.generatedSql,
       executionResult: {
         success: log.executionSuccess,
@@ -359,8 +359,8 @@ export class AuditAnalyzer {
         error: log.executionError || undefined,
       },
       metadata: {
-        usedDatabases: log.usedDatabases as string[],
-        usedTables: log.usedTables as string[],
+        usedDatabases: JSON.parse(log.usedDatabases),
+        usedTables: JSON.parse(log.usedTables),
         usedColumns: [],
       },
       performance: {
@@ -374,6 +374,224 @@ export class AuditAnalyzer {
       ipAddress: log.ipAddress || undefined,
       userAgent: log.userAgent || undefined,
     }));
+  }
+
+  /**
+   * 分析热门查询
+   * 识别最常用的查询语句
+   */
+  async analyzePopularQueries(
+    startDate?: Date,
+    endDate?: Date,
+    limit: number = 20
+  ): Promise<PopularQuery[]> {
+    const where: any = {};
+
+    if (startDate || endDate) {
+      where.timestamp = {};
+      if (startDate) where.timestamp.gte = startDate;
+      if (endDate) where.timestamp.lte = endDate;
+    }
+
+    const logs = await this.prisma.queryAuditLog.findMany({
+      where,
+      select: {
+        naturalLanguageQuery: true,
+        executionSuccess: true,
+        executionTime: true,
+        timestamp: true,
+      },
+    });
+
+    // 按查询语句分组统计
+    const queryMap = new Map<string, {
+      count: number;
+      totalTime: number;
+      successCount: number;
+      lastUsed: Date;
+    }>();
+
+    for (const log of logs) {
+      const query = log.naturalLanguageQuery.trim();
+      const current = queryMap.get(query) || {
+        count: 0,
+        totalTime: 0,
+        successCount: 0,
+        lastUsed: log.timestamp,
+      };
+
+      current.count++;
+      current.totalTime += log.executionTime;
+      if (log.executionSuccess) current.successCount++;
+      if (log.timestamp > current.lastUsed) {
+        current.lastUsed = log.timestamp;
+      }
+
+      queryMap.set(query, current);
+    }
+
+    // 转换为结果数组并排序
+    const popularQueries: PopularQuery[] = Array.from(queryMap.entries())
+      .map(([naturalLanguageQuery, stats]) => ({
+        naturalLanguageQuery,
+        count: stats.count,
+        avgExecutionTime: stats.totalTime / stats.count,
+        successRate: stats.successCount / stats.count,
+        lastUsed: stats.lastUsed,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, limit);
+
+    return popularQueries;
+  }
+
+  /**
+   * 分析表使用统计
+   * 统计每个表的查询次数和性能
+   */
+  async analyzeTableUsage(
+    startDate?: Date,
+    endDate?: Date
+  ): Promise<TableUsageStats[]> {
+    const where: any = {};
+
+    if (startDate || endDate) {
+      where.timestamp = {};
+      if (startDate) where.timestamp.gte = startDate;
+      if (endDate) where.timestamp.lte = endDate;
+    }
+
+    const logs = await this.prisma.queryAuditLog.findMany({
+      where,
+      select: {
+        usedDatabases: true,
+        usedTables: true,
+        executionSuccess: true,
+        executionTime: true,
+      },
+    });
+
+    // 按表分组统计
+    const tableMap = new Map<string, {
+      databaseName: string;
+      count: number;
+      successCount: number;
+      totalTime: number;
+    }>();
+
+    for (const log of logs) {
+      const databases = JSON.parse(log.usedDatabases) as string[];
+      const tables = JSON.parse(log.usedTables) as string[];
+
+      // 尝试匹配数据库和表
+      for (const table of tables) {
+        // 简单实现：假设表名格式为 database.table 或单独的表名
+        let dbName = '';
+        let tableName = table;
+
+        if (table.includes('.')) {
+          const parts = table.split('.');
+          dbName = parts[0];
+          tableName = parts[1] || parts[0];
+        } else if (databases.length > 0) {
+          dbName = databases[0];
+        }
+
+        const key = `${dbName}.${tableName}`;
+        const current = tableMap.get(key) || {
+          databaseName: dbName,
+          count: 0,
+          successCount: 0,
+          totalTime: 0,
+        };
+
+        current.count++;
+        if (log.executionSuccess) current.successCount++;
+        current.totalTime += log.executionTime;
+
+        tableMap.set(key, current);
+      }
+    }
+
+    // 转换为结果数组并排序
+    const tableUsage: TableUsageStats[] = Array.from(tableMap.entries())
+      .map(([fullTableName, stats]) => {
+        const tableName = fullTableName.split('.')[1] || fullTableName;
+        return {
+          tableName,
+          databaseName: stats.databaseName,
+          queryCount: stats.count,
+          avgExecutionTime: stats.totalTime / stats.count,
+          successRate: stats.successCount / stats.count,
+        };
+      })
+      .sort((a, b) => b.queryCount - a.queryCount);
+
+    return tableUsage;
+  }
+
+  /**
+   * 分析时间范围内的查询统计（按天）
+   */
+  async analyzeTimeRangeStats(
+    startDate: Date,
+    endDate: Date
+  ): Promise<TimeRangeStats[]> {
+    const logs = await this.prisma.queryAuditLog.findMany({
+      where: {
+        timestamp: {
+          gte: startDate,
+          lte: endDate,
+        },
+      },
+      select: {
+        timestamp: true,
+        executionTime: true,
+        executionSuccess: true,
+      },
+      orderBy: { timestamp: 'asc' },
+    });
+
+    // 按日期分组
+    const dateMap = new Map<string, {
+      total: number;
+      success: number;
+      failed: number;
+      totalTime: number;
+    }>();
+
+    for (const log of logs) {
+      const date = log.timestamp.toISOString().split('T')[0];
+      const current = dateMap.get(date) || {
+        total: 0,
+        success: 0,
+        failed: 0,
+        totalTime: 0,
+      };
+
+      current.total++;
+      if (log.executionSuccess) {
+        current.success++;
+      } else {
+        current.failed++;
+      }
+      current.totalTime += log.executionTime;
+
+      dateMap.set(date, current);
+    }
+
+    // 转换为结果数组
+    const stats: TimeRangeStats[] = Array.from(dateMap.entries())
+      .map(([date, data]) => ({
+        date,
+        totalQueries: data.total,
+        successQueries: data.success,
+        failedQueries: data.failed,
+        avgExecutionTime: data.totalTime / data.total,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    return stats;
   }
 
   /**

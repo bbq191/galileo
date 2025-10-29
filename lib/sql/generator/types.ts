@@ -37,6 +37,8 @@ export interface SQLGenerationOptions {
   timeout?: number;
   /** 是否启用查询优化建议 */
   enableOptimization?: boolean;
+  /** 是否使用缓存（默认 true） */
+  useCache?: boolean;
 }
 
 /**

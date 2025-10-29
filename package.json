@@ -49,6 +49,8 @@
     "test:result-formatter": "tsx lib/sql/executor/__tests__/result-formatter.test.ts",
     "test:query-executor": "tsx lib/sql/executor/__tests__/query-executor.test.ts",
     "test:executor": "npm run test:timeout-handler && npm run test:result-formatter && npm run test:query-executor",
+    "test:query-cache": "tsx scripts/test-query-cache.ts",
+    "test:cache": "npm run test:query-cache",
     "test:all": "npm run test:collector && npm run test:relationship && npm run test:repository && npm run test:change-tracker && npm run test:sync && npm run test:semantic && npm run test:batch && npm run test:change-detector && npm run test:incremental-updater && npm run test:sync-scheduler && npm run test:retrieval && npm run test:vector"
   },
   "dependencies": {

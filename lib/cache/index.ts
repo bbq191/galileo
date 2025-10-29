@@ -12,3 +12,23 @@ export {
   type CacheConfig,
   type CacheMetrics,
 } from './cache-config';
+
+// 查询缓存
+export {
+  queryCacheManager,
+  QueryCacheManager,
+  type QueryCacheStatistics,
+} from './query-cache-manager';
+
+// 缓存失效
+export {
+  cacheInvalidationService,
+  CacheInvalidationService,
+  InvalidationEvent,
+  onMetadataSynced,
+  onTableStructureChanged,
+  onDatabaseSynced,
+  onRelationshipChanged,
+  clearAllCaches,
+  type InvalidationOptions,
+} from './cache-invalidation';

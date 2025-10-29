@@ -98,6 +98,32 @@ export const CACHE_CONFIGS: Record<string, CacheConfig> = {
     L2: { enabled: true, ttl: 600 },
     invalidateOn: ['database_added', 'database_removed', 'manual_sync'],
   },
+
+  // ==================== 查询缓存（三级缓存） ====================
+
+  // 意图缓存：相同自然语言查询缓存意图（1小时）
+  query_intent: {
+    key: 'query:intent:{query_hash}',
+    L1: { enabled: true, ttl: 300 }, // 5分钟
+    L2: { enabled: true, ttl: 3600 }, // 1小时
+    invalidateOn: ['metadata_synced', 'manual_sync'],
+  },
+
+  // SQL 缓存：相同意图缓存生成的 SQL（1小时）
+  query_sql: {
+    key: 'query:sql:{intent_hash}',
+    L1: { enabled: true, ttl: 300 }, // 5分钟
+    L2: { enabled: true, ttl: 3600 }, // 1小时
+    invalidateOn: ['metadata_synced', 'manual_sync'],
+  },
+
+  // 结果缓存：相同 SQL 缓存查询结果（5分钟）
+  query_result: {
+    key: 'query:result:{sql_hash}',
+    L1: { enabled: true, ttl: 180 }, // 3分钟
+    L2: { enabled: true, ttl: 300 }, // 5分钟
+    invalidateOn: ['data_updated', 'manual_sync'],
+  },
 };
 
 /**

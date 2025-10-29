@@ -9,6 +9,7 @@ import { QueryIntent, RawIntent } from './types';
 import { INTENT_SYSTEM_PROMPT, buildIntentPrompt, buildDisambiguationPrompt } from './prompts/intent-prompts';
 import { EntityResolver } from './entity-resolver';
 import { TimeParser } from './time-parser';
+import { queryCacheManager } from '@/lib/cache/query-cache-manager';
 
 /**
  * 意图识别器类
@@ -27,22 +28,41 @@ export class IntentRecognizer {
   }
 
   /**
-   * 识别用户查询意图
+   * 识别用户查询意图（带缓存）
    */
-  async recognize(naturalLanguageQuery: string): Promise<QueryIntent> {
+  async recognize(
+    naturalLanguageQuery: string,
+    options: { useCache?: boolean } = {}
+  ): Promise<QueryIntent> {
+    const { useCache = true } = options;
+
     console.log('开始识别用户意图:', naturalLanguageQuery);
 
-    // 1. 使用 AI 进行初步意图识别
+    // 1. 尝试从缓存获取意图
+    if (useCache) {
+      const cachedIntent = await queryCacheManager.getIntent(naturalLanguageQuery);
+      if (cachedIntent) {
+        console.log('意图缓存命中，直接返回');
+        return cachedIntent;
+      }
+    }
+
+    // 2. 缓存未命中，使用 AI 进行意图识别
     const rawIntent = await this.recognizeWithAI(naturalLanguageQuery);
 
-    // 2. 实体消歧（处理多义性）
+    // 3. 实体消歧（处理多义性）
     const resolvedIntent = await this.resolveAmbiguity(rawIntent);
 
-    // 3. 解析时间表达式
+    // 4. 解析时间表达式
     const intentWithTime = await this.parseTimeExpressions(resolvedIntent);
 
-    // 4. 验证意图完整性
+    // 5. 验证意图完整性
     const validatedIntent = await this.validateIntent(intentWithTime);
+
+    // 6. 将意图写入缓存
+    if (useCache) {
+      await queryCacheManager.setIntent(naturalLanguageQuery, validatedIntent);
+    }
 
     console.log('意图识别完成:', JSON.stringify(validatedIntent, null, 2));
 

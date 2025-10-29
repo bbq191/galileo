@@ -10,6 +10,7 @@ import { MetadataContext } from '@/lib/metadata/retrieval/types';
 import { SQLGenerationResult, SQLGenerationOptions } from './types';
 import { SQL_GENERATION_SYSTEM_PROMPT } from './prompts/sql-prompts';
 import { CrossDatabaseHandler } from './cross-db-handler';
+import { queryCacheManager } from '@/lib/cache/query-cache-manager';
 
 export class SQLGenerator {
   private aiClient: DeepseekClient;
@@ -23,31 +24,42 @@ export class SQLGenerator {
   }
 
   /**
-   * 生成 SQL 查询
+   * 生成 SQL 查询（带缓存）
    */
   async generate(
     intent: QueryIntent,
     context: MetadataContext,
     options: SQLGenerationOptions = {}
   ): Promise<SQLGenerationResult> {
+    const { useCache = true } = options;
+
+    // 1. 尝试从缓存获取 SQL
+    if (useCache) {
+      const cachedSQL = await queryCacheManager.getSQL(intent);
+      if (cachedSQL) {
+        console.log('SQL 缓存命中，直接返回');
+        return cachedSQL;
+      }
+    }
+
     const maxRetries = options.maxRetries || 2;
     let lastError: Error | null = null;
 
-    // 1. 分析是否为跨库查询
+    // 2. 分析是否为跨库查询
     const crossDbAnalysis = this.crossDbHandler.analyzeCrossDatabaseQuery(intent, context);
 
-    // 带重试机制的生成
+    // 3. 带重试机制的生成
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        // 2. 构建 SQL 生成 Prompt
+        // 构建 SQL 生成 Prompt
         let prompt = this.buildSQLGenerationPrompt(intent, context);
 
-        // 3. 如果是跨库查询，增强 Prompt
+        // 如果是跨库查询，增强 Prompt
         if (crossDbAnalysis.isCrossDatabase) {
           prompt = this.crossDbHandler.enhancePromptForCrossDb(prompt, crossDbAnalysis);
         }
 
-        // 4. 调用 AI 生成 SQL
+        // 调用 AI 生成 SQL
         const aiResponse = await this.aiClient.chat([
           { role: 'system', content: SQL_GENERATION_SYSTEM_PROMPT },
           { role: 'user', content: prompt }
@@ -57,16 +69,16 @@ export class SQLGenerator {
           maxTokens: 2000
         });
 
-        // 5. 解析 AI 返回的结果
+        // 解析 AI 返回的结果
         const result = this.parseAIResponse(aiResponse);
 
-        // 6. 后处理 SQL（标准化格式）
+        // 后处理 SQL（标准化格式）
         result.sql = this.formatSQL(result.sql);
 
-        // 7. 基础验证
+        // 基础验证
         this.validateSQLStructure(result.sql);
 
-        // 8. 跨库 SQL 特殊验证
+        // 跨库 SQL 特殊验证
         if (crossDbAnalysis.isCrossDatabase) {
           const crossDbValidation = this.crossDbHandler.validateCrossDbSQL(result.sql, crossDbAnalysis);
 
@@ -79,6 +91,11 @@ export class SQLGenerator {
             ...(result.warnings || []),
             ...crossDbValidation.warnings
           ];
+        }
+
+        // 4. 将生成的 SQL 写入缓存
+        if (useCache) {
+          await queryCacheManager.setSQL(intent, result);
         }
 
         return result;
