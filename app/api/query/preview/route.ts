@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
     console.log(`[Query Preview] Generating SQL for: "${body.query}"`);
 
     // 1. 意图识别
-    const intentRecognizer = new IntentRecognizer(prisma);
+    const intentRecognizer = new IntentRecognizer();
     const intent = await intentRecognizer.recognize(body.query);
     console.log(`[Query Preview] Intent recognized:`, intent.type);
 
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
     console.log(`[Query Preview] SQL generated successfully`);
 
     // 4. SQL 验证
-    const validator = new SQLValidator(prisma);
+    const validator = new SQLValidator();
     const validation = await validator.validate(sqlResult.sql, context);
     console.log(`[Query Preview] SQL validated: ${validation.isValid}`);
 

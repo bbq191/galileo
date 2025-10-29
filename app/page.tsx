@@ -11,7 +11,8 @@ export default function Home() {
         </p>
 
         <div className="flex gap-4 justify-center">
-          <a href="/datasources" className="btn btn-primary">数据源管理</a>
+          <a href="/query" className="btn btn-primary">开始查询</a>
+          <a href="/datasources" className="btn btn-outline">数据源管理</a>
           <a href="/metadata" className="btn btn-outline">元数据浏览</a>
           <a href="/relationships" className="btn btn-outline">关系图谱</a>
         </div>

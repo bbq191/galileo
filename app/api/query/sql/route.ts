@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
     };
 
     // 1. SQL 验证
-    const validator = new SQLValidator(prisma);
+    const validator = new SQLValidator();
     const validation = await validator.validate(body.sql, basicContext);
     console.log(`[SQL Execute] SQL validated: ${validation.isValid}`);
 
@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. 执行查询
-    const executor = new QueryExecutor(prisma);
+    const executor = new QueryExecutor();
     const result = await executor.execute(
       body.sql,
       basicContext,

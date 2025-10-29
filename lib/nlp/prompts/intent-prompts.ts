@@ -45,15 +45,40 @@ export const INTENT_SYSTEM_PROMPT = `
 /**
  * 构建意图识别用户 Prompt
  */
-export function buildIntentPrompt(naturalLanguageQuery: string): string {
+export function buildIntentPrompt(
+  naturalLanguageQuery: string,
+  availableTables?: Array<{ name: string; description: string; database: string }>
+): string {
+  // 构建可用表列表
+  let tablesContext = '';
+  if (availableTables && availableTables.length > 0) {
+    const tablesList = availableTables
+      .slice(0, 50) // 只展示前 50 个表，避免 token 过多
+      .map(t => {
+        const desc = t.description ? ` - ${t.description}` : '';
+        return `  - ${t.database}.${t.name}${desc}`;
+      })
+      .join('\n');
+
+    tablesContext = `
+
+可用的数据库表（从这些表中选择最相关的）：
+${tablesList}
+
+重要：你必须从上述表名中选择，不要猜测或创造不存在的表名。
+如果用户查询与任何表都不相关，请返回空的 tables 数组。
+`;
+  }
+
   return `
 请分析以下自然语言查询，并提取查询意图：
 
 用户查询: ${naturalLanguageQuery}
+${tablesContext}
 
 请识别：
 1. 查询类型（查询明细/统计聚合/对比分析）
-2. 涉及的业务实体（数据库、表、字段）
+2. 涉及的业务实体（从上述可用表中选择最相关的表名，字段名可以猜测）
 3. 查询条件（时间范围、过滤条件）
 4. 排序和限制条件
 5. 是否需要跨表关联
@@ -62,15 +87,15 @@ export function buildIntentPrompt(naturalLanguageQuery: string): string {
 {
   "type": "aggregate",
   "entities": {
-    "tables": ["orders", "products"],
-    "columns": ["product_name", "order_amount"]
+    "tables": ["actual_table_name_from_list"],
+    "columns": ["column_name"]
   },
   "conditions": {
     "timeRange": {
       "relative": "最近一个月"
     },
     "orderBy": {
-      "column": "order_amount",
+      "column": "column_name",
       "direction": "DESC"
     },
     "limit": 10
@@ -78,7 +103,7 @@ export function buildIntentPrompt(naturalLanguageQuery: string): string {
   "aggregations": {
     "function": "SUM",
     "column": "amount",
-    "groupBy": ["product_name"]
+    "groupBy": ["column_name"]
   }
 }
 `;

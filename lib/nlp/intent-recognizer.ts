@@ -74,7 +74,11 @@ export class IntentRecognizer {
    */
   private async recognizeWithAI(query: string): Promise<RawIntent> {
     try {
-      const prompt = buildIntentPrompt(query);
+      // 获取数据库中的所有表名和描述
+      const availableTables = await this.getAvailableTables();
+      console.log(`[IntentRecognizer] 找到 ${availableTables.length} 个可用表`);
+
+      const prompt = buildIntentPrompt(query, availableTables);
 
       const response = await this.aiClient.chat(
         [
@@ -87,13 +91,43 @@ export class IntentRecognizer {
         }
       );
 
+      console.log('[IntentRecognizer] AI 原始响应:', response);
+
       // 解析 AI 返回的 JSON
       const rawIntent = this.parseAIResponse(response);
+
+      console.log('[IntentRecognizer] 解析后的原始意图:', JSON.stringify(rawIntent, null, 2));
 
       return rawIntent;
     } catch (error) {
       console.error('AI 意图识别失败:', error);
       throw new Error(`意图识别失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * 获取数据库中所有可用的表
+   */
+  private async getAvailableTables(): Promise<Array<{ name: string; description: string; database: string }>> {
+    try {
+      const tables = await this.prisma.tableMeta.findMany({
+        take: 100, // 限制返回前 100 个表
+        include: {
+          database: true,
+        },
+        orderBy: {
+          id: 'asc',
+        },
+      });
+
+      return tables.map(table => ({
+        name: table.tableName,
+        description: table.tableSemanticDescription || table.tableComment || '',
+        database: table.database.databaseName,
+      }));
+    } catch (error) {
+      console.error('[IntentRecognizer] 获取可用表失败:', error);
+      return [];
     }
   }
 
@@ -122,12 +156,23 @@ export class IntentRecognizer {
   private async resolveAmbiguity(rawIntent: RawIntent): Promise<RawIntent> {
     const resolvedIntent = { ...rawIntent };
 
+    console.log('[IntentRecognizer] 开始实体消歧，原始表名:', rawIntent.entities?.tables);
+
     // 处理表名消歧
     if (rawIntent.entities?.tables && rawIntent.entities.tables.length > 0) {
       const resolvedTables = [];
 
-      for (const tableHint of rawIntent.entities.tables) {
+      for (let tableHint of rawIntent.entities.tables) {
+        // 如果表名包含数据库前缀（如 db_live.tb_live_all_room），只取表名部分
+        if (tableHint.includes('.')) {
+          const parts = tableHint.split('.');
+          tableHint = parts[parts.length - 1]; // 取最后一部分作为表名
+          console.log(`[IntentRecognizer] 去除数据库前缀，使用表名: ${tableHint}`);
+        }
+
+        console.log(`[IntentRecognizer] 搜索表: ${tableHint}`);
         const matches = await this.entityResolver.searchTables(tableHint, 5);
+        console.log(`[IntentRecognizer] 找到 ${matches.length} 个匹配的表`);
 
         if (matches.length === 0) {
           console.warn(`未找到匹配的表: ${tableHint}`);
@@ -159,6 +204,10 @@ export class IntentRecognizer {
         ...resolvedIntent.entities,
         tables: resolvedTables,
       };
+
+      console.log('[IntentRecognizer] 表名消歧完成，解析后的表名:', resolvedTables);
+    } else {
+      console.warn('[IntentRecognizer] 原始意图中没有表名');
     }
 
     // 处理字段名消歧

@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
 
     // 1. 意图识别
     const t1 = Date.now();
-    const intentRecognizer = new IntentRecognizer(prisma);
+    const intentRecognizer = new IntentRecognizer();
     const intent = await intentRecognizer.recognize(body.query);
     const intentTime = Date.now() - t1;
     console.log(`[Query Execute] Intent recognized in ${intentTime}ms:`, intent.type);
@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
 
     // 4. SQL 验证
     const t4 = Date.now();
-    const validator = new SQLValidator(prisma);
+    const validator = new SQLValidator();
     const validation = await validator.validate(sqlResult.sql, context);
     const validationTime = Date.now() - t4;
     console.log(`[Query Execute] SQL validated in ${validationTime}ms: ${validation.isValid}`);
@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
 
     // 5. 执行查询
     const t5 = Date.now();
-    const executor = new QueryExecutor(prisma);
+    const executor = new QueryExecutor();
     const result = await executor.execute(
       sqlResult.sql,
       context,
