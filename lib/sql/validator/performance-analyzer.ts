@@ -282,8 +282,8 @@ export class PerformanceAnalyzer {
   private estimateResultSize(context: MetadataContext): number {
     if (context.tables.length === 0) return 0;
 
-    // 简单估算：取最大表的行数
-    return Math.max(...context.tables.map(t => t.rowCount || 1000));
+    // 简单估算：取最大表的行数（将 BigInt 转换为 Number）
+    return Math.max(...context.tables.map(t => t.rowCount ? Number(t.rowCount) : 1000));
   }
 
   /**
@@ -546,7 +546,9 @@ export class PerformanceAnalyzer {
       );
 
       if (tableMeta) {
-        estimatedRowsScanned += tableMeta.rowCount || 1000;
+        // 将 BigInt 转换为 Number 以避免类型混合错误
+        const rowCount = tableMeta.rowCount ? Number(tableMeta.rowCount) : 1000;
+        estimatedRowsScanned += rowCount;
       }
     }
 

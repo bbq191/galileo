@@ -15,9 +15,11 @@ export const INTENT_SYSTEM_PROMPT = `
 5. 识别是否需要跨表关联
 
 重要规则：
+- **表名格式**：只返回表名本身，不要包含数据库名（例如：返回 "tb_chatroom_relation" 而不是 "db_live.tb_chatroom_relation"）
 - 对于模糊的实体名称，提供多个可能的选项
 - 对于时间表达式（"最近一个月"、"今年"），标准化为相对时间
 - 对于数字表达式（"TOP10"、"前5名"），提取为 LIMIT 条件
+- **字段名格式**：只返回实际存在的字段名，不要猜测或幻想字段
 - 始终返回标准的 JSON 格式
 
 返回格式示例：
@@ -65,8 +67,11 @@ export function buildIntentPrompt(
 可用的数据库表（从这些表中选择最相关的）：
 ${tablesList}
 
-重要：你必须从上述表名中选择，不要猜测或创造不存在的表名。
-如果用户查询与任何表都不相关，请返回空的 tables 数组。
+**重要说明**：
+1. 表名格式为 "database.table_name"，但在返回的 JSON 中，你应该只返回表名部分（table_name），不要包含数据库名
+2. 例如：如果看到 "db_live.tb_chatroom_relation"，你应该返回 "tb_chatroom_relation"
+3. 你必须从上述表名中选择，不要猜测或创造不存在的表名
+4. 如果用户查询与任何表都不相关，请返回空的 tables 数组
 `;
   }
 

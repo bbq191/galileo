@@ -51,7 +51,16 @@
     "test:executor": "npm run test:timeout-handler && npm run test:result-formatter && npm run test:query-executor",
     "test:query-cache": "tsx scripts/test-query-cache.ts",
     "test:cache": "npm run test:query-cache",
-    "test:all": "npm run test:collector && npm run test:relationship && npm run test:repository && npm run test:change-tracker && npm run test:sync && npm run test:semantic && npm run test:batch && npm run test:change-detector && npm run test:incremental-updater && npm run test:sync-scheduler && npm run test:retrieval && npm run test:vector"
+    "test:all": "npm run test:collector && npm run test:relationship && npm run test:repository && npm run test:change-tracker && npm run test:sync && npm run test:semantic && npm run test:batch && npm run test:change-detector && npm run test:incremental-updater && npm run test:sync-scheduler && npm run test:retrieval && npm run test:vector",
+    "test:e2e": "tsx __tests__/e2e/run-e2e-tests.ts",
+    "test:e2e:setup": "tsx __tests__/e2e/setup/init-test-data.ts",
+    "test:e2e:cleanup": "tsx __tests__/e2e/setup/init-test-data.ts cleanup",
+    "test:e2e:single": "tsx __tests__/e2e/run-e2e-tests.ts --category=single-table",
+    "test:e2e:multi": "tsx __tests__/e2e/run-e2e-tests.ts --category=multi-table",
+    "test:e2e:cross": "tsx __tests__/e2e/run-e2e-tests.ts --category=cross-database",
+    "test:e2e:agg": "tsx __tests__/e2e/run-e2e-tests.ts --category=aggregation",
+    "test:e2e:complex": "tsx __tests__/e2e/run-e2e-tests.ts --category=complex",
+    "test:e2e:report": "tsx __tests__/e2e/run-e2e-tests.ts --report"
   },
   "dependencies": {
     "@prisma/client": "^6.17.1",

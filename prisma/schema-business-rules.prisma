@@ -1,0 +1,227 @@
+// =====================================================
+// 业务规则库 Schema 扩展
+// 用于增强 AI 对业务逻辑的理解
+// =====================================================
+
+// 1. 业务术语映射表 - 将业务术语映射到数据库实体
+model BusinessTermMapping {
+  id          Int      @id @default(autoincrement())
+  term        String   @db.VarChar(100) // 业务术语，如 "寿险"
+  description String?  @db.Text          // 术语说明
+  category    String   @db.VarChar(50)   // 分类：domain, metric, dimension, filter
+
+  // 映射目标
+  targetType  String   @map("target_type") @db.VarChar(20) // table, column, value, condition
+  targetTable String?  @map("target_table") @db.VarChar(100)
+  targetColumn String? @map("target_column") @db.VarChar(100)
+  targetValue String?  @map("target_value") @db.Text // JSON格式的值或条件
+
+  // 优先级和置信度
+  priority    Int      @default(5) @db.TinyInt // 1-10，数值越小优先级越高
+  confidence  Decimal  @default(0.95) @db.Decimal(3, 2)
+
+  // 使用统计
+  usageCount  Int      @default(0) @map("usage_count")
+  lastUsedAt  DateTime? @map("last_used_at")
+
+  isEnabled   Boolean  @default(true) @map("is_enabled")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([term])
+  @@index([category])
+  @@index([isEnabled])
+  @@index([priority])
+  @@fulltext([term, description])
+  @@map("business_term_mappings")
+}
+
+// 示例数据：
+// {
+//   term: "寿险",
+//   category: "domain",
+//   targetType: "condition",
+//   targetValue: '{"orgId": {"in": ["SELECT dept_id FROM openser.live_temporary_dept WHERE top_name = \'中国人民人寿保险股份有限公司\'"]}}',
+//   priority: 1
+// }
+
+// 2. 分表模式定义 - 识别和处理分表策略
+model ShardingPattern {
+  id              Int      @id @default(autoincrement())
+  patternName     String   @unique @map("pattern_name") @db.VarChar(100) // 如 "live_watch_detail"
+  description     String?  @db.Text
+
+  // 分表规则
+  baseTableName   String   @map("base_table_name") @db.VarChar(100) // 如 "tb_live_watch_detail"
+  suffixPattern   String   @map("suffix_pattern") @db.VarChar(50)   // 如 "_{shard:hex:2}" 或 "_{shard:num:0-9}"
+  shardCount      Int      @map("shard_count")     // 分表数量
+
+  // 自动生成分表列表（JSON格式）
+  // ["tb_live_watch_detail_00", "tb_live_watch_detail_01", ...]
+  tableList       String   @map("table_list") @db.LongText
+
+  // 合并策略
+  mergeStrategy   String   @map("merge_strategy") @db.VarChar(20) @default("UNION_ALL") // UNION_ALL, UNION, JOIN
+
+  // 分片键信息
+  shardKeyColumn  String?  @map("shard_key_column") @db.VarChar(100)
+  shardAlgorithm  String?  @map("shard_algorithm") @db.VarChar(50) // hash, range, modulo
+
+  // 语义描述（AI理解用）
+  semanticDescription String? @map("semantic_description") @db.Text
+
+  // 使用统计
+  usageCount  Int      @default(0) @map("usage_count")
+  lastUsedAt  DateTime? @map("last_used_at")
+
+  isEnabled   Boolean  @default(true) @map("is_enabled")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([baseTableName])
+  @@index([isEnabled])
+  @@map("sharding_patterns")
+}
+
+// 示例数据：
+// {
+//   patternName: "live_watch_detail_sharding",
+//   baseTableName: "tb_live_watch_detail",
+//   suffixPattern: "_{shard:hex:2}",
+//   shardCount: 256,
+//   tableList: '["tb_live_watch_detail_00", ..., "tb_live_watch_detail_ff"]',
+//   mergeStrategy: "UNION_ALL",
+//   semanticDescription: "观看时长明细数据按照live_id进行哈希分表"
+// }
+
+// 3. 查询模板库 - Few-shot 示例
+model QueryTemplate {
+  id               Int      @id @default(autoincrement())
+  name             String   @unique @db.VarChar(100)
+  description      String?  @db.Text
+
+  // 查询示例
+  naturalLanguage  String   @map("natural_language") @db.Text  // 自然语言查询
+  expectedSQL      String   @map("expected_sql") @db.Text      // 期望的SQL
+
+  // 分类标签
+  category         String   @db.VarChar(50) // aggregation, top_n, cross_db, time_range, etc.
+  tags             String?  @db.Text        // JSON数组: ["分表", "TOP10", "跨库"]
+
+  // 涉及的表和字段
+  involvedTables   String   @map("involved_tables") @db.Text // JSON数组
+  involvedColumns  String   @map("involved_columns") @db.Text // JSON数组
+
+  // 业务上下文
+  businessContext  String?  @map("business_context") @db.Text
+
+  // 复杂度评分
+  complexityScore  Int      @default(5) @map("complexity_score") @db.TinyInt // 1-10
+
+  // 使用统计
+  matchCount   Int      @default(0) @map("match_count") // 被匹配使用次数
+  successRate  Decimal  @default(0) @map("success_rate") @db.Decimal(3, 2)
+  lastMatchAt  DateTime? @map("last_match_at")
+
+  isEnabled    Boolean  @default(true) @map("is_enabled")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([category])
+  @@index([complexityScore])
+  @@index([isEnabled])
+  @@fulltext([naturalLanguage, description])
+  @@map("query_templates")
+}
+
+// 示例数据：
+// {
+//   name: "life_insurance_watch_time_top10",
+//   naturalLanguage: "寿险观看时长top10",
+//   expectedSQL: "SELECT ... (完整的SQL)",
+//   category: "top_n",
+//   tags: '["分表", "TOP10", "跨库", "UNION_ALL", "寿险"]',
+//   involvedTables: '["tb_live_all_room", "tb_live_stat_total_*", "tb_live_watch_detail_*"]',
+//   complexityScore: 9
+// }
+
+// 4. 常用过滤规则库
+model CommonFilter {
+  id              Int      @id @default(autoincrement())
+  name            String   @unique @db.VarChar(100)
+  description     String?  @db.Text
+
+  // 应用场景
+  applicableTables String  @map("applicable_tables") @db.Text // JSON数组
+  filterType       String  @map("filter_type") @db.VarChar(50) // time_range, exclusion_list, org_filter
+
+  // 过滤条件（SQL片段或JSON配置）
+  filterCondition  String  @map("filter_condition") @db.Text
+
+  // 参数定义（如果是模板）
+  parameters       String? @db.Text // JSON: [{"name": "start_date", "type": "date"}]
+
+  // 优先级
+  priority         Int     @default(5) @db.TinyInt
+  autoApply        Boolean @default(false) @map("auto_apply") // 是否自动应用
+
+  isEnabled        Boolean @default(true) @map("is_enabled")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@index([filterType])
+  @@index([isEnabled])
+  @@index([autoApply])
+  @@map("common_filters")
+}
+
+// 示例数据：
+// {
+//   name: "exclude_system_users",
+//   applicableTables: '["tb_live_all_room"]',
+//   filterType: "exclusion_list",
+//   filterCondition: "uid NOT IN ('1463694780738129920', '1608799111031640064', ...)",
+//   autoApply: true
+// }
+
+// 5. 聚合计算规则
+model AggregationRule {
+  id              Int      @id @default(autoincrement())
+  metricName      String   @unique @map("metric_name") @db.VarChar(100) // 如 "观看时长"
+  description     String?  @db.Text
+
+  // 数据源
+  sourceTable     String   @map("source_table") @db.VarChar(100)
+  sourceColumn    String   @map("source_column") @db.VarChar(100)
+
+  // 聚合函数
+  aggregateFunc   String   @map("aggregate_func") @db.VarChar(20) // SUM, AVG, COUNT, MAX, MIN
+
+  // 分组依据
+  groupByColumns  String?  @map("group_by_columns") @db.Text // JSON数组
+
+  // 预处理逻辑（如需要JOIN其他表）
+  preprocessSQL   String?  @map("preprocess_sql") @db.Text
+
+  // 单位和格式化
+  unit            String?  @db.VarChar(20) // 如 "秒", "分钟", "小时"
+  formatPattern   String?  @map("format_pattern") @db.VarChar(50)
+
+  isEnabled       Boolean  @default(true) @map("is_enabled")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([metricName])
+  @@index([sourceTable])
+  @@index([isEnabled])
+  @@map("aggregation_rules")
+}
+
+// 示例数据：
+// {
+//   metricName: "观看时长",
+//   sourceTable: "tb_live_watch_detail",
+//   sourceColumn: "watch_time",
+//   aggregateFunc: "SUM",
+//   unit: "秒"
+// }

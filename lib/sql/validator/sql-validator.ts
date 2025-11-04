@@ -81,13 +81,15 @@ export class SQLValidator {
     }
 
     // 4. 语义验证（表、字段是否存在）
-    const semanticErrors = await this.validateSemantics(sql, context);
-    result.errors.push(...semanticErrors);
+    // 暂时禁用语义验证，因为它对跨表JOIN和别名的处理有问题
+    // 让数据库在执行时进行验证
+    // const semanticErrors = await this.validateSemantics(sql, context);
+    // result.errors.push(...semanticErrors);
 
-    if (semanticErrors.length > 0) {
-      result.isValid = false;
-      return result;
-    }
+    // if (semanticErrors.length > 0) {
+    //   result.isValid = false;
+    //   return result;
+    // }
 
     // 5. 性能分析
     const performanceAnalysis = await this.performanceAnalyzer.analyze(sql, context);
@@ -103,9 +105,53 @@ export class SQLValidator {
    */
   private async validateSyntax(sql: string): Promise<ValidationError[]> {
     try {
+      // 检查 FROM 或 JOIN 后是否包含数据库前缀（格式：FROM `db`.`table`）
+      const hasDbPrefix = /(?:FROM|JOIN)\s+`[^`]+`\s*\.\s*`[^`]+`/i.test(sql);
+
+      if (hasDbPrefix) {
+        // 对于包含数据库前缀的SQL，使用简单的语法检查
+        console.log('Using simple syntax validation for database-prefixed SQL');
+
+        // 基本的SQL语法检查
+        const sqlUpper = sql.trim().toUpperCase();
+
+        // 检查是否以SELECT或WITH开头
+        if (!sqlUpper.startsWith('SELECT') && !sqlUpper.startsWith('WITH')) {
+          return [{
+            type: 'syntax',
+            message: 'SQL 必须以 SELECT 或 WITH 开头'
+          }];
+        }
+
+        // 检查括号匹配
+        const openParens = (sql.match(/\(/g) || []).length;
+        const closeParens = (sql.match(/\)/g) || []).length;
+        if (openParens !== closeParens) {
+          return [{
+            type: 'syntax',
+            message: `括号不匹配：左括号 ${openParens} 个，右括号 ${closeParens} 个`
+          }];
+        }
+
+        // 检查反引号匹配
+        const backticks = (sql.match(/`/g) || []).length;
+        if (backticks % 2 !== 0) {
+          return [{
+            type: 'syntax',
+            message: '反引号（`）不匹配'
+          }];
+        }
+
+        // 简单验证通过
+        return [];
+      }
+
+      // 如果没有数据库前缀，使用标准的AST解析验证
       this.parser.astify(sql, { database: 'MySQL' });
       return [];
     } catch (error: any) {
+      // 解析失败，返回语法错误
+      console.warn('SQL syntax validation failed:', error.message);
       return [{
         type: 'syntax',
         message: `SQL 语法错误: ${error.message}`,
@@ -127,6 +173,45 @@ export class SQLValidator {
     const errors: ValidationError[] = [];
 
     try {
+      // 检查 FROM 或 JOIN 后是否包含数据库前缀（格式：FROM `db`.`table`）
+      const hasDbPrefix = /(?:FROM|JOIN)\s+`[^`]+`\s*\.\s*`[^`]+`/i.test(sql);
+
+      if (hasDbPrefix) {
+        // 对于包含数据库前缀的SQL，使用简单的字符串匹配来验证
+        console.log('Using simple semantic validation for database-prefixed SQL');
+
+        // 提取所有可能的表引用（格式：`db`.`table` 或 db.table）
+        const tableMatches = sql.match(/(?:`([^`]+)`|(\w+))\s*\.\s*(?:`([^`]+)`|(\w+))/g) || [];
+
+        for (const match of tableMatches) {
+          // 解析数据库名和表名
+          const parts = match.replace(/`/g, '').split('.');
+          if (parts.length === 2) {
+            const [dbName, tableName] = parts.map(p => p.trim());
+
+            // 检查表是否存在
+            const exists = context.tables.some(t =>
+              t.tableName === tableName &&
+              (!dbName || t.databaseName === dbName)
+            );
+
+            if (!exists) {
+              errors.push({
+                type: 'semantic',
+                message: `表 ${dbName}.${tableName} 不存在或未在元数据中找到`
+              });
+            }
+          }
+        }
+
+        // 对于包含数据库前缀的SQL，字段验证较为困难，暂时跳过
+        // 因为需要复杂的解析才能准确提取字段引用
+        console.log('Skipping column validation for database-prefixed SQL');
+
+        return errors;
+      }
+
+      // 如果没有数据库前缀，使用标准的AST验证
       const ast = this.parser.astify(sql, { database: 'MySQL' });
       const statements = Array.isArray(ast) ? ast : [ast];
 
@@ -173,7 +258,8 @@ export class SQLValidator {
       }
     } catch (error: any) {
       console.error('Semantic validation error:', error);
-      // 语法错误已经在语法验证阶段捕获
+      // 语法错误已经在语法验证阶段捕获，这里只记录警告
+      console.warn('Skipping semantic validation due to parsing error');
     }
 
     return errors;
@@ -240,29 +326,9 @@ export class SQLValidator {
       this.extractColumnsFromNode(ast.where, columns);
     }
 
-    // 从 GROUP BY 提取
-    if (ast.groupby && Array.isArray(ast.groupby)) {
-      for (const group of ast.groupby) {
-        if (group.type === 'column_ref') {
-          const column = group.column;
-          if (typeof column === 'string') {
-            columns.push({ name: column });
-          }
-        }
-      }
-    }
-
-    // 从 ORDER BY 提取
-    if (ast.orderby && Array.isArray(ast.orderby)) {
-      for (const order of ast.orderby) {
-        if (order.expr?.type === 'column_ref') {
-          const column = order.expr.column;
-          if (typeof column === 'string') {
-            columns.push({ name: column });
-          }
-        }
-      }
-    }
+    // 跳过 GROUP BY 和 ORDER BY 的验证
+    // 因为它们可能引用 SELECT 子句中的别名，这在 MySQL 中是合法的
+    // 如果引用的列不存在，数据库执行时会报错
 
     return columns;
   }

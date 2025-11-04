@@ -85,11 +85,14 @@ export class QueryExecutor {
       // 4. 自动添加 LIMIT（如果未指定）
       const limitedSQL = this.ensureLimitClause(sql, mergedOptions.maxRows);
 
-      // 5. 执行查询（带超时）
-      console.log(`[QueryExecutor] 执行查询: ${queryId}`);
-      console.log(`[QueryExecutor] SQL: ${limitedSQL.substring(0, 200)}...`);
+      // 5. 为 SQL 添加数据库前缀（如果需要）
+      const qualifiedSQL = this.ensureDatabasePrefix(limitedSQL, context);
 
-      const queryPromise = pool.query(limitedSQL, mergedOptions.parameters);
+      // 6. 执行查询（带超时）
+      console.log(`[QueryExecutor] 执行查询: ${queryId}`);
+      console.log(`[QueryExecutor] SQL: ${qualifiedSQL.substring(0, 200)}...`);
+
+      const queryPromise = pool.query(qualifiedSQL, mergedOptions.parameters);
       const [rows, fields] = await withTimeout(
         queryPromise,
         mergedOptions.timeout,
@@ -247,6 +250,50 @@ export class QueryExecutor {
   }
 
   // ==================== 私有辅助方法 ====================
+
+  /**
+   * 确保表名使用数据库前缀
+   */
+  private ensureDatabasePrefix(sql: string, context: MetadataContext): string {
+    try {
+      // 构建表名到数据库的映射
+      const tableDbMap = new Map<string, string>();
+      for (const table of context.tables) {
+        tableDbMap.set(table.tableName, table.databaseName);
+      }
+
+      // 检查 SQL 是否已经包含数据库前缀
+      const hasDatabasePrefix = context.tables.some(t =>
+        sql.includes(`\`${t.databaseName}\`.\`${t.tableName}\``) ||
+        sql.includes(`${t.databaseName}.${t.tableName}`)
+      );
+
+      // 如果已经有前缀，直接返回
+      if (hasDatabasePrefix) {
+        return sql;
+      }
+
+      // 否则，为每个表名添加数据库前缀
+      let modifiedSQL = sql;
+      for (const [tableName, databaseName] of tableDbMap.entries()) {
+        // 匹配表名的正则表达式（带或不带反引号）
+        const patterns = [
+          new RegExp(`\\b${tableName}\\b`, 'g'),  // 无反引号
+          new RegExp(`\`${tableName}\``, 'g')     // 带反引号
+        ];
+
+        for (const pattern of patterns) {
+          modifiedSQL = modifiedSQL.replace(pattern, `\`${databaseName}\`.\`${tableName}\``);
+        }
+      }
+
+      return modifiedSQL;
+    } catch (error) {
+      // 如果处理失败，返回原始 SQL
+      console.warn('[QueryExecutor] Failed to add database prefix, using original SQL:', error);
+      return sql;
+    }
+  }
 
   /**
    * 确保 SQL 有 LIMIT 子句

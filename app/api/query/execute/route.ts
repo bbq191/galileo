@@ -6,6 +6,7 @@
  * - 接收自然语言查询
  * - 执行完整的 SQL 生成和执行流程
  * - 返回查询结果和元数据
+ * - 支持跨数据库查询
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest) {
 
     // 2. 元数据检索
     const t2 = Date.now();
-    const metadataRetriever = new MetadataRetriever(prisma);
+    const metadataRetriever = new MetadataRetriever();
     const context = await metadataRetriever.retrieveContext(intent);
     const metadataTime = Date.now() - t2;
     console.log(`[Query Execute] Metadata retrieved in ${metadataTime}ms: ${context.tables.length} tables`);
@@ -106,7 +107,11 @@ export async function POST(request: NextRequest) {
     const validator = new SQLValidator();
     const validation = await validator.validate(sqlResult.sql, context);
     const validationTime = Date.now() - t4;
+    console.log(`[Query Execute] Generated SQL: ${sqlResult.sql}`);
     console.log(`[Query Execute] SQL validated in ${validationTime}ms: ${validation.isValid}`);
+    if (!validation.isValid) {
+      console.log(`[Query Execute] Validation errors:`, validation.errors);
+    }
 
     if (!validation.isValid) {
       // 记录失败的审计日志

@@ -75,6 +75,7 @@ export class MetadataRetriever {
     options: SearchOptions
   ): Promise<any[]> {
     const searchResults = [];
+    let hasExactMatch = false;
 
     // 1. 基于表名提示搜索
     if (intent.entities.tables && intent.entities.tables.length > 0) {
@@ -83,31 +84,47 @@ export class MetadataRetriever {
           limit: 5,
           threshold: 0.3,
         });
-        searchResults.push(...results);
+
+        // 检查是否有精确匹配（分数接近1.0）
+        const exactMatches = results.filter(r => r.score >= 0.95);
+        if (exactMatches.length > 0) {
+          hasExactMatch = true;
+          console.log(`找到精确匹配的表: ${exactMatches.map(r => r.table.tableName).join(', ')}`);
+          // 只使用精确匹配的表，忽略其他相似的表
+          searchResults.push(...exactMatches);
+        } else {
+          // 没有精确匹配，使用所有搜索结果
+          searchResults.push(...results);
+        }
       }
     }
 
     // 2. 基于字段名提示搜索（辅助）
-    if (intent.entities.columns && intent.entities.columns.length > 0) {
-      for (const columnHint of intent.entities.columns) {
-        const columnResults = await this.semanticSearch.searchColumns(
-          columnHint,
-          undefined,
-          { limit: 3 }
-        );
+    // 如果已经有精确匹配的表，并且只有一个表，不再通过字段搜索额外的表
+    if (!hasExactMatch || searchResults.length > 1) {
+      if (intent.entities.columns && intent.entities.columns.length > 0) {
+        for (const columnHint of intent.entities.columns) {
+          const columnResults = await this.semanticSearch.searchColumns(
+            columnHint,
+            undefined,
+            { limit: 3 }
+          );
 
-        // 将字段所属的表加入结果
-        for (const colResult of columnResults) {
-          const table = colResult.column.table;
-          if (table) {
-            searchResults.push({
-              table,
-              score: colResult.score * 0.7, // 降低权重
-              matchReason: `字段"${columnHint}"匹配`,
-            });
+          // 将字段所属的表加入结果
+          for (const colResult of columnResults) {
+            const table = colResult.column.table;
+            if (table) {
+              searchResults.push({
+                table,
+                score: colResult.score * 0.7, // 降低权重
+                matchReason: `字段"${columnHint}"匹配`,
+              });
+            }
           }
         }
       }
+    } else {
+      console.log('已有精确匹配的单表，跳过字段搜索以避免引入无关表');
     }
 
     // 3. 去重
@@ -123,7 +140,13 @@ export class MetadataRetriever {
     );
 
     // 6. 限制返回数量
-    const limit = options.limit || 10;
+    // 如果有精确匹配，优先返回精确匹配的表，减少其他表的干扰
+    let limit = options.limit || 10;
+    if (hasExactMatch && intent.entities.tables.length === 1) {
+      limit = Math.min(limit, 2); // 最多返回2个表，减少干扰
+      console.log(`精确匹配单表查询，限制返回 ${limit} 个表`);
+    }
+
     return filteredResults.slice(0, limit);
   }
 

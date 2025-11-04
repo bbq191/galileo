@@ -21,13 +21,37 @@ export class EntityResolver {
    */
   async searchTables(hint: string, limit: number = 10): Promise<EntityMatch[]> {
     try {
+      // 处理带数据库前缀的表名（如 db_live.tb_live_all_room）
+      let tableName = hint;
+      let databaseName: string | undefined;
+
+      if (hint.includes('.')) {
+        const parts = hint.split('.');
+        if (parts.length === 2) {
+          databaseName = parts[0];
+          tableName = parts[1];
+          console.log(`[EntityResolver] 检测到数据库前缀: ${databaseName}, 表名: ${tableName}`);
+        }
+      }
+
       // 1. 精确匹配
-      const exactMatches = await this.prisma.tableMeta.findMany({
-        where: {
-          tableName: {
-            equals: hint,
-          },
+      const exactMatchWhere: any = {
+        tableName: {
+          equals: tableName,
         },
+      };
+
+      // 如果指定了数据库名，添加数据库过滤条件
+      if (databaseName) {
+        exactMatchWhere.database = {
+          databaseName: {
+            equals: databaseName,
+          },
+        };
+      }
+
+      const exactMatches = await this.prisma.tableMeta.findMany({
+        where: exactMatchWhere,
         include: {
           database: true,
         },
@@ -35,6 +59,7 @@ export class EntityResolver {
       });
 
       if (exactMatches.length > 0) {
+        console.log(`[EntityResolver] 找到 ${exactMatches.length} 个精确匹配的表`);
         return exactMatches.map((table: Record<string, any>) => ({
           hint,
           matched: table,
@@ -44,25 +69,38 @@ export class EntityResolver {
       }
 
       // 2. 模糊匹配（包含查询）
+      const fuzzyMatchWhere: any = {
+        OR: [
+          { tableName: { contains: tableName } },
+          { tableComment: { contains: tableName } },
+          { semanticDescription: { contains: tableName } },
+        ],
+      };
+
+      // 如果指定了数据库名，添加数据库过滤条件
+      if (databaseName) {
+        fuzzyMatchWhere.database = {
+          databaseName: {
+            contains: databaseName,
+          },
+        };
+      }
+
       const fuzzyMatches = await this.prisma.tableMeta.findMany({
-        where: {
-          OR: [
-            { tableName: { contains: hint } },
-            { tableComment: { contains: hint } },
-            { semanticDescription: { contains: hint } },
-          ],
-        },
+        where: fuzzyMatchWhere,
         include: {
           database: true,
         },
         take: limit,
       });
 
+      console.log(`[EntityResolver] 找到 ${fuzzyMatches.length} 个模糊匹配的表`);
+
       // 计算模糊匹配分数
       return fuzzyMatches.map((table: Record<string, any>) => ({
         hint,
         matched: table,
-        score: this.calculateTableMatchScore(hint, table),
+        score: this.calculateTableMatchScore(tableName, table),
         type: 'fuzzy' as const,
       }));
     } catch (error) {

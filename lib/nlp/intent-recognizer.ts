@@ -162,14 +162,7 @@ export class IntentRecognizer {
     if (rawIntent.entities?.tables && rawIntent.entities.tables.length > 0) {
       const resolvedTables = [];
 
-      for (let tableHint of rawIntent.entities.tables) {
-        // 如果表名包含数据库前缀（如 db_live.tb_live_all_room），只取表名部分
-        if (tableHint.includes('.')) {
-          const parts = tableHint.split('.');
-          tableHint = parts[parts.length - 1]; // 取最后一部分作为表名
-          console.log(`[IntentRecognizer] 去除数据库前缀，使用表名: ${tableHint}`);
-        }
-
+      for (const tableHint of rawIntent.entities.tables) {
         console.log(`[IntentRecognizer] 搜索表: ${tableHint}`);
         const matches = await this.entityResolver.searchTables(tableHint, 5);
         console.log(`[IntentRecognizer] 找到 ${matches.length} 个匹配的表`);
@@ -308,6 +301,15 @@ export class IntentRecognizer {
       throw new Error('无法识别查询涉及的表');
     }
 
+    // 验证字段是否真实存在
+    const validatedColumns = await this.validateColumns(
+      intent.entities.tables,
+      intent.entities.columns || [],
+      intent.aggregations?.column ? [intent.aggregations.column] : [],
+      intent.conditions?.orderBy?.column ? [intent.conditions.orderBy.column] : [],
+      intent.aggregations?.groupBy || []
+    );
+
     // 补充缺失的关联关系
     if (intent.entities.tables.length > 1 && !intent.joins) {
       intent.joins = await this.inferJoins(intent.entities.tables);
@@ -319,21 +321,123 @@ export class IntentRecognizer {
       entities: {
         databases: intent.entities.databases || [],
         tables: intent.entities.tables || [],
-        columns: intent.entities.columns || [],
+        columns: validatedColumns.validColumns,
       },
       conditions: {
         timeRange: intent.conditions?.timeRange,
         filters: intent.conditions?.filters || [],
-        orderBy: intent.conditions?.orderBy,
+        orderBy: validatedColumns.validOrderBy ? intent.conditions?.orderBy : undefined,
         limit: intent.conditions?.limit,
       },
-      aggregations: intent.aggregations,
+      aggregations: validatedColumns.validAggregation ? intent.aggregations : undefined,
       joins: intent.joins,
       confidence: intent.confidence || 0.8,
-      ambiguities: intent.ambiguities || [],
+      ambiguities: [
+        ...(intent.ambiguities || []),
+        ...validatedColumns.warnings
+      ],
     };
 
     return validatedIntent;
+  }
+
+  /**
+   * 验证字段是否存在于表中
+   */
+  private async validateColumns(
+    tables: string[],
+    selectColumns: string[],
+    aggregationColumns: string[],
+    orderByColumns: string[],
+    groupByColumns: string[]
+  ): Promise<{
+    validColumns: string[];
+    validAggregation: boolean;
+    validOrderBy: boolean;
+    warnings: string[];
+  }> {
+    const warnings: string[] = [];
+
+    // 获取表的所有字段
+    const tableMetas = await this.prisma.tableMeta.findMany({
+      where: {
+        tableName: { in: tables },
+      },
+      include: {
+        columns: true,
+      },
+    });
+
+    if (tableMetas.length === 0) {
+      return {
+        validColumns: [],
+        validAggregation: false,
+        validOrderBy: false,
+        warnings: ['未找到表的元数据'],
+      };
+    }
+
+    // 收集所有有效字段
+    const allValidColumns = new Set<string>();
+    tableMetas.forEach((table: any) => {
+      table.columns.forEach((col: any) => {
+        allValidColumns.add(col.columnName);
+      });
+    });
+
+    console.log('[IntentRecognizer] 表中的有效字段:', Array.from(allValidColumns));
+
+    // 验证 SELECT 字段
+    const validSelectColumns = selectColumns.filter(col => {
+      if (!allValidColumns.has(col)) {
+        warnings.push(`字段"${col}"不存在于表中，已忽略`);
+        return false;
+      }
+      return true;
+    });
+
+    // 验证聚合字段
+    let validAggregation = true;
+    if (aggregationColumns.length > 0) {
+      const invalidAggCols = aggregationColumns.filter(col => !allValidColumns.has(col));
+      if (invalidAggCols.length > 0) {
+        warnings.push(`聚合字段"${invalidAggCols.join(', ')}"不存在，已移除聚合操作`);
+        validAggregation = false;
+      }
+    }
+
+    // 验证 GROUP BY 字段
+    if (groupByColumns.length > 0) {
+      const invalidGroupByCols = groupByColumns.filter(col => !allValidColumns.has(col));
+      if (invalidGroupByCols.length > 0) {
+        warnings.push(`GROUP BY 字段"${invalidGroupByCols.join(', ')}"不存在，已移除聚合操作`);
+        validAggregation = false;
+      }
+    }
+
+    // 验证 ORDER BY 字段
+    let validOrderBy = true;
+    if (orderByColumns.length > 0) {
+      const invalidOrderByCols = orderByColumns.filter(col => !allValidColumns.has(col));
+      if (invalidOrderByCols.length > 0) {
+        warnings.push(`排序字段"${invalidOrderByCols.join(', ')}"不存在，已移除排序`);
+        validOrderBy = false;
+      }
+    }
+
+    console.log('[IntentRecognizer] 字段验证结果:', {
+      validSelectColumns,
+      validAggregation,
+      validOrderBy,
+      warnings,
+    });
+
+    return {
+      validColumns: validSelectColumns,
+      validAggregation,
+      validOrderBy,
+      warnings,
+    };
   }
 
   /**
