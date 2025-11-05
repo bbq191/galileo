@@ -17,6 +17,9 @@ import { SQLValidator } from '@/lib/sql/validator/sql-validator';
 import { QueryExecutor } from '@/lib/sql/executor/query-executor';
 import { AuditLogger } from '@/lib/audit/audit-logger';
 import prisma from '@/lib/prisma/client';
+import { schemas } from '@/lib/validation/schemas';
+import { validateOrRespond } from '@/lib/validation/validator';
+import { sanitizeError, ErrorCategory } from '@/lib/security/error-sanitizer';
 
 export interface ExecuteQueryRequest {
   query: string;  // 自然语言查询
@@ -60,21 +63,22 @@ export async function POST(request: NextRequest) {
 
   try {
     // 解析请求体
-    const body: ExecuteQueryRequest = await request.json();
+    const body = await request.json();
 
-    if (!body.query || typeof body.query !== 'string' || body.query.trim() === '') {
-      return NextResponse.json({
-        success: false,
-        error: '查询内容不能为空',
-      } as ExecuteQueryResponse, { status: 400 });
+    // 验证输入
+    const validation = validateOrRespond(schemas.queryExecute, body);
+    if ('response' in validation) {
+      return validation.response;
     }
 
-    console.log(`[Query Execute] Starting query execution: "${body.query}"`);
+    const { query, options } = validation.data;
+
+    console.log(`[Query Execute] Starting query execution: "${query}"`);
 
     // 1. 意图识别
     const t1 = Date.now();
     const intentRecognizer = new IntentRecognizer();
-    const intent = await intentRecognizer.recognize(body.query);
+    const intent = await intentRecognizer.recognize(query);
     const intentTime = Date.now() - t1;
     console.log(`[Query Execute] Intent recognized in ${intentTime}ms:`, intent.type);
 
@@ -116,7 +120,7 @@ export async function POST(request: NextRequest) {
       const auditLogger = new AuditLogger(prisma);
       await auditLogger.log({
         sessionId,
-        naturalLanguageQuery: body.query,
+        naturalLanguageQuery: query,
         intent,
         generatedSQL: sqlResult.sql,
         executionResult: {
@@ -161,7 +165,7 @@ export async function POST(request: NextRequest) {
     const result = await executor.execute(
       sqlResult.sql,
       context,
-      body.options
+      options
     );
     const execTime = Date.now() - t5;
     console.log(`[Query Execute] Query executed in ${execTime}ms: ${result.success}`);
@@ -170,7 +174,7 @@ export async function POST(request: NextRequest) {
     const auditLogger = new AuditLogger(prisma);
     await auditLogger.log({
       sessionId,
-      naturalLanguageQuery: body.query,
+      naturalLanguageQuery: query,
       intent,
       generatedSQL: sqlResult.sql,
       executionResult: {
@@ -227,11 +231,25 @@ export async function POST(request: NextRequest) {
     }
 
   } catch (error: any) {
-    console.error('[Query Execute] Error:', error);
+    // 使用安全的错误脱敏
+    const safeError = sanitizeError(
+      error instanceof Error ? error : new Error('查询执行失败'),
+      {
+        category: ErrorCategory.DATABASE,
+        statusCode: 500,
+      }
+    );
+
+    console.error('[Query Execute] Error:', {
+      errorId: safeError.code,
+      category: safeError.category,
+      timestamp: safeError.timestamp,
+    });
 
     return NextResponse.json({
       success: false,
-      error: error.message || '查询执行失败',
+      error: safeError.message,
+      errorId: safeError.code,
     } as ExecuteQueryResponse, { status: 500 });
   }
 }

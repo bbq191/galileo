@@ -13,6 +13,8 @@ import { cachedMetadataRepository } from '@/lib/metadata/storage/cached-metadata
 import type { InferredRelationship } from '@/lib/metadata/inference/types';
 import type { CreateInferredRelationshipInput } from '@/lib/metadata/storage/types';
 import { Prisma } from '@/app/generated/prisma';
+import { safeServerErrorResponse } from '@/lib/api/response';
+import { ErrorCategory } from '@/lib/security/error-sanitizer';
 
 /**
  * 推断关系请求体
@@ -353,15 +355,16 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('关系推断失败:', error);
-
-    return NextResponse.json(
+    // 使用安全的错误响应（已脱敏，不泄露堆栈信息）
+    return safeServerErrorResponse(
+      error instanceof Error ? error : new Error('Failed to infer relationships'),
       {
-        status: 'error',
-        message: error instanceof Error ? error.message : 'Failed to infer relationships',
-        error: error instanceof Error ? error.stack : String(error),
-      },
-      { status: 500 }
+        context: 'relationships-infer',
+        metadata: {
+          dataSourceId: body.dataSourceId,
+          operation: 'infer_relationships',
+        },
+      }
     );
   }
 }

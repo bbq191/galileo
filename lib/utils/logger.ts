@@ -1,8 +1,10 @@
 /**
  * 日志工具
  *
- * 提供统一的日志记录功能
+ * 提供统一的日志记录功能（已集成错误脱敏机制）
  */
+
+import { errorSanitizer } from '@/lib/security/error-sanitizer';
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -56,22 +58,36 @@ class Logger {
   }
 
   /**
-   * Error 日志
+   * Error 日志（已集成错误脱敏）
    */
   error(message: string, error?: Error, options?: Omit<LogOptions, 'level'>) {
-    const errorInfo = error
-      ? {
-          ...options?.metadata,
-          error: {
-            message: error.message,
-            stack: error.stack,
-          },
-        }
-      : options?.metadata;
+    if (error) {
+      // 使用错误脱敏器安全记录错误
+      const safeError = errorSanitizer.sanitize(error);
 
-    console.error(
-      this.format('error', message, { ...options, metadata: errorInfo })
-    );
+      const errorInfo = {
+        ...options?.metadata,
+        errorId: safeError.code,
+        errorCategory: safeError.category,
+        errorMessage: safeError.message,
+        // 仅在开发环境记录原始错误和堆栈（限制前5行）
+        ...(process.env.NODE_ENV === 'development' && {
+          _debug: {
+            originalMessage: error.message,
+            stack: error.stack?.split('\n').slice(0, 5),
+          },
+        }),
+      };
+
+      console.error(
+        this.format('error', message, { ...options, metadata: errorInfo })
+      );
+    } else {
+      // 没有错误对象时，直接记录消息
+      console.error(
+        this.format('error', message, options)
+      );
+    }
   }
 }
 

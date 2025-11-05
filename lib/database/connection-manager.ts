@@ -13,6 +13,7 @@ import type {
 import { DEFAULT_POOL_CONFIG } from './connection-config';
 import { encryptPassword } from './encryption';
 import prisma from '@/lib/prisma/client';
+import { createLogger } from '@/lib/utils/logger';
 
 /**
  * 连接管理器单例
@@ -23,6 +24,7 @@ class ConnectionManager {
   private readonly HEALTH_CHECK_INTERVAL = 60000; // 60 秒
   private isInitialized = false;
   private initPromise: Promise<void> | null = null;
+  private logger = createLogger('ConnectionManager');
 
   constructor() {
     // 启动定期健康检查
@@ -60,9 +62,12 @@ class ConnectionManager {
     try {
       await this.loadConnectionsFromDatabase();
       this.isInitialized = true;
-      console.log('[ConnectionManager] Initialized successfully');
+      this.logger.info('Initialized successfully');
     } catch (error) {
-      console.error('[ConnectionManager] Initialization failed:', error);
+      this.logger.error(
+        'Initialization failed',
+        error instanceof Error ? error : new Error(String(error))
+      );
       // 即使失败也标记为已初始化，避免重复尝试
       this.isInitialized = true;
     }
@@ -101,9 +106,14 @@ class ConnectionManager {
       // 保存到数据库
       await this.saveToDatabase(configWithEncryption);
 
-      console.log(`✓ 连接 ${config.name} 创建成功`);
+      this.logger.info(`连接 ${config.name} 创建成功`);
     } catch (error) {
-      console.error(`创建连接失败 (${config.id}):`, error);
+      // 使用安全的 logger（已脱敏）
+      this.logger.error(
+        `创建连接失败 (${config.id})`,
+        error instanceof Error ? error : new Error(String(error)),
+        { metadata: { configId: config.id, configName: config.name } }
+      );
       throw error;
     }
   }
@@ -232,9 +242,13 @@ class ConnectionManager {
           await pool.initialize();
           this.pools.set(config.id, pool);
 
-          console.log(`✓ 加载连接: ${ds.name}`);
+          this.logger.info(`加载连接: ${ds.name}`);
         } catch (error) {
-          console.error(`加载连接失败 (${ds.name}):`, error);
+          this.logger.error(
+            `加载连接失败 (${ds.name})`,
+            error instanceof Error ? error : new Error(String(error)),
+            { metadata: { dataSourceId: ds.id, dataSourceName: ds.name } }
+          );
           // 更新状态为错误
           await prisma.dataSource.update({
             where: { id: ds.id },
@@ -243,9 +257,12 @@ class ConnectionManager {
         }
       }
 
-      console.log(`✓ 共加载 ${this.pools.size} 个连接`);
+      this.logger.info(`共加载 ${this.pools.size} 个连接`);
     } catch (error) {
-      console.error('从数据库加载连接失败:', error);
+      this.logger.error(
+        '从数据库加载连接失败',
+        error instanceof Error ? error : new Error(String(error))
+      );
       throw error;
     }
   }
@@ -270,10 +287,14 @@ class ConnectionManager {
           });
 
           if (!health.healthy) {
-            console.warn(`连接 ${id} 不健康:`, health.error);
+            this.logger.warn(`连接 ${id} 不健康: ${health.error}`);
           }
         } catch (error) {
-          console.error(`健康检查失败 (${id}):`, error);
+          this.logger.error(
+            `健康检查失败 (${id})`,
+            error instanceof Error ? error : new Error(String(error)),
+            { metadata: { connectionId: id } }
+          );
         }
       }
     }, this.HEALTH_CHECK_INTERVAL);
@@ -302,12 +323,16 @@ class ConnectionManager {
       try {
         await pool.close();
       } catch (error) {
-        console.error(`关闭连接失败 (${id}):`, error);
+        this.logger.error(
+          `关闭连接失败 (${id})`,
+          error instanceof Error ? error : new Error(String(error)),
+          { metadata: { connectionId: id } }
+        );
       }
     }
 
     this.pools.clear();
-    console.log('✓ 所有连接已关闭');
+    this.logger.info('所有连接已关闭');
   }
 
   /**
@@ -336,7 +361,11 @@ class ConnectionManager {
         },
       });
     } catch (error) {
-      console.error('保存连接配置到数据库失败:', error);
+      this.logger.error(
+        '保存连接配置到数据库失败',
+        error instanceof Error ? error : new Error(String(error)),
+        { metadata: { configId: config.id } }
+      );
       throw error;
     }
   }

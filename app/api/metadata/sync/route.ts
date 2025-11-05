@@ -5,6 +5,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { metadataSyncService } from '@/lib/metadata/sync/metadata-sync-service';
+import { schemas } from '@/lib/validation/schemas';
+import { validateOrRespond } from '@/lib/validation/validator';
+import { safeServerErrorResponse } from '@/lib/api/response';
+import { ErrorCategory } from '@/lib/security/error-sanitizer';
 
 /**
  * 同步请求体
@@ -32,19 +36,15 @@ interface SyncRequest {
  */
 export async function POST(request: NextRequest) {
   try {
-    const body: SyncRequest = await request.json();
+    const body = await request.json();
 
-    const { dataSourceId, databases, inferRelationships, minConfidence, trackChanges } = body;
-
-    if (!dataSourceId) {
-      return NextResponse.json(
-        {
-          status: 'error',
-          message: 'dataSourceId is required',
-        },
-        { status: 400 }
-      );
+    // 验证输入
+    const validation = validateOrRespond(schemas.metadataSync, body);
+    if ('response' in validation) {
+      return validation.response;
     }
+
+    const { dataSourceId, databases, inferRelationships, minConfidence, trackChanges } = validation.data;
 
     console.log(`开始同步数据源: ${dataSourceId}`);
 
@@ -64,15 +64,16 @@ export async function POST(request: NextRequest) {
       data: result,
     });
   } catch (error) {
-    console.error('同步失败:', error);
-
-    return NextResponse.json(
+    // 使用安全的错误响应（已脱敏，不泄露堆栈信息）
+    return safeServerErrorResponse(
+      error instanceof Error ? error : new Error('Failed to sync metadata'),
       {
-        status: 'error',
-        message: error instanceof Error ? error.message : 'Failed to sync metadata',
-        error: error instanceof Error ? error.stack : String(error),
-      },
-      { status: 500 }
+        context: 'metadata-sync',
+        metadata: {
+          dataSourceId: body.dataSourceId,
+          operation: 'sync_metadata',
+        },
+      }
     );
   }
 }

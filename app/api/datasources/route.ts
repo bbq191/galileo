@@ -8,6 +8,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectionManager } from '@/lib/database';
 import type { DatabaseConfig } from '@/lib/database';
 import prisma from '@/lib/prisma/client';
+import { schemas } from '@/lib/validation/schemas';
+import { validateOrRespond } from '@/lib/validation/validator';
+import { safeErrorResponse, safeServerErrorResponse } from '@/lib/api/response';
+import { ErrorCategory } from '@/lib/security/error-sanitizer';
 
 /**
  * 获取数据源列表
@@ -54,14 +58,12 @@ export async function GET(request: NextRequest) {
       total: dataSources.length,
     });
   } catch (error) {
-    console.error('获取数据源列表失败:', error);
-    return NextResponse.json(
+    return safeServerErrorResponse(
+      error instanceof Error ? error : new Error('Failed to fetch data sources'),
       {
-        status: 'error',
-        message: 'Failed to fetch data sources',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
+        context: 'datasources-list',
+        metadata: { operation: 'fetch_datasources' },
+      }
     );
   }
 }
@@ -73,30 +75,24 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    // 验证必填字段
-    const requiredFields = ['name', 'type', 'host', 'port', 'username'];
-    for (const field of requiredFields) {
-      if (!body[field]) {
-        return NextResponse.json(
-          {
-            status: 'error',
-            message: `Missing required field: ${field}`,
-          },
-          { status: 400 }
-        );
-      }
+    // 验证输入
+    const validation = validateOrRespond(schemas.datasourceCreate, body);
+    if ('response' in validation) {
+      return validation.response;
     }
+
+    const { name, type, host, port, username, password, databases, description } = validation.data;
 
     // 检查名称是否已存在
     const existing = await prisma.dataSource.findUnique({
-      where: { name: body.name },
+      where: { name },
     });
 
     if (existing) {
       return NextResponse.json(
         {
           status: 'error',
-          message: `Data source with name '${body.name}' already exists`,
+          message: `Data source with name '${name}' already exists`,
         },
         { status: 409 }
       );
@@ -105,13 +101,13 @@ export async function POST(request: NextRequest) {
     // 创建连接配置
     const config: DatabaseConfig = {
       id: '', // 将在数据库创建后更新
-      name: body.name,
-      type: body.type,
-      host: body.host,
-      port: parseInt(body.port),
-      username: body.username,
-      password: body.password || '', // 密码可选
-      databases: body.databases || [],
+      name,
+      type,
+      host,
+      port,
+      username,
+      password,
+      databases: databases || [],
     };
 
     // 先创建数据库记录获取 ID
@@ -151,14 +147,12 @@ export async function POST(request: NextRequest) {
       throw error;
     }
   } catch (error) {
-    console.error('创建数据源失败:', error);
-    return NextResponse.json(
+    return safeErrorResponse(
+      error instanceof Error ? error : new Error('Failed to create data source'),
       {
-        status: 'error',
-        message: 'Failed to create data source',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
+        category: ErrorCategory.DATABASE,
+        statusCode: 500,
+      }
     );
   }
 }
