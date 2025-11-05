@@ -9,9 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { AuditLogger, AuditAnalyzer } from '@/lib/audit';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '@/lib/prisma/client';
 
 export interface AuditStatsResponse {
   success: boolean;

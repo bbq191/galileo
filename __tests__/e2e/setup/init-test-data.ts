@@ -7,11 +7,9 @@
  * - 跨库场景
  */
 
-import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import { ConnectionManager } from '@/lib/database/connection-manager';
 import mysql from 'mysql2/promise';
-
-const prisma = new PrismaClient();
 const connectionManager = new ConnectionManager(prisma);
 
 /**

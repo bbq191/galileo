@@ -4,6 +4,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 
 export interface SQLFeedback {
   id?: number;
@@ -52,7 +53,7 @@ export class UserFeedbackCollector {
   private prisma: PrismaClient;
 
   constructor() {
-    this.prisma = new PrismaClient();
+    this.prisma = prisma;
   }
 
   /**

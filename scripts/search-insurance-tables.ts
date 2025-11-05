@@ -1,9 +1,8 @@
 #!/usr/bin/env tsx
 
-import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 
 async function searchInsuranceTables() {
-  const prisma = new PrismaClient();
 
   try {
     const tables = await prisma.tableMeta.findMany({

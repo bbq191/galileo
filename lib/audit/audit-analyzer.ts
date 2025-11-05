@@ -10,6 +10,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import type { AuditLog, PopularQuery, TableUsageStats, TimeRangeStats } from './types';
 
 export interface QueryPattern {
@@ -46,8 +47,8 @@ export interface PerformanceTrend {
 export class AuditAnalyzer {
   private prisma: PrismaClient;
 
-  constructor(prisma?: PrismaClient) {
-    this.prisma = prisma || new PrismaClient();
+  constructor(prismaInstance?: PrismaClient) {
+    this.prisma = prismaInstance || prisma;
   }
 
   /**

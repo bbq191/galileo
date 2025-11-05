@@ -15,17 +15,13 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import type { Connection } from 'mysql2/promise';
 import type { ChangeDetectionResult } from './change-detector';
 import type { NewTable, DeletedTable } from './table-diff-detector';
 import type { ChangedTable } from './hash-based-detector';
 
-let prisma: PrismaClient;
-
 function getPrismaClient() {
-  if (!prisma) {
-    prisma = new PrismaClient();
-  }
   return prisma;
 }
 

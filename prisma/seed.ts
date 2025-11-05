@@ -3,6 +3,7 @@
  * 初始化数据库种子数据
  */
 
+import prisma from '@/lib/prisma/client';
 import seedDataDictionary from './seeds/data-dictionary';
 import seedBusinessDomains from './seeds/business-domains';
 
@@ -30,7 +31,5 @@ main()
     process.exit(1);
   })
   .finally(async () => {
-    const { PrismaClient } = await import('@/app/generated/prisma');
-    const prisma = new PrismaClient();
     await prisma.$disconnect();
   });

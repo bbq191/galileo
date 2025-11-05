@@ -2,11 +2,9 @@
  * 调试脚本：检查 tb_chatroom_relation 表的元数据
  */
 
-import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import { MetadataRetriever } from '@/lib/metadata/retrieval/metadata-retriever';
 import { IntentRecognizer } from '@/lib/nlp/intent-recognizer';
-
-const prisma = new PrismaClient();
 
 async function main() {
   try {

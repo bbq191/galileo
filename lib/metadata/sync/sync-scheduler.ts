@@ -10,18 +10,13 @@
 
 import cron from 'node-cron';
 import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import mysql from 'mysql2/promise';
 import { changeDetector, DetectionMode } from './change-detector';
 import { incrementalUpdater } from './incremental-updater';
 import { syncLogger } from './sync-logger';
 
-// 懒加载 Prisma 客户端
-let prisma: PrismaClient | null = null;
-
 function getPrismaClient(): PrismaClient {
-  if (!prisma) {
-    prisma = new PrismaClient();
-  }
   return prisma;
 }
 

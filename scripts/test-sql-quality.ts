@@ -3,13 +3,11 @@
  * 演示如何使用质量增强的 SQL 生成器
  */
 
-import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import { QualityEnhancedSQLGenerator } from '@/lib/sql/generator/quality-enhanced-generator';
 import { SQLQualityTestRunner, SQL_QUALITY_TEST_CASES } from '@/lib/sql/quality/test-cases';
 import { IntentRecognizer } from '@/lib/nlp/intent-recognizer';
 import { MetadataRetriever } from '@/lib/metadata/retrieval/metadata-retriever';
-
-const prisma = new PrismaClient();
 
 async function main() {
   console.log('========================================');

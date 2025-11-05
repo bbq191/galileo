@@ -8,14 +8,9 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-
-// 懒加载 Prisma 客户端
-let prisma: PrismaClient | null = null;
+import prisma from '@/lib/prisma/client';
 
 function getPrismaClient(): PrismaClient {
-  if (!prisma) {
-    prisma = new PrismaClient();
-  }
   return prisma;
 }
 

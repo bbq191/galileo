@@ -2,10 +2,8 @@
  * 端到端测试辅助工具类
  */
 
-import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import { ExecuteQueryRequest, ExecuteQueryResponse } from '@/app/api/query/execute/route';
-
-const prisma = new PrismaClient();
 
 /**
  * 测试用例接口

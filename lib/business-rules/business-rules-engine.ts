@@ -4,6 +4,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import { QueryIntent } from '@/lib/nlp/types';
 import { MetadataContext } from '@/lib/metadata/retrieval/types';
 
@@ -51,7 +52,7 @@ export class BusinessRulesEngine {
   private prisma: PrismaClient;
 
   constructor() {
-    this.prisma = new PrismaClient();
+    this.prisma = prisma;
   }
 
   /**

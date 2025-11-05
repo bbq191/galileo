@@ -3,9 +3,7 @@
  * 预定义标准字段语义规则
  */
 
-import { PrismaClient } from '@/app/generated/prisma';
-
-const prisma = new PrismaClient();
+import prisma from '@/lib/prisma/client';
 
 const dataDictionarySeeds = [
   // 外键模式

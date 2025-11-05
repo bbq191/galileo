@@ -11,13 +11,14 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import type { AuditLog, AuditLogFilters, AuditStats, PaginatedAuditLogs } from './types';
 
 export class AuditLogger {
   private prisma: PrismaClient;
 
-  constructor(prisma?: PrismaClient) {
-    this.prisma = prisma || new PrismaClient();
+  constructor(prismaInstance?: PrismaClient) {
+    this.prisma = prismaInstance || prisma;
   }
 
   /**

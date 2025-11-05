@@ -8,6 +8,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import type { DatabaseInfo, TableInfo, ColumnInfo } from '@/lib/metadata/types';
 import { RuleBasedAnnotator } from './rules/naming-rules';
 import { BatchProcessor, type BatchRequest, type BatchProgress } from './batch-processor';
@@ -19,13 +20,7 @@ import {
 } from './prompt-templates';
 import { semanticConfig } from './config';
 
-let prisma: PrismaClient;
-
-// 延迟初始化，避免在导入时就连接数据库
 function getPrismaClient() {
-  if (!prisma) {
-    prisma = new PrismaClient();
-  }
   return prisma;
 }
 

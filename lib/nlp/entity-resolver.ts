@@ -4,6 +4,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import { EntityMatch } from './types';
 
 /**
@@ -13,7 +14,7 @@ export class EntityResolver {
   private prisma: PrismaClient;
 
   constructor() {
-    this.prisma = new PrismaClient();
+    this.prisma = prisma;
   }
 
   /**

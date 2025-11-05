@@ -3,11 +3,9 @@
  * 测试审计日志的记录、查询和分析功能
  */
 
-import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import { AuditLogger, AuditAnalyzer } from '../lib/audit';
 import type { AuditLog } from '../lib/audit/types';
-
-const prisma = new PrismaClient();
 
 async function testAuditLogger() {
   console.log('========================================');

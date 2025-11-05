@@ -4,6 +4,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import { VectorStore } from './vector-store';
 import { EmbeddingGenerator } from './embedding-generator';
 import { VectorIndexConfig, VectorSearchOptions, VectorSearchResult } from './types';
@@ -50,7 +51,7 @@ export class VectorSearchService {
   private initialized = false;
 
   constructor(config: VectorSearchServiceConfig = {}) {
-    this.prisma = new PrismaClient();
+    this.prisma = prisma;
     this.embedder = new EmbeddingGenerator();
 
     // 初始化 Redis（可选）

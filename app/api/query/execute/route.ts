@@ -16,9 +16,7 @@ import { SQLGenerator } from '@/lib/sql/generator/sql-generator';
 import { SQLValidator } from '@/lib/sql/validator/sql-validator';
 import { QueryExecutor } from '@/lib/sql/executor/query-executor';
 import { AuditLogger } from '@/lib/audit/audit-logger';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '@/lib/prisma/client';
 
 export interface ExecuteQueryRequest {
   query: string;  // 自然语言查询

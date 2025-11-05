@@ -4,6 +4,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import { TableContext, ColumnContext, MetadataContext, RelationshipContext } from './types';
 import { connectionManager } from '@/lib/database';
 
@@ -14,7 +15,7 @@ export class ContextBuilder {
   private prisma: PrismaClient;
 
   constructor() {
-    this.prisma = new PrismaClient();
+    this.prisma = prisma;
   }
 
   /**

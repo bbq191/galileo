@@ -13,9 +13,7 @@ import { IntentRecognizer } from '@/lib/nlp/intent-recognizer';
 import { MetadataRetriever } from '@/lib/metadata/retrieval/metadata-retriever';
 import { SQLGenerator } from '@/lib/sql/generator/sql-generator';
 import { SQLValidator } from '@/lib/sql/validator/sql-validator';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '@/lib/prisma/client';
 
 export interface PreviewQueryRequest {
   query: string;  // 自然语言查询

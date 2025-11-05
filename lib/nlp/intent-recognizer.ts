@@ -5,6 +5,7 @@
 
 import { DeepseekClient, getDeepseekClient } from '@/lib/ai/deepseek-client';
 import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import { QueryIntent, RawIntent } from './types';
 import { INTENT_SYSTEM_PROMPT, buildIntentPrompt, buildDisambiguationPrompt } from './prompts/intent-prompts';
 import { EntityResolver } from './entity-resolver';
@@ -24,7 +25,7 @@ export class IntentRecognizer {
     this.aiClient = aiClient || getDeepseekClient();
     this.entityResolver = new EntityResolver();
     this.timeParser = new TimeParser();
-    this.prisma = new PrismaClient();
+    this.prisma = prisma;
   }
 
   /**

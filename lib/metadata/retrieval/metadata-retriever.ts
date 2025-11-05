@@ -4,6 +4,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import { QueryIntent } from '@/lib/nlp/types';
 import { MetadataContext, SearchOptions } from './types';
 import { SemanticSearch } from './semantic-search';
@@ -21,8 +22,8 @@ export class MetadataRetriever {
   private contextBuilder: ContextBuilder;
   private cache: MultiLevelCache;
 
-  constructor() {
-    this.prisma = new PrismaClient();
+  constructor(prismaInstance?: PrismaClient) {
+    this.prisma = prismaInstance || prisma;
     this.semanticSearch = new SemanticSearch();
     this.ranker = new RelevanceRanker();
     this.contextBuilder = new ContextBuilder();

@@ -3,26 +3,22 @@
  */
 
 import { VectorSearchService } from '../vector-search-service';
-import { PrismaClient } from '@prisma/client';
 
-// Mock Prisma
-jest.mock('@prisma/client', () => {
-  const mockPrisma = {
-    tableMeta: {
-      findMany: jest.fn(),
-      findUnique: jest.fn(),
-    },
-    columnMeta: {
-      findMany: jest.fn(),
-      findUnique: jest.fn(),
-    },
-    $disconnect: jest.fn(),
-  };
+// Mock Prisma client
+const mockPrisma = {
+  tableMeta: {
+    findMany: jest.fn(),
+    findUnique: jest.fn(),
+  },
+  columnMeta: {
+    findMany: jest.fn(),
+    findUnique: jest.fn(),
+  },
+  $disconnect: jest.fn(),
+};
 
-  return {
-    PrismaClient: jest.fn(() => mockPrisma),
-  };
-});
+// Mock the prisma client module
+jest.mock('@/lib/prisma/client', () => mockPrisma);
 
 describe('VectorSearchService', () => {
   let service: VectorSearchService;
@@ -34,7 +30,7 @@ describe('VectorSearchService', () => {
       dimension: 384,
     });
 
-    prisma = new PrismaClient();
+    prisma = mockPrisma;
   });
 
   afterEach(async () => {

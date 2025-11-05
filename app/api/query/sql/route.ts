@@ -12,10 +12,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { SQLValidator } from '@/lib/sql/validator/sql-validator';
 import { QueryExecutor } from '@/lib/sql/executor/query-executor';
 import { AuditLogger } from '@/lib/audit/audit-logger';
-import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import type { MetadataContext } from '@/lib/metadata/retrieval/types';
-
-const prisma = new PrismaClient();
 
 export interface ExecuteSQLRequest {
   sql: string;  // SQL 查询语句

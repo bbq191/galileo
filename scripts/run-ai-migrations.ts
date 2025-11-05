@@ -4,11 +4,9 @@
  * 执行任务队列、错误日志和断点续传表的创建
  */
 
-import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import * as fs from 'fs';
 import * as path from 'path';
-
-const prisma = new PrismaClient();
 
 async function runMigrations() {
   console.log('开始执行 AI 相关表迁移...');

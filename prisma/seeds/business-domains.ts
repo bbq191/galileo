@@ -3,9 +3,7 @@
  * 用于跨库关系推断的业务域分组
  */
 
-import { PrismaClient } from '@/app/generated/prisma';
-
-const prisma = new PrismaClient();
+import prisma from '@/lib/prisma/client';
 
 const businessDomainSeeds = [
   {

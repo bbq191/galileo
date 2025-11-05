@@ -14,6 +14,7 @@ import {
 } from './types';
 import { MetadataContext, TableContext } from '@/lib/metadata/retrieval/types';
 import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 
 /**
  * 索引信息接口
@@ -35,9 +36,9 @@ export class PerformanceAnalyzer {
   private prisma: PrismaClient;
   private indexCache: Map<string, TableIndexInfo[]>;
 
-  constructor(prisma?: PrismaClient) {
+  constructor(prismaInstance?: PrismaClient) {
     this.parser = new Parser();
-    this.prisma = prisma || new PrismaClient();
+    this.prisma = prismaInstance || prisma;
     this.indexCache = new Map();
   }
 

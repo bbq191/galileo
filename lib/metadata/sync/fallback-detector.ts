@@ -8,14 +8,10 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import type { Connection } from 'mysql2/promise';
 
-let prisma: PrismaClient;
-
 function getPrismaClient() {
-  if (!prisma) {
-    prisma = new PrismaClient();
-  }
   return prisma;
 }
 

@@ -4,6 +4,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import { TableSearchResult, SearchOptions } from './types';
 import { VectorSearchService } from '@/lib/vector/vector-search-service';
 
@@ -16,7 +17,7 @@ export class SemanticSearch {
   private useVectorSearch: boolean;
 
   constructor(options: { enableVectorSearch?: boolean } = {}) {
-    this.prisma = new PrismaClient();
+    this.prisma = prisma;
     this.useVectorSearch = options.enableVectorSearch !== false;
 
     // 初始化向量搜索（可选）

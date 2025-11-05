@@ -8,16 +8,11 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 import { SemanticAnnotator } from './semantic-annotator';
 import type { BatchProgress } from './batch-processor';
 
-let prisma: PrismaClient;
-
-// 延迟初始化，避免在导入时就连接数据库
 function getPrismaClient() {
-  if (!prisma) {
-    prisma = new PrismaClient();
-  }
   return prisma;
 }
 

@@ -5,9 +5,7 @@
 import { IntentRecognizer } from '@/lib/nlp/intent-recognizer';
 import { MetadataRetriever } from '@/lib/metadata/retrieval/metadata-retriever';
 import { SQLGenerator } from '@/lib/sql/generator/sql-generator';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '@/lib/prisma/client';
 
 async function main() {
   try {

@@ -4,7 +4,7 @@
 
 import { PerformanceAnalyzer } from '../performance-analyzer';
 import { MetadataContext, TableContext } from '@/lib/metadata/retrieval/types';
-import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma/client';
 
 // 创建测试用的元数据上下文
 function createTestContext(): MetadataContext {
@@ -126,7 +126,6 @@ async function main() {
   console.log('开始性能分析器测试...\n');
 
   // 注意：这里使用真实的 PrismaClient，因为性能分析器需要查询索引信息
-  const prisma = new PrismaClient();
   const analyzer = new PerformanceAnalyzer(prisma);
   const context = createTestContext();
 
