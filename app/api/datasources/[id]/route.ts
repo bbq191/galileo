@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { connectionManager } from '@/lib/database';
+import { PrismaClient } from '@prisma/client';
 import prisma from '@/lib/prisma/client';
 
 interface RouteContext {
@@ -24,7 +25,7 @@ export async function GET(
     const { id } = await context.params;
     const dataSourceId = parseInt(id);
 
-    const dataSource = await prisma.dataSource.findUnique({
+    const dataSource = await (prisma as PrismaClient).dataSource.findUnique({
       where: { id: dataSourceId },
       include: {
         databases: {
@@ -51,15 +52,15 @@ export async function GET(
     }
 
     // 获取连接统计
-    const hasConnection = connectionManager.hasConnection(id);
-    const stats = hasConnection ? connectionManager.getConnectionStats(id) : null;
+    const hasConnection = await connectionManager.hasConnection(id);
+    const stats = hasConnection ? await connectionManager.getConnectionStats(id) : null;
 
     return NextResponse.json({
       status: 'success',
       data: {
         ...dataSource,
         passwordEncrypted: undefined, // 不返回密码
-        databases: dataSource.targetDatabases ? (dataSource.targetDatabases as string[]) : [],
+        databases: Array.isArray(dataSource.targetDatabases) ? dataSource.targetDatabases : (dataSource.targetDatabases ? [dataSource.targetDatabases as string] : []),
         targetDatabases: undefined, // 不直接返回内部字段
         connectionStats: stats,
         isConnected: hasConnection,
@@ -90,7 +91,7 @@ export async function PUT(
     const dataSourceId = parseInt(id);
     const body = await request.json();
 
-    const dataSource = await prisma.dataSource.update({
+    const dataSource = await (prisma as PrismaClient).dataSource.update({
       where: { id: dataSourceId },
       data: {
         name: body.name,
@@ -137,12 +138,12 @@ export async function DELETE(
     const dataSourceId = parseInt(id);
 
     // 先关闭连接
-    if (connectionManager.hasConnection(id)) {
+    if (await connectionManager.hasConnection(id)) {
       await connectionManager.closeConnection(id);
     }
 
     // 删除数据库记录（级联删除相关数据）
-    await prisma.dataSource.delete({
+    await (prisma as PrismaClient).dataSource.delete({
       where: { id: dataSourceId },
     });
 

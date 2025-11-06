@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
 import prisma from '@/lib/prisma/client';
 
 /**
@@ -54,7 +55,7 @@ export async function GET(request: NextRequest) {
         where.sourceId = parseInt(sourceId);
       }
 
-      results.databases = await prisma.databaseMeta.findMany({
+      results.databases = await (prisma as PrismaClient).databaseMeta.findMany({
         where,
         take: type === 'database' ? limit : 10,
         skip: type === 'database' ? skip : 0,
@@ -95,7 +96,7 @@ export async function GET(request: NextRequest) {
         };
       }
 
-      const tables = await prisma.tableMeta.findMany({
+      const tables = await (prisma as PrismaClient).tableMeta.findMany({
         where,
         take: type === 'table' ? limit : 10,
         skip: type === 'table' ? skip : 0,
@@ -124,7 +125,7 @@ export async function GET(request: NextRequest) {
       });
 
       // 转换 BigInt 为字符串
-      results.tables = tables.map((table) => ({
+      results.tables = tables.map((table: any) => ({
         ...table,
         rowCount: table.rowCount ? table.rowCount.toString() : '0',
       }));
@@ -152,7 +153,7 @@ export async function GET(request: NextRequest) {
         };
       }
 
-      results.columns = await prisma.columnMeta.findMany({
+      results.columns = await (prisma as PrismaClient).columnMeta.findMany({
         where,
         take: type === 'column' ? limit : 10,
         skip: type === 'column' ? skip : 0,

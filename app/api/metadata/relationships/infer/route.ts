@@ -154,7 +154,7 @@ async function convertInferredRelationshipsToDatabaseInputs(
         sourceColumnId,
         targetTableId,
         targetColumnId,
-        confidenceScore: new Prisma.Decimal(rel.confidenceScore),
+        confidenceScore: rel.confidenceScore as number,
         relationshipType,
         inferenceMethod: rel.inferenceMethod,
         reasoning: rel.reasoning,
@@ -173,8 +173,10 @@ async function convertInferredRelationshipsToDatabaseInputs(
  * 推断数据库关系
  */
 export async function POST(request: NextRequest) {
+  let requestDataSourceId: string | undefined;
   try {
     const body: InferRelationshipsRequest = await request.json();
+    requestDataSourceId = body.dataSourceId;
 
     const { dataSourceId, databases, crossDatabase = false, minConfidence, maxPairsToCheck, saveToDatabase = true } = body;
 
@@ -361,7 +363,7 @@ export async function POST(request: NextRequest) {
       {
         context: 'relationships-infer',
         metadata: {
-          dataSourceId: body.dataSourceId,
+          dataSourceId: requestDataSourceId,
           operation: 'infer_relationships',
         },
       }

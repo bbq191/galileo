@@ -526,3 +526,6 @@ export class IntentRecognizer {
     await this.prisma.$disconnect();
   }
 }
+
+// Re-export types for convenience
+export type { QueryIntent, RawIntent } from './types';

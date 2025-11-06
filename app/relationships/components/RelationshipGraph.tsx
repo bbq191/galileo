@@ -55,8 +55,8 @@ export default function RelationshipGraph({
   onNodeClick,
   onEdgeClick,
 }: RelationshipGraphProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [graphData, setGraphData] = useState<{

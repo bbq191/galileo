@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectionManager } from '@/lib/database';
 import { CollectorFactory } from '@/lib/metadata/collectors';
+import { PrismaClient } from '@prisma/client';
+import { DatabaseConfig } from '@/lib/database/connection-config';
 import prisma from '@/lib/prisma/client';
 import crypto from 'crypto';
 
@@ -33,7 +35,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     console.log(`[Sync] Starting sync for data source ${dataSourceId}...`);
 
-    const dataSource = await prisma.dataSource.findUnique({
+    const dataSource = await (prisma as PrismaClient).dataSource.findUnique({
       where: { id: dataSourceId },
     });
 
@@ -106,7 +108,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       console.log(`[Sync] Syncing database: ${dbInfo.name}`);
 
       try {
-        const database = await prisma.databaseMeta.upsert({
+        const database = await (prisma as PrismaClient).databaseMeta.upsert({
           where: {
             sourceId_databaseName: {
               sourceId: dataSourceId,
@@ -130,18 +132,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
         const tables = await collector.collectTables(id, dbInfo.name);
         console.log(`[Sync] Database ${dbInfo.name} has ${tables.length} tables`);
 
-        const existingTables = await prisma.tableMeta.findMany({
+        const existingTables = await (prisma as PrismaClient).tableMeta.findMany({
           where: { databaseId: database.id },
           select: { id: true, tableName: true },
         });
-        const existingTableNames = new Set(existingTables.map((t) => t.tableName));
+        const existingTableNames = new Set(existingTables.map((t: any) => t.tableName));
 
         for (const tableInfo of tables) {
           try {
             const columns = await collector.collectColumns(id, dbInfo.name, tableInfo.tableName);
             const structureHash = calculateStructureHash(columns);
 
-            const table = await prisma.tableMeta.upsert({
+            const table = await (prisma as PrismaClient).tableMeta.upsert({
               where: {
                 databaseId_tableName: {
                   databaseId: database.id,
@@ -173,18 +175,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
               syncStats.tablesAdded++;
             }
 
-            const existingColumns = await prisma.columnMeta.findMany({
+            const existingColumns = await (prisma as PrismaClient).columnMeta.findMany({
               where: { tableId: table.id },
               select: { id: true, columnName: true },
             });
-            const existingColumnNames = new Set(existingColumns.map((c) => c.columnName));
+            const existingColumnNames = new Set(existingColumns.map((c: any) => c.columnName));
 
             for (const columnInfo of columns) {
               const isPrimaryKey = columnInfo.columnKey === 'PRI';
               const isUnique = columnInfo.columnKey === 'UNI';
               const isNullable = Boolean(columnInfo.isNullable);
 
-              await prisma.columnMeta.upsert({
+              await (prisma as PrismaClient).columnMeta.upsert({
                 where: {
                   tableId_columnName: {
                     tableId: table.id,
@@ -234,7 +236,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }
     }
 
-    await prisma.dataSource.update({
+    await (prisma as PrismaClient).dataSource.update({
       where: { id: dataSourceId },
       data: {
         lastSyncAt: new Date(),

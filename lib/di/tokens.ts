@@ -60,6 +60,11 @@ export const DI_TOKENS = {
   // 配置
   Config: Symbol.for('Config'),
   Logger: Symbol.for('Logger'),
+
+  // 编排器
+  MetadataOrchestrator: Symbol.for('MetadataOrchestrator'),
+  QueryOrchestrator: Symbol.for('QueryOrchestrator'),
+  AuditOrchestrator: Symbol.for('AuditOrchestrator'),
 } as const;
 
 export type DIToken = (typeof DI_TOKENS)[keyof typeof DI_TOKENS];

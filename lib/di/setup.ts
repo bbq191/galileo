@@ -120,10 +120,25 @@ export function setupDependencyInjection(): void {
   const { QueryExecutor } = require('@/lib/sql/executor/query-executor');
   registerSingleton(DI_TOKENS.QueryExecutor, QueryExecutor);
 
+  // ==================== Phase 3: 服务编排层 ====================
+
+  // 注册 MetadataOrchestrator
+  const { MetadataOrchestrator } = require('./orchestrators/metadata.orchestrator');
+  registerSingleton(DI_TOKENS.MetadataOrchestrator, MetadataOrchestrator);
+
+  // 注册 QueryOrchestrator
+  const { QueryOrchestrator } = require('./orchestrators/query.orchestrator');
+  registerSingleton(DI_TOKENS.QueryOrchestrator, QueryOrchestrator);
+
+  // 注册 AuditOrchestrator
+  const { AuditOrchestrator } = require('./orchestrators/audit.orchestrator');
+  registerSingleton(DI_TOKENS.AuditOrchestrator, AuditOrchestrator);
+
   console.log('[DI] Dependency injection setup completed');
   console.log('[DI] Phase 2.1 services registered: ConnectionPoolFactory, MultiLevelCache, ConnectionManager, QueryCacheManager, CacheInvalidationService');
   console.log('[DI] Phase 2.2 services registered: DeepseekClient, BatchProcessor, RuleBasedAnnotator, SemanticAnnotator, MetadataRepository, MetadataRetriever, MetadataSyncService');
   console.log('[DI] Phase 2.3 services registered: ResultFormatter, TimeParser, EntityResolver, CrossDatabaseHandler, IntentRecognizer, SQLGenerator, QueryExecutor');
+  console.log('[DI] Phase 3 orchestrators registered: MetadataOrchestrator, QueryOrchestrator, AuditOrchestrator');
 }
 
 /**
@@ -137,7 +152,7 @@ export function getService<T>(token: symbol): T {
 /**
  * 便捷方法：获取 PrismaClient
  */
-export function getPrismaClient() {
+export function getPrismaClient(): import('@prisma/client').PrismaClient {
   return getService(DI_TOKENS.PrismaClient);
 }
 
@@ -216,6 +231,48 @@ export function getMetadataRetriever() {
  */
 export function getMetadataSyncService() {
   return getService(DI_TOKENS.MetadataSyncService);
+}
+
+/**
+ * 便捷方法：获取 MetadataOrchestrator
+ */
+export function getMetadataOrchestrator() {
+  return getService(DI_TOKENS.MetadataOrchestrator);
+}
+
+/**
+ * 便捷方法：获取 QueryOrchestrator
+ */
+export function getQueryOrchestrator(): import('./orchestrators/query.orchestrator').QueryOrchestrator {
+  return getService(DI_TOKENS.QueryOrchestrator);
+}
+
+/**
+ * 便捷方法：获取 AuditOrchestrator
+ */
+export function getAuditOrchestrator(): import('./orchestrators/audit.orchestrator').AuditOrchestrator {
+  return getService(DI_TOKENS.AuditOrchestrator);
+}
+
+/**
+ * 便捷方法：获取 QueryExecutor
+ */
+export function getQueryExecutor() {
+  return getService(DI_TOKENS.QueryExecutor);
+}
+
+/**
+ * 便捷方法：获取 IntentRecognizer
+ */
+export function getIntentRecognizer() {
+  return getService(DI_TOKENS.IntentRecognizer);
+}
+
+/**
+ * 便捷方法：获取 SQLGenerator
+ */
+export function getSQLGenerator() {
+  return getService(DI_TOKENS.SQLGenerator);
 }
 
 // 自动初始化（仅在服务器端）

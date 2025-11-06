@@ -173,7 +173,7 @@ export class BusinessRulesEngine {
       // 检查意图中的表是否匹配分表模式
       for (const pattern of mockPatterns) {
         // 检查是否有表名匹配基表名
-        const hasMatch = intent.entities.tables.some(tableName =>
+        const hasMatch = intent.entities.tables?.some(tableName =>
           tableName === pattern.baseTableName ||
           tableName.startsWith(pattern.baseTableName + '_')
         );

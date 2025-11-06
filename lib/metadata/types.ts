@@ -2,6 +2,9 @@
  * 元数据采集器类型定义
  */
 
+// Re-export types from retrieval module
+export type { MetadataContext, TableContext, RelationshipContext, ColumnContext } from './retrieval/types';
+
 /**
  * 数据库信息
  */

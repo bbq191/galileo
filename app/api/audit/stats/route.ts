@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { AuditLogger, AuditAnalyzer } from '@/lib/audit';
+import { PrismaClient } from '@prisma/client';
 import prisma from '@/lib/prisma/client';
 
 export interface AuditStatsResponse {
@@ -78,8 +79,8 @@ export async function GET(request: NextRequest) {
 
     console.log(`[Audit Stats] Fetching stats: includeDetails=${includeDetails}`);
 
-    const auditLogger = new AuditLogger(prisma);
-    const auditAnalyzer = new AuditAnalyzer(prisma);
+    const auditLogger = new AuditLogger(prisma as PrismaClient);
+    const auditAnalyzer = new AuditAnalyzer(prisma as PrismaClient);
 
     // 构建日期范围
     const dateFilters: any = {};

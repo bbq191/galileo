@@ -124,7 +124,9 @@ export class PriorityProcessor {
   private queue: ProcessingTask[] = [];
 
   constructor() {
-    this.annotator = new SemanticAnnotator();
+    // 使用 getter 函数获取 annotator 实例
+    const { getSemanticAnnotator } = require('./semantic-annotator');
+    this.annotator = getSemanticAnnotator();
   }
 
   /**

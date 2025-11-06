@@ -35,8 +35,10 @@ interface SyncRequest {
  * 同步数据源的元数据
  */
 export async function POST(request: NextRequest) {
+  let requestDataSourceId: number | undefined;
   try {
     const body = await request.json();
+    requestDataSourceId = body.dataSourceId;
 
     // 验证输入
     const validation = validateOrRespond(schemas.metadataSync, body);
@@ -70,7 +72,7 @@ export async function POST(request: NextRequest) {
       {
         context: 'metadata-sync',
         metadata: {
-          dataSourceId: body.dataSourceId,
+          dataSourceId: requestDataSourceId,
           operation: 'sync_metadata',
         },
       }

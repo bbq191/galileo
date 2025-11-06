@@ -61,7 +61,16 @@
     "test:e2e:agg": "tsx __tests__/e2e/run-e2e-tests.ts --category=aggregation",
     "test:e2e:complex": "tsx __tests__/e2e/run-e2e-tests.ts --category=complex",
     "test:e2e:report": "tsx __tests__/e2e/run-e2e-tests.ts --report",
-    "test:rate-limit": "tsx scripts/test-rate-limit.ts"
+    "test:rate-limit": "tsx scripts/test-rate-limit.ts",
+    "test:di:database": "jest lib/di/services/__tests__/database.service.test.ts",
+    "test:di:cache": "jest lib/di/services/__tests__/cache.service.test.ts",
+    "test:di:prisma-factory": "jest lib/di/factories/__tests__/prisma.factory.test.ts",
+    "test:di:redis-factory": "jest lib/di/factories/__tests__/redis.factory.test.ts",
+    "test:di:container": "jest lib/di/__tests__/container.integration.test.ts",
+    "test:di:performance": "jest lib/di/__tests__/performance.test.ts",
+    "test:di:unit": "npm run test:di:database && npm run test:di:cache && npm run test:di:prisma-factory && npm run test:di:redis-factory",
+    "test:di:all": "npm run test:di:unit && npm run test:di:container && npm run test:di:performance",
+    "test:di": "npm run test:di:all"
   },
   "dependencies": {
     "@prisma/client": "^6.17.1",
@@ -84,7 +93,9 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@jest/globals": "^30.2.0",
     "@types/crypto-js": "^4.2.2",
+    "@types/jest": "^30.0.0",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
@@ -92,8 +103,10 @@
     "daisyui": "^5.3.7",
     "eslint": "^8.57.1",
     "eslint-config-next": "^14.2.15",
+    "jest": "^30.2.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
+    "ts-jest": "^29.4.5",
     "tsx": "^4.20.6",
     "typescript": "^5.7.2"
   }

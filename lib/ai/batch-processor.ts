@@ -565,7 +565,7 @@ let _batchProcessor: BatchProcessor | null = null;
 export function getBatchProcessor(): BatchProcessor {
   if (!_batchProcessor) {
     // 如果 DI 容器还未初始化，创建临时实例
-    const { getService } = require('@/lib/di/setup');
+    const { getService } = require('@/lib/di/setup') as { getService: <T>(token: symbol) => T };
     try {
       _batchProcessor = getService<BatchProcessor>(DI_TOKENS.BatchProcessor);
     } catch {

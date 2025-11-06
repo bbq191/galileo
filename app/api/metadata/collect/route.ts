@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectionManager } from '@/lib/database';
 import { CollectorFactory } from '@/lib/metadata/collectors';
+import { PrismaClient } from '@prisma/client';
 import prisma from '@/lib/prisma/client';
 
 /**
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 获取数据源信息
-    const dataSource = await prisma.dataSource.findUnique({
+    const dataSource = await (prisma as PrismaClient).dataSource.findUnique({
       where: { id: parseInt(dataSourceId) },
     });
 
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
 
     // 获取连接池
     const connectionId = dataSourceId.toString();
-    if (!connectionManager.hasConnection(connectionId)) {
+    if (!(await connectionManager.hasConnection(connectionId))) {
       return NextResponse.json(
         {
           status: 'error',
@@ -87,7 +88,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 更新数据源的最后同步时间
-    await prisma.dataSource.update({
+    await (prisma as PrismaClient).dataSource.update({
       where: { id: parseInt(dataSourceId) },
       data: { lastSyncAt: new Date() },
     });

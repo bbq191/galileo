@@ -593,7 +593,7 @@ let _semanticAnnotator: SemanticAnnotator | null = null;
 
 export function getSemanticAnnotator(): SemanticAnnotator {
   if (!_semanticAnnotator) {
-    const { getService } = require('@/lib/di/setup');
+    const { getService } = require('@/lib/di/setup') as { getService: <T>(token: symbol) => T };
     try {
       _semanticAnnotator = getService<SemanticAnnotator>(DI_TOKENS.SemanticAnnotator);
     } catch {

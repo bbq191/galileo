@@ -10,10 +10,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { SQLValidator } from '@/lib/sql/validator/sql-validator';
-import { QueryExecutor } from '@/lib/sql/executor/query-executor';
+import { getQueryExecutor } from '@/lib/di/setup';
 import { AuditLogger } from '@/lib/audit/audit-logger';
 import prisma from '@/lib/prisma/client';
 import type { MetadataContext } from '@/lib/metadata/retrieval/types';
+import type { QueryExecutor } from '@/lib/sql/executor/query-executor';
 
 export interface ExecuteSQLRequest {
   sql: string;  // SQL 查询语句
@@ -124,11 +125,11 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. 执行查询
-    const executor = new QueryExecutor();
+    const executor = getQueryExecutor() as QueryExecutor;
     const result = await executor.execute(
       body.sql,
       basicContext,
-      body.options
+      body.options || {}
     );
     console.log(`[SQL Execute] Query executed: ${result.success}`);
 

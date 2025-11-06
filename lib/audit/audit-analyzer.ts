@@ -241,7 +241,7 @@ export class AuditAnalyzer {
     }>();
 
     for (const log of logs) {
-      const databases = log.usedDatabases as string[];
+      const databases = Array.isArray(log.usedDatabases) ? log.usedDatabases : [log.usedDatabases as string];
       for (const db of databases) {
         const current = dbMap.get(db) || {
           count: 0,

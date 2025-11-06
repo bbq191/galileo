@@ -4,7 +4,7 @@
  */
 
 import 'reflect-metadata';
-import { container as tsyringeContainer, DependencyContainer } from 'tsyringe';
+import { container as tsyringeContainer, DependencyContainer, Lifecycle } from 'tsyringe';
 import { PrismaClient } from '@/app/generated/prisma';
 import { DI_TOKENS } from './tokens';
 import type { ContainerConfig } from './types';
@@ -49,7 +49,10 @@ export function registerCoreServices(container: DependencyContainer): void {
     useFactory: () => createPrismaClient(),
   });
 
-  console.log('[DI Container] Core services registered');
+  // 仅在非测试环境下输出日志
+  if (process.env.NODE_ENV !== 'test') {
+    console.log('[DI Container] Core services registered');
+  }
 }
 
 /**
@@ -58,7 +61,10 @@ export function registerCoreServices(container: DependencyContainer): void {
 export function resetContainer(): void {
   globalContainer = null;
   tsyringeContainer.clearInstances();
-  console.log('[DI Container] Container reset');
+  // 仅在调试模式下输出日志
+  if (process.env.DEBUG) {
+    console.log('[DI Container] Container reset');
+  }
 }
 
 /**
@@ -66,7 +72,9 @@ export function resetContainer(): void {
  */
 export function initializeContainer(config?: ContainerConfig): DependencyContainer {
   if (globalContainer) {
-    console.warn('[DI Container] Container already initialized, returning existing instance');
+    if (config?.debug) {
+      console.warn('[DI Container] Container already initialized, returning existing instance');
+    }
     return globalContainer;
   }
 
@@ -107,7 +115,10 @@ export function registerSingleton<T>(
   const container = getContainer();
 
   if (useFactory) {
-    container.register(token, { useFactory });
+    // 对于工厂函数，立即调用并缓存结果
+    // 这样确保工厂只被调用一次（单例模式）
+    const instance = useFactory();
+    container.register(token, { useValue: instance });
   } else if (useClass) {
     container.registerSingleton(token, useClass);
   } else {

@@ -32,11 +32,11 @@ export function validateConfig(): void {
     );
   }
 
-  if (deepseekConfig.timeout < 1000) {
+  if (deepseekConfig.timeout !== undefined && deepseekConfig.timeout < 1000) {
     throw new Error('超时时间不能小于 1000ms');
   }
 
-  if (deepseekConfig.maxRetries < 0) {
+  if (deepseekConfig.maxRetries !== undefined && deepseekConfig.maxRetries < 0) {
     throw new Error('最大重试次数不能为负数');
   }
 }

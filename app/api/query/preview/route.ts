@@ -9,11 +9,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { IntentRecognizer } from '@/lib/nlp/intent-recognizer';
-import { MetadataRetriever } from '@/lib/metadata/retrieval/metadata-retriever';
-import { SQLGenerator } from '@/lib/sql/generator/sql-generator';
-import { SQLValidator } from '@/lib/sql/validator/sql-validator';
-import prisma from '@/lib/prisma/client';
+import { getQueryOrchestrator } from '@/lib/di/setup';
+import type { QueryOrchestrator } from '@/lib/di/orchestrators/query.orchestrator';
 
 export interface PreviewQueryRequest {
   query: string;  // 自然语言查询
@@ -68,57 +65,25 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Query Preview] Generating SQL for: "${body.query}"`);
 
-    // 1. 意图识别
-    const intentRecognizer = new IntentRecognizer();
-    const intent = await intentRecognizer.recognize(body.query);
-    console.log(`[Query Preview] Intent recognized:`, intent.type);
+    // 使用 QueryOrchestrator 处理查询（仅解释，不执行）
+    const queryOrchestrator = getQueryOrchestrator() as QueryOrchestrator;
+    const result = await queryOrchestrator.processNaturalLanguageQuery(body.query, {
+      explainOnly: true,
+    });
 
-    // 2. 元数据检索
-    const metadataRetriever = new MetadataRetriever(prisma);
-    const context = await metadataRetriever.retrieveContext(intent);
-    console.log(`[Query Preview] Metadata retrieved: ${context.tables.length} tables`);
-
-    // 检查是否找到相关表
-    if (context.tables.length === 0) {
+    if (!result.success || !result.metadata) {
       return NextResponse.json({
         success: false,
-        error: '未找到相关的数据表，请检查查询内容',
-        intent: {
-          type: intent.type,
-          entities: intent.entities,
-        },
-      } as PreviewQueryResponse, { status: 404 });
+        error: result.error || '未找到相关的数据表，请检查查询内容',
+      } as PreviewQueryResponse, { status: result.error?.includes('未找到') ? 404 : 500 });
     }
 
-    // 3. SQL 生成
-    const sqlGenerator = new SQLGenerator();
-    const sqlResult = await sqlGenerator.generate(intent, context);
-    console.log(`[Query Preview] SQL generated successfully`);
-
-    // 4. SQL 验证
-    const validator = new SQLValidator();
-    const validation = await validator.validate(sqlResult.sql, context);
-    console.log(`[Query Preview] SQL validated: ${validation.isValid}`);
-
-    // 5. 返回结果
+    // 返回结果
     return NextResponse.json({
       success: true,
-      sql: sqlResult.sql,
-      explanation: sqlResult.explanation,
-      confidence: sqlResult.confidence,
-      intent: {
-        type: intent.type,
-        entities: intent.entities,
-      },
-      validation: {
-        isValid: validation.isValid,
-        errors: validation.errors,
-        warnings: validation.warnings,
-        optimizationSuggestions: validation.optimizationSuggestions,
-        estimatedCost: validation.estimatedCost,
-      },
-      usedTables: sqlResult.usedTables,
-      usedColumns: sqlResult.usedColumns,
+      sql: result.metadata.generatedSQL,
+      explanation: result.metadata.explanation,
+      usedTables: result.metadata.usedTables,
     } as PreviewQueryResponse);
 
   } catch (error: any) {

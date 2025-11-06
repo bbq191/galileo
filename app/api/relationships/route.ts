@@ -25,8 +25,8 @@ export async function GET(request: NextRequest) {
     const verified = searchParams.get('verified'); // 'true' | 'false' (仅对推断关系有效)
     const minConfidence = searchParams.get('minConfidence'); // 最小置信度 (0-1)
 
-    let explicitRelationships = [];
-    let inferredRelationships = [];
+    let explicitRelationships: any[] = [];
+    let inferredRelationships: any[] = [];
 
     // 查询显式关系
     if (!type || type === 'explicit' || type === 'all') {

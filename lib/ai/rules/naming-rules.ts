@@ -376,12 +376,12 @@ export class RuleBasedAnnotator {
     const dictEntry = await this.queryDataDictionary(column.columnName);
     if (dictEntry) {
       return {
-        semantic: dictEntry.semantic_meaning,
+        semantic: dictEntry.semanticMeaning,
         source: 'rule',
         confidence: Number(dictEntry.confidence) || 0.85,
         ruleName: 'data_dictionary',
-        targetTable: dictEntry.target_table || undefined,
-        targetColumn: dictEntry.target_column || undefined,
+        targetTable: dictEntry.targetTable || undefined,
+        targetColumn: dictEntry.targetColumn || undefined,
       };
     }
 
@@ -429,8 +429,8 @@ export class RuleBasedAnnotator {
       // 精确匹配
       let entry = await this.prisma.dataDictionary.findFirst({
         where: {
-          field_pattern: columnName,
-          is_enabled: true,
+          fieldPattern: columnName,
+          isEnabled: true,
         },
       });
 
@@ -439,13 +439,13 @@ export class RuleBasedAnnotator {
       // 模糊匹配（LIKE）
       const entries = await this.prisma.dataDictionary.findMany({
         where: {
-          is_enabled: true,
+          isEnabled: true,
         },
       });
 
       for (const e of entries) {
         // 支持 SQL LIKE 模式（% 和 _）
-        const pattern = e.field_pattern
+        const pattern = e.fieldPattern
           .replace(/%/g, '.*')
           .replace(/_/g, '.');
         const regex = new RegExp(`^${pattern}$`, 'i');
@@ -547,7 +547,7 @@ let _ruleBasedAnnotator: RuleBasedAnnotator | null = null;
 
 export function getRuleBasedAnnotator(): RuleBasedAnnotator {
   if (!_ruleBasedAnnotator) {
-    const { getService } = require('@/lib/di/setup');
+    const { getService } = require('@/lib/di/setup') as { getService: <T>(token: symbol) => T };
     try {
       _ruleBasedAnnotator = getService<RuleBasedAnnotator>(DI_TOKENS.RuleBasedAnnotator);
     } catch {

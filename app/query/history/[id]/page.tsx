@@ -47,7 +47,7 @@ interface QueryDetailResponse {
 export default function QueryDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const id = params.id as string;
+  const id = params?.id as string;
 
   const [data, setData] = useState<QueryDetail | null>(null);
   const [loading, setLoading] = useState(true);

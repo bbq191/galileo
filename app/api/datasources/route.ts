@@ -47,7 +47,9 @@ export async function GET(request: NextRequest) {
         return {
           ...ds,
           passwordEncrypted: undefined, // 不返回密码
-          databases: ds.targetDatabases ? (ds.targetDatabases as string[]) : [],
+          databases: ds.targetDatabases ?
+            (Array.isArray(ds.targetDatabases) ? ds.targetDatabases : [ds.targetDatabases as string])
+            : [],
           targetDatabases: undefined, // 不直接返回内部字段
           connectionStats: stats,
           isConnected: hasConnection,
@@ -109,7 +111,7 @@ export async function POST(request: NextRequest) {
     const config: DatabaseConfig = {
       id: '', // 将在数据库创建后更新
       name,
-      type,
+      type: type as 'mysql' | 'mariadb' | 'postgresql',
       host,
       port,
       username,
@@ -126,7 +128,7 @@ export async function POST(request: NextRequest) {
         port: config.port,
         username: config.username,
         passwordEncrypted: '', // 临时值
-        targetDatabases: config.databases && config.databases.length > 0 ? config.databases : null,
+        targetDatabases: config.databases && config.databases.length > 0 ? (config.databases as any) : null,
         status: 'inactive',
       },
     });

@@ -14,7 +14,8 @@ export async function testRuleBasedAnnotator() {
   console.log('测试规则引擎');
   console.log('========================================\n');
 
-  const annotator = new RuleBasedAnnotator();
+  const prisma = require('@/lib/prisma/client').default;
+  const annotator = new RuleBasedAnnotator(prisma);
 
   // 测试用例
   const testCases: Array<{
@@ -153,7 +154,8 @@ export async function testCoverageStats() {
   console.log('测试覆盖率统计');
   console.log('========================================\n');
 
-  const annotator = new RuleBasedAnnotator();
+  const prisma = require('@/lib/prisma/client').default;
+  const annotator = new RuleBasedAnnotator(prisma);
 
   // 模拟一个典型的表字段
   const columns: ColumnInfo[] = [
@@ -263,7 +265,8 @@ export async function testBatchPerformance() {
   console.log('测试批量处理性能');
   console.log('========================================\n');
 
-  const annotator = new RuleBasedAnnotator();
+  const prisma = require('@/lib/prisma/client').default;
+  const annotator = new RuleBasedAnnotator(prisma);
 
   // 生成 1000 个测试字段
   const columns: ColumnInfo[] = [];
