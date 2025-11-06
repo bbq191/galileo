@@ -3,6 +3,8 @@
  * 专门处理跨数据库的 SQL 查询生成和优化
  */
 
+import 'reflect-metadata';
+import { injectable } from 'tsyringe';
 import { Parser } from 'node-sql-parser';
 import { QueryIntent } from '@/lib/nlp/types';
 import { MetadataContext, TableContext, RelationshipContext } from '@/lib/metadata/retrieval/types';
@@ -68,6 +70,7 @@ export enum CrossDbStrategy {
 /**
  * 跨库查询处理器
  */
+@injectable()
 export class CrossDatabaseHandler {
   private parser: Parser;
 

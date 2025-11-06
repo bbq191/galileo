@@ -4,24 +4,28 @@
  * 支持跨数据库查询
  */
 
+import 'reflect-metadata';
+import { injectable, inject } from 'tsyringe';
 import { Parser } from 'node-sql-parser';
-import { DeepseekClient, getDeepseekClient } from '@/lib/ai/deepseek-client';
+import { DeepseekClient } from '@/lib/ai/deepseek-client';
 import { QueryIntent } from '@/lib/nlp/types';
 import { MetadataContext } from '@/lib/metadata/retrieval/types';
 import { SQLGenerationResult, SQLGenerationOptions } from './types';
 import { SQL_GENERATION_SYSTEM_PROMPT } from './prompts/sql-prompts';
 import { CrossDatabaseHandler } from './cross-db-handler';
-import { queryCacheManager } from '@/lib/cache/query-cache-manager';
+import type { QueryCacheManager } from '@/lib/cache/query-cache-manager';
+import { DI_TOKENS } from '@/lib/di/tokens';
 
+@injectable()
 export class SQLGenerator {
-  private aiClient: DeepseekClient;
   private parser: Parser;
-  private crossDbHandler: CrossDatabaseHandler;
 
-  constructor(aiClient?: DeepseekClient) {
-    this.aiClient = aiClient || getDeepseekClient();
+  constructor(
+    @inject(DI_TOKENS.DeepseekClient) private readonly aiClient: DeepseekClient,
+    @inject(DI_TOKENS.CrossDatabaseHandler) private readonly crossDbHandler: CrossDatabaseHandler,
+    @inject(DI_TOKENS.QueryCacheManager) private readonly queryCacheManager: QueryCacheManager
+  ) {
     this.parser = new Parser();
-    this.crossDbHandler = new CrossDatabaseHandler();
   }
 
   /**
@@ -36,7 +40,7 @@ export class SQLGenerator {
 
     // 1. 尝试从缓存获取 SQL
     if (useCache) {
-      const cachedSQL = await queryCacheManager.getSQL(intent);
+      const cachedSQL = await this.queryCacheManager.getSQL(intent);
       if (cachedSQL) {
         console.log('SQL 缓存命中，直接返回');
         return cachedSQL;
@@ -138,7 +142,7 @@ export class SQLGenerator {
 
         // 4. 将生成的 SQL 写入缓存
         if (useCache) {
-          await queryCacheManager.setSQL(intent, result);
+          await this.queryCacheManager.setSQL(intent, result);
         }
 
         return result;

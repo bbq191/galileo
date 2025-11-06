@@ -5,9 +5,12 @@
  * L3: 数据库（最慢，容量无限）
  */
 
+import { injectable, inject } from 'tsyringe';
+import type { Redis } from 'ioredis';
 import { getRedisClient } from './redis-client';
 import { CACHE_CONFIGS, generateCacheKey, cacheStats } from './cache-config';
 import type { CacheConfig } from './cache-config';
+import { DI_TOKENS } from '@/lib/di/tokens';
 
 /**
  * 自定义 JSON 序列化，支持 BigInt
@@ -46,6 +49,7 @@ interface L1CacheEntry<T> {
 /**
  * 多级缓存管理器
  */
+@injectable()
 export class MultiLevelCache {
   // L1 内存缓存
   private l1Cache: Map<string, L1CacheEntry<any>> = new Map();
@@ -53,9 +57,50 @@ export class MultiLevelCache {
   // L1 缓存最大条目数（防止内存溢出）
   private readonly L1_MAX_ENTRIES = 1000;
 
-  constructor() {
-    // 定期清理过期的 L1 缓存
-    setInterval(() => this.cleanupL1(), 60000); // 每分钟清理一次
+  // Redis 客户端
+  private redis: Redis | null = null;
+
+  // 清理定时器
+  private cleanupInterval?: NodeJS.Timeout;
+
+  constructor(@inject(DI_TOKENS.RedisClient) redis?: Redis) {
+    // 如果通过 DI 注入了 Redis，使用注入的实例
+    if (redis) {
+      this.redis = redis;
+    }
+    // 否则使用全局函数（向后兼容）
+  }
+
+  /**
+   * 启动 L1 缓存自动清理
+   */
+  startCleanup(): void {
+    if (!this.cleanupInterval) {
+      this.cleanupInterval = setInterval(() => this.cleanupL1(), 60000); // 每分钟清理一次
+      console.log('[MultiLevelCache] 自动清理已启动');
+    }
+  }
+
+  /**
+   * 停止 L1 缓存自动清理
+   */
+  stopCleanup(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = undefined;
+      console.log('[MultiLevelCache] 自动清理已停止');
+    }
+  }
+
+  /**
+   * 获取 Redis 客户端（支持 DI 和全局函数两种方式）
+   */
+  private getRedis(): Redis {
+    if (this.redis) {
+      return this.redis;
+    }
+    // 向后兼容：使用全局函数
+    return getRedisClient();
   }
 
   /**
@@ -153,7 +198,7 @@ export class MultiLevelCache {
     // 删除 L2 缓存
     if (config.L2.enabled) {
       try {
-        const redis = getRedisClient();
+        const redis = this.getRedis();
         await redis.del(cacheKey);
       } catch (error) {
         console.error('[Cache] 删除 L2 缓存失败:', error);
@@ -207,7 +252,7 @@ export class MultiLevelCache {
 
     // 清空 L2
     try {
-      const redis = getRedisClient();
+      const redis = this.getRedis();
       // 仅清空元数据相关的缓存（以 'metadata:' 或 'graph:' 开头）
       const keys = await redis.keys('metadata:*');
       const graphKeys = await redis.keys('graph:*');
@@ -315,7 +360,7 @@ export class MultiLevelCache {
    */
   private async getL2<T>(key: string): Promise<T | null> {
     try {
-      const redis = getRedisClient();
+      const redis = this.getRedis();
       const data = await redis.get(key);
 
       if (!data) {
@@ -334,7 +379,7 @@ export class MultiLevelCache {
    */
   private async setL2(key: string, value: any, ttl: number): Promise<void> {
     try {
-      const redis = getRedisClient();
+      const redis = this.getRedis();
       await redis.setex(key, ttl, serializeJSON(value));
     } catch (error) {
       console.error('[Cache] L2 缓存写入失败:', error);
@@ -346,7 +391,7 @@ export class MultiLevelCache {
    */
   private async invalidateL2Pattern(pattern: string): Promise<void> {
     try {
-      const redis = getRedisClient();
+      const redis = this.getRedis();
       const keys = await redis.keys(pattern);
 
       if (keys.length > 0) {
@@ -380,5 +425,8 @@ export class MultiLevelCache {
   }
 }
 
-// 导出单例
+// 导出单例（向后兼容）
+// 注意：通过 DI 使用时，应该注入 MultiLevelCache 类而不是使用此单例
 export const multiLevelCache = new MultiLevelCache();
+// 启动自动清理（仅全局单例）
+multiLevelCache.startCleanup();

@@ -5,13 +5,12 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { connectionManager } from '@/lib/database';
 import type { DatabaseConfig } from '@/lib/database';
-import prisma from '@/lib/prisma/client';
 import { schemas } from '@/lib/validation/schemas';
 import { validateOrRespond } from '@/lib/validation/validator';
 import { safeErrorResponse, safeServerErrorResponse } from '@/lib/api/response';
 import { ErrorCategory } from '@/lib/security/error-sanitizer';
+import { getService } from '@/lib/di/helpers/app-router';
 
 /**
  * 获取数据源列表
@@ -20,6 +19,10 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const status = searchParams.get('status');
+
+    // 获取 DI 服务
+    const prisma = getService.prisma();
+    const connectionManager = getService.connectionManager();
 
     const dataSources = await prisma.dataSource.findMany({
       where: status ? { status: status as any } : undefined,
@@ -82,6 +85,10 @@ export async function POST(request: NextRequest) {
     }
 
     const { name, type, host, port, username, password, databases, description } = validation.data;
+
+    // 获取 DI 服务
+    const prisma = getService.prisma();
+    const connectionManager = getService.connectionManager();
 
     // 检查名称是否已存在
     const existing = await prisma.dataSource.findUnique({

@@ -3,11 +3,13 @@
  * 负责执行验证通过的 SQL 查询
  */
 
+import 'reflect-metadata';
+import { injectable, inject } from 'tsyringe';
 import crypto from 'crypto';
-import connectionManager from '@/lib/database/connection-manager';
-import { queryCacheManager } from '@/lib/cache/query-cache-manager';
+import type { ConnectionManager } from '@/lib/database/connection-manager';
+import type { QueryCacheManager } from '@/lib/cache/query-cache-manager';
 import { withTimeout } from './timeout-handler';
-import { resultFormatter } from './result-formatter';
+import type { ResultFormatter } from './result-formatter';
 import type { MetadataContext } from '@/lib/metadata/retrieval/types';
 import type {
   ExecutionOptions,
@@ -19,10 +21,12 @@ import type {
   QueryStatistics,
 } from './types';
 import { ExecutorError as ExecutorErrorClass } from './types';
+import { DI_TOKENS } from '@/lib/di/tokens';
 
 /**
  * 查询执行器类
  */
+@injectable()
 export class QueryExecutor {
   // 默认执行选项
   private readonly DEFAULT_OPTIONS: Required<ExecutionOptions> = {
@@ -32,6 +36,12 @@ export class QueryExecutor {
     cacheKey: '',
     parameters: [],
   };
+
+  constructor(
+    @inject(DI_TOKENS.ConnectionManager) private readonly connectionManager: ConnectionManager,
+    @inject(DI_TOKENS.QueryCacheManager) private readonly queryCacheManager: QueryCacheManager,
+    @inject(DI_TOKENS.ResultFormatter) private readonly resultFormatter: ResultFormatter
+  ) {}
 
   /**
    * 执行 SQL 查询
@@ -50,7 +60,7 @@ export class QueryExecutor {
     try {
       // 1. 检查缓存
       if (mergedOptions.enableCache) {
-        const cached = await queryCacheManager.getResult<T>(sql);
+        const cached = await this.queryCacheManager.getResult<T>(sql);
 
         if (cached) {
           console.log(`[QueryExecutor] 缓存命中: ${queryId}`);
@@ -80,7 +90,7 @@ export class QueryExecutor {
         );
       }
 
-      const pool = await connectionManager.getConnection(sourceId.toString());
+      const pool = await this.connectionManager.getConnection(sourceId.toString());
 
       // 4. 自动添加 LIMIT（如果未指定）
       const limitedSQL = this.ensureLimitClause(sql, mergedOptions.maxRows);
@@ -100,11 +110,11 @@ export class QueryExecutor {
       );
 
       // 6. 格式化结果
-      const formattedData = resultFormatter.formatResultData<T>(
+      const formattedData = this.resultFormatter.formatResultData<T>(
         rows as any[],
         fields
       );
-      const columnMetadata = resultFormatter.formatColumnMetadata(fields);
+      const columnMetadata = this.resultFormatter.formatColumnMetadata(fields);
 
       const result: ExecutionResult<T> = {
         success: true,
@@ -119,7 +129,7 @@ export class QueryExecutor {
 
       // 7. 缓存结果（由 queryCacheManager 内部判断是否缓存）
       if (mergedOptions.enableCache) {
-        await queryCacheManager.setResult(sql, result);
+        await this.queryCacheManager.setResult(sql, result);
       }
 
       console.log(
@@ -397,5 +407,17 @@ export class QueryExecutor {
   }
 }
 
-// 导出单例
-export const queryExecutor = new QueryExecutor();
+// 向后兼容：导出单例（通过 DI 容器管理）
+// 使用 getter 延迟解析，避免循环依赖问题
+let _queryExecutor: QueryExecutor | null = null;
+
+export const queryExecutor: QueryExecutor = new Proxy({} as QueryExecutor, {
+  get(target, prop) {
+    if (!_queryExecutor) {
+      const { resolve } = require('@/lib/di/container');
+      const { DI_TOKENS } = require('@/lib/di/tokens');
+      _queryExecutor = resolve<QueryExecutor>(DI_TOKENS.QueryExecutor);
+    }
+    return (_queryExecutor as any)[prop];
+  }
+});

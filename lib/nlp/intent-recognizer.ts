@@ -3,30 +3,29 @@
  * 负责识别用户的自然语言查询意图
  */
 
-import { DeepseekClient, getDeepseekClient } from '@/lib/ai/deepseek-client';
+import 'reflect-metadata';
+import { injectable, inject } from 'tsyringe';
+import { DeepseekClient } from '@/lib/ai/deepseek-client';
 import { PrismaClient } from '@prisma/client';
-import prisma from '@/lib/prisma/client';
 import { QueryIntent, RawIntent } from './types';
 import { INTENT_SYSTEM_PROMPT, buildIntentPrompt, buildDisambiguationPrompt } from './prompts/intent-prompts';
 import { EntityResolver } from './entity-resolver';
 import { TimeParser } from './time-parser';
-import { queryCacheManager } from '@/lib/cache/query-cache-manager';
+import type { QueryCacheManager } from '@/lib/cache/query-cache-manager';
+import { DI_TOKENS } from '@/lib/di/tokens';
 
 /**
  * 意图识别器类
  */
+@injectable()
 export class IntentRecognizer {
-  private aiClient: DeepseekClient;
-  private entityResolver: EntityResolver;
-  private timeParser: TimeParser;
-  private prisma: PrismaClient;
-
-  constructor(aiClient?: DeepseekClient) {
-    this.aiClient = aiClient || getDeepseekClient();
-    this.entityResolver = new EntityResolver();
-    this.timeParser = new TimeParser();
-    this.prisma = prisma;
-  }
+  constructor(
+    @inject(DI_TOKENS.DeepseekClient) private readonly aiClient: DeepseekClient,
+    @inject(DI_TOKENS.EntityResolver) private readonly entityResolver: EntityResolver,
+    @inject(DI_TOKENS.TimeParser) private readonly timeParser: TimeParser,
+    @inject(DI_TOKENS.PrismaClient) private readonly prisma: PrismaClient,
+    @inject(DI_TOKENS.QueryCacheManager) private readonly queryCacheManager: QueryCacheManager
+  ) {}
 
   /**
    * 识别用户查询意图（带缓存）
@@ -41,7 +40,7 @@ export class IntentRecognizer {
 
     // 1. 尝试从缓存获取意图
     if (useCache) {
-      const cachedIntent = await queryCacheManager.getIntent(naturalLanguageQuery);
+      const cachedIntent = await this.queryCacheManager.getIntent(naturalLanguageQuery);
       if (cachedIntent) {
         console.log('意图缓存命中，直接返回');
         return cachedIntent;
@@ -62,7 +61,7 @@ export class IntentRecognizer {
 
     // 6. 将意图写入缓存
     if (useCache) {
-      await queryCacheManager.setIntent(naturalLanguageQuery, validatedIntent);
+      await this.queryCacheManager.setIntent(naturalLanguageQuery, validatedIntent);
     }
 
     console.log('意图识别完成:', JSON.stringify(validatedIntent, null, 2));

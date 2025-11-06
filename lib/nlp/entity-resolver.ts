@@ -3,19 +3,20 @@
  * 负责将提取的实体名称映射到实际的数据库表和字段
  */
 
+import 'reflect-metadata';
+import { injectable, inject } from 'tsyringe';
 import { PrismaClient } from '@prisma/client';
-import prisma from '@/lib/prisma/client';
 import { EntityMatch } from './types';
+import { DI_TOKENS } from '@/lib/di/tokens';
 
 /**
  * 实体解析器
  */
+@injectable()
 export class EntityResolver {
-  private prisma: PrismaClient;
-
-  constructor() {
-    this.prisma = prisma;
-  }
+  constructor(
+    @inject(DI_TOKENS.PrismaClient) private readonly prisma: PrismaClient
+  ) {}
 
   /**
    * 搜索匹配的表

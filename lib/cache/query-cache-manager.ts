@@ -3,11 +3,13 @@
  * 实现三级查询缓存：意图缓存、SQL缓存、结果缓存
  */
 
+import { injectable, inject } from 'tsyringe';
 import crypto from 'crypto';
-import { multiLevelCache } from './multi-level-cache';
+import { multiLevelCache, MultiLevelCache } from './multi-level-cache';
 import type { QueryIntent } from '@/lib/nlp/types';
 import type { SQLGenerationResult } from '@/lib/sql/generator/types';
 import type { ExecutionResult } from '@/lib/sql/executor/types';
+import { DI_TOKENS } from '@/lib/di/tokens';
 
 /**
  * 缓存统计
@@ -27,6 +29,7 @@ export interface QueryCacheStatistics {
 /**
  * 查询缓存管理器类
  */
+@injectable()
 export class QueryCacheManager {
   private stats: QueryCacheStatistics = {
     intentCacheHits: 0,
@@ -39,6 +42,19 @@ export class QueryCacheManager {
     totalMisses: 0,
     hitRate: 0,
   };
+
+  // 多级缓存实例
+  private cache: MultiLevelCache;
+
+  constructor(@inject(DI_TOKENS.MultiLevelCache) cache?: MultiLevelCache) {
+    // 如果通过 DI 注入，使用注入的实例
+    if (cache) {
+      this.cache = cache;
+    } else {
+      // 向后兼容：使用全局单例
+      this.cache = multiLevelCache;
+    }
+  }
 
   /**
    * 生成查询哈希（用于缓存键）
@@ -90,7 +106,7 @@ export class QueryCacheManager {
       const normalizedQuery = this.normalizeQuery(naturalLanguageQuery);
       const queryHash = this.generateHash(normalizedQuery);
 
-      const cached = await multiLevelCache.get<QueryIntent>(
+      const cached = await this.cache.get<QueryIntent>(
         'query_intent',
         { query_hash: queryHash },
         async () => {
@@ -125,7 +141,7 @@ export class QueryCacheManager {
       const normalizedQuery = this.normalizeQuery(naturalLanguageQuery);
       const queryHash = this.generateHash(normalizedQuery);
 
-      await multiLevelCache.set('query_intent', { query_hash: queryHash }, intent);
+      await this.cache.set('query_intent', { query_hash: queryHash }, intent);
 
       console.log(`[QueryCache] 意图已缓存: ${queryHash}`);
     } catch (error) {
@@ -141,7 +157,7 @@ export class QueryCacheManager {
       const normalizedQuery = this.normalizeQuery(naturalLanguageQuery);
       const queryHash = this.generateHash(normalizedQuery);
 
-      await multiLevelCache.delete('query_intent', { query_hash: queryHash });
+      await this.cache.delete('query_intent', { query_hash: queryHash });
 
       console.log(`[QueryCache] 意图缓存已删除: ${queryHash}`);
     } catch (error) {
@@ -161,7 +177,7 @@ export class QueryCacheManager {
       const normalizedIntent = this.normalizeIntent(intent);
       const intentHash = this.generateHash(normalizedIntent);
 
-      const cached = await multiLevelCache.get<SQLGenerationResult>(
+      const cached = await this.cache.get<SQLGenerationResult>(
         'query_sql',
         { intent_hash: intentHash },
         async () => {
@@ -196,7 +212,7 @@ export class QueryCacheManager {
       const normalizedIntent = this.normalizeIntent(intent);
       const intentHash = this.generateHash(normalizedIntent);
 
-      await multiLevelCache.set('query_sql', { intent_hash: intentHash }, sqlResult);
+      await this.cache.set('query_sql', { intent_hash: intentHash }, sqlResult);
 
       console.log(`[QueryCache] SQL已缓存: ${intentHash}`);
     } catch (error) {
@@ -212,7 +228,7 @@ export class QueryCacheManager {
       const normalizedIntent = this.normalizeIntent(intent);
       const intentHash = this.generateHash(normalizedIntent);
 
-      await multiLevelCache.delete('query_sql', { intent_hash: intentHash });
+      await this.cache.delete('query_sql', { intent_hash: intentHash });
 
       console.log(`[QueryCache] SQL缓存已删除: ${intentHash}`);
     } catch (error) {
@@ -236,7 +252,7 @@ export class QueryCacheManager {
         .replace(/;$/, '');
       const sqlHash = this.generateHash(normalizedSQL);
 
-      const cached = await multiLevelCache.get<ExecutionResult<T>>(
+      const cached = await this.cache.get<ExecutionResult<T>>(
         'query_result',
         { sql_hash: sqlHash },
         async () => {
@@ -280,7 +296,7 @@ export class QueryCacheManager {
         .replace(/;$/, '');
       const sqlHash = this.generateHash(normalizedSQL);
 
-      await multiLevelCache.set('query_result', { sql_hash: sqlHash }, result);
+      await this.cache.set('query_result', { sql_hash: sqlHash }, result);
 
       console.log(
         `[QueryCache] 结果已缓存: ${sqlHash}, 行数: ${result.rowCount}`
@@ -301,7 +317,7 @@ export class QueryCacheManager {
         .replace(/;$/, '');
       const sqlHash = this.generateHash(normalizedSQL);
 
-      await multiLevelCache.delete('query_result', { sql_hash: sqlHash });
+      await this.cache.delete('query_result', { sql_hash: sqlHash });
 
       console.log(`[QueryCache] 结果缓存已删除: ${sqlHash}`);
     } catch (error) {
@@ -320,9 +336,9 @@ export class QueryCacheManager {
 
       // 失效三级缓存
       await Promise.all([
-        multiLevelCache.invalidate('metadata_synced', 'query:intent:*'),
-        multiLevelCache.invalidate('metadata_synced', 'query:sql:*'),
-        multiLevelCache.invalidate('data_updated', 'query:result:*'),
+        this.cache.invalidate('metadata_synced', 'query:intent:*'),
+        this.cache.invalidate('metadata_synced', 'query:sql:*'),
+        this.cache.invalidate('data_updated', 'query:result:*'),
       ]);
 
       console.log('[QueryCache] 所有查询缓存已失效');
@@ -336,7 +352,7 @@ export class QueryCacheManager {
    */
   async invalidateIntents(): Promise<void> {
     try {
-      await multiLevelCache.invalidate('metadata_synced', 'query:intent:*');
+      await this.cache.invalidate('metadata_synced', 'query:intent:*');
       console.log('[QueryCache] 意图缓存已失效');
     } catch (error) {
       console.error('[QueryCache] 失效意图缓存失败:', error);
@@ -348,7 +364,7 @@ export class QueryCacheManager {
    */
   async invalidateSQL(): Promise<void> {
     try {
-      await multiLevelCache.invalidate('metadata_synced', 'query:sql:*');
+      await this.cache.invalidate('metadata_synced', 'query:sql:*');
       console.log('[QueryCache] SQL缓存已失效');
     } catch (error) {
       console.error('[QueryCache] 失效SQL缓存失败:', error);
@@ -360,7 +376,7 @@ export class QueryCacheManager {
    */
   async invalidateResults(): Promise<void> {
     try {
-      await multiLevelCache.invalidate('data_updated', 'query:result:*');
+      await this.cache.invalidate('data_updated', 'query:result:*');
       console.log('[QueryCache] 结果缓存已失效');
     } catch (error) {
       console.error('[QueryCache] 失效结果缓存失败:', error);
@@ -410,10 +426,11 @@ export class QueryCacheManager {
   } {
     return {
       statistics: this.getStatistics(),
-      cacheStatus: multiLevelCache.getStats(),
+      cacheStatus: this.cache.getStats(),
     };
   }
 }
 
-// 导出单例
+// 导出单例（向后兼容）
+// 注意：通过 DI 使用时，应该注入 QueryCacheManager 类而不是使用此单例
 export const queryCacheManager = new QueryCacheManager();

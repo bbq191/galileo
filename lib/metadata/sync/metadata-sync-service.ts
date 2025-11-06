@@ -3,11 +3,14 @@
  * 整合采集器和仓储，实现完整的元数据同步流程
  */
 
-import connectionManager from "@/lib/database/connection-manager";
-import prisma from "@/lib/prisma/client";
+import { injectable, inject } from 'tsyringe';
+import { PrismaClient } from '@prisma/client';
+import { DI_TOKENS } from '@/lib/di/tokens';
+import type { ConnectionManager } from "@/lib/database/connection-manager";
+import type { MetadataRepository } from "../storage/metadata-repository";
 import { CollectorFactory } from "../collectors";
 import { RelationshipInferencer } from "../inference";
-import { changeTracker, metadataRepository } from "../storage";
+import { changeTracker } from "../storage";
 import type { ColumnInfo } from "../types";
 
 /**
@@ -73,7 +76,14 @@ export interface SyncResult {
 /**
  * 元数据同步服务类
  */
+@injectable()
 export class MetadataSyncService {
+  constructor(
+    @inject(DI_TOKENS.PrismaClient) private prisma: PrismaClient,
+    @inject(DI_TOKENS.ConnectionManager) private connectionManager: ConnectionManager,
+    @inject(DI_TOKENS.MetadataRepository) private metadataRepository: MetadataRepository
+  ) {}
+
   /**
    * 同步数据源的元数据
    */
@@ -106,7 +116,7 @@ export class MetadataSyncService {
       console.log(`========================================\n`);
 
       // 获取数据源信息
-      const dataSource = await prisma.dataSource.findUnique({
+      const dataSource = await this.prisma.dataSource.findUnique({
         where: { id: options.dataSourceId },
       });
 
@@ -115,7 +125,7 @@ export class MetadataSyncService {
       }
 
       // 获取连接
-      const pool = await connectionManager.getConnection(
+      const pool = await this.connectionManager.getConnection(
         String(options.dataSourceId)
       );
       const collector = CollectorFactory.createCollector(
@@ -157,7 +167,7 @@ export class MetadataSyncService {
       }
 
       // 更新数据源的最后同步时间
-      await prisma.dataSource.update({
+      await this.prisma.dataSource.update({
         where: { id: options.dataSourceId },
         data: { lastSyncAt: new Date() },
       });
@@ -210,7 +220,7 @@ export class MetadataSyncService {
     console.log(`-`.repeat(40));
 
     // 创建或更新数据库元数据
-    const database = await metadataRepository.upsertDatabase({
+    const database = await this.metadataRepository.upsertDatabase({
       sourceId: dataSourceId,
       databaseName,
     });
@@ -225,7 +235,7 @@ export class MetadataSyncService {
     console.log(`发现 ${tables.length} 个表`);
 
     // 获取已存在的表
-    const existingTables = await metadataRepository.getTablesByDatabase(
+    const existingTables = await this.metadataRepository.getTablesByDatabase(
       database.id
     );
     const existingTableMap = new Map(
@@ -261,7 +271,7 @@ export class MetadataSyncService {
       for (const existingTable of existingTables) {
         if (!currentTableNames.has(existingTable.tableName)) {
           await changeTracker.trackTableChange("table_removed", existingTable);
-          await metadataRepository.deleteTable(existingTable.id);
+          await this.metadataRepository.deleteTable(existingTable.id);
           result.changes!.tablesRemoved++;
           console.log(`删除表: ${existingTable.tableName}`);
         }
@@ -314,7 +324,7 @@ export class MetadataSyncService {
     }
 
     // 创建或更新表元数据
-    const table = await metadataRepository.upsertTable({
+    const table = await this.metadataRepository.upsertTable({
       databaseId,
       tableName,
       rowCount: BigInt(0),
@@ -339,7 +349,7 @@ export class MetadataSyncService {
     }
 
     // 获取已存在的字段
-    const existingColumns = await metadataRepository.getColumnsByTable(
+    const existingColumns = await this.metadataRepository.getColumnsByTable(
       table.id
     );
     const existingColumnMap = new Map(
@@ -348,7 +358,7 @@ export class MetadataSyncService {
 
     // 同步字段
     for (const columnInfo of columns) {
-      const column = await metadataRepository.upsertColumn({
+      const column = await this.metadataRepository.upsertColumn({
         tableId: table.id,
         columnName: columnInfo.columnName,
         dataType: columnInfo.dataType,
@@ -396,7 +406,7 @@ export class MetadataSyncService {
             "column_removed",
             existingColumn
           );
-          await metadataRepository.deleteColumn(existingColumn.id);
+          await this.metadataRepository.deleteColumn(existingColumn.id);
           result.changes!.columnsRemoved++;
         }
       }
@@ -423,11 +433,11 @@ export class MetadataSyncService {
 
       for (const fk of foreignKeys) {
         // 获取源表和目标表
-        const sourceTable = await metadataRepository.getTableByName(
+        const sourceTable = await this.metadataRepository.getTableByName(
           databaseId,
           fk.tableName
         );
-        const targetTable = await metadataRepository.getTableByName(
+        const targetTable = await this.metadataRepository.getTableByName(
           databaseId,
           fk.referencedTableName
         );
@@ -437,11 +447,11 @@ export class MetadataSyncService {
         }
 
         // 获取源字段和目标字段
-        const sourceColumn = await metadataRepository.getColumnByName(
+        const sourceColumn = await this.metadataRepository.getColumnByName(
           sourceTable.id,
           fk.columnName
         );
-        const targetColumn = await metadataRepository.getColumnByName(
+        const targetColumn = await this.metadataRepository.getColumnByName(
           targetTable.id,
           fk.referencedColumnName
         );
@@ -451,7 +461,7 @@ export class MetadataSyncService {
         }
 
         // 创建显式关系
-        await metadataRepository.upsertExplicitRelationship({
+        await this.metadataRepository.upsertExplicitRelationship({
           sourceTableId: sourceTable.id,
           sourceColumnId: sourceColumn.id,
           targetTableId: targetTable.id,
@@ -479,11 +489,11 @@ export class MetadataSyncService {
   ): Promise<void> {
     try {
       // 获取数据库的所有表和字段
-      const tables = await metadataRepository.getTablesByDatabase(databaseId);
+      const tables = await this.metadataRepository.getTablesByDatabase(databaseId);
       const allColumns: ColumnInfo[] = [];
 
       for (const table of tables) {
-        const columns = await metadataRepository.getColumnsByTable(table.id);
+        const columns = await this.metadataRepository.getColumnsByTable(table.id);
         allColumns.push(
           ...columns.map((c) => ({
             columnName: c.columnName,
@@ -513,11 +523,11 @@ export class MetadataSyncService {
       // 保存推断的关系
       for (const rel of inferenceResult.relationships) {
         // 获取源表和目标表
-        const sourceTable = await metadataRepository.getTableByName(
+        const sourceTable = await this.metadataRepository.getTableByName(
           databaseId,
           rel.sourceTable
         );
-        const targetTable = await metadataRepository.getTableByName(
+        const targetTable = await this.metadataRepository.getTableByName(
           databaseId,
           rel.targetTable
         );
@@ -527,11 +537,11 @@ export class MetadataSyncService {
         }
 
         // 获取源字段和目标字段
-        const sourceColumn = await metadataRepository.getColumnByName(
+        const sourceColumn = await this.metadataRepository.getColumnByName(
           sourceTable.id,
           rel.sourceColumn
         );
-        const targetColumn = await metadataRepository.getColumnByName(
+        const targetColumn = await this.metadataRepository.getColumnByName(
           targetTable.id,
           rel.targetColumn
         );
@@ -541,7 +551,7 @@ export class MetadataSyncService {
         }
 
         // 创建推断关系
-        await metadataRepository.upsertInferredRelationship({
+        await this.metadataRepository.upsertInferredRelationship({
           sourceTableId: sourceTable.id,
           sourceColumnId: sourceColumn.id,
           targetTableId: targetTable.id,
@@ -573,6 +583,32 @@ export class MetadataSyncService {
 }
 
 /**
- * 默认导出单例
+ * 导出默认实例（向后兼容）
  */
-export const metadataSyncService = new MetadataSyncService();
+let _metadataSyncService: MetadataSyncService | null = null;
+
+export function getMetadataSyncService(): MetadataSyncService {
+  if (!_metadataSyncService) {
+    const { getService } = require('@/lib/di/setup');
+    try {
+      _metadataSyncService = getService<MetadataSyncService>(DI_TOKENS.MetadataSyncService);
+    } catch {
+      // 回退方案：创建不使用 DI 的实例
+      const prisma = require('@/lib/prisma/client').default;
+      const connectionManager = require('@/lib/database/connection-manager').default;
+      const { getMetadataRepository } = require('../storage/metadata-repository');
+      _metadataSyncService = new MetadataSyncService(
+        prisma,
+        connectionManager,
+        getMetadataRepository()
+      );
+    }
+  }
+  return _metadataSyncService;
+}
+
+export const metadataSyncService = new Proxy({} as MetadataSyncService, {
+  get(_target, prop) {
+    return getMetadataSyncService()[prop as keyof MetadataSyncService];
+  }
+});

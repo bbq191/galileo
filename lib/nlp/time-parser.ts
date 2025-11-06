@@ -3,6 +3,8 @@
  * 将自然语言时间表达式转换为具体的时间范围
  */
 
+import 'reflect-metadata';
+import { injectable } from 'tsyringe';
 import { ParsedTimeRange } from './types';
 
 /**
@@ -32,6 +34,7 @@ const TIME_PATTERNS = {
 /**
  * 时间解析器
  */
+@injectable()
 export class TimeParser {
   /**
    * 解析时间表达式

@@ -11,13 +11,15 @@
  * - 错误日志与监控
  */
 
-import { getDeepseekClient } from './deepseek-client';
+import { injectable, inject } from 'tsyringe';
+import { DeepseekClient } from './deepseek-client';
 import { batchConfig } from './config';
 import type { ChatMessage } from './types';
 import { taskQueueManager, TaskType, TaskPriority } from './task-queue';
 import { errorLogger, ErrorLevel, ErrorCategory } from './error-logger';
 import { resumeManager } from './resume-manager';
 import type { ProcessProgress } from './resume-manager';
+import { DI_TOKENS } from '@/lib/di/tokens';
 
 /**
  * 批量处理请求
@@ -129,8 +131,11 @@ export interface BatchProgress {
 /**
  * 批量处理器类
  */
+@injectable()
 export class BatchProcessor {
-  private client = getDeepseekClient();
+  constructor(
+    @inject(DI_TOKENS.DeepseekClient) private client: DeepseekClient
+  ) {}
 
   /**
    * 批量处理请求
@@ -552,6 +557,28 @@ export class BatchProcessor {
 }
 
 /**
- * 导出默认实例
+ * 导出默认实例（向后兼容）
+ * 实际实例在 DI 容器初始化后创建
  */
-export const batchProcessor = new BatchProcessor();
+let _batchProcessor: BatchProcessor | null = null;
+
+export function getBatchProcessor(): BatchProcessor {
+  if (!_batchProcessor) {
+    // 如果 DI 容器还未初始化，创建临时实例
+    const { getService } = require('@/lib/di/setup');
+    try {
+      _batchProcessor = getService<BatchProcessor>(DI_TOKENS.BatchProcessor);
+    } catch {
+      // 回退方案：创建不使用 DI 的实例
+      const { getDeepseekClient } = require('./deepseek-client');
+      _batchProcessor = new BatchProcessor(getDeepseekClient());
+    }
+  }
+  return _batchProcessor;
+}
+
+export const batchProcessor = new Proxy({} as BatchProcessor, {
+  get(_target, prop) {
+    return getBatchProcessor()[prop as keyof BatchProcessor];
+  }
+});

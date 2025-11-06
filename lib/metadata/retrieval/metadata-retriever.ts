@@ -3,18 +3,20 @@
  * 基于用户意图检索相关的元数据
  */
 
+import { injectable, inject } from 'tsyringe';
 import { PrismaClient } from '@prisma/client';
-import prisma from '@/lib/prisma/client';
 import { QueryIntent } from '@/lib/nlp/types';
 import { MetadataContext, SearchOptions } from './types';
 import { SemanticSearch } from './semantic-search';
 import { RelevanceRanker } from './relevance-ranker';
 import { ContextBuilder } from './context-builder';
 import { MultiLevelCache } from '@/lib/cache/multi-level-cache';
+import { DI_TOKENS } from '@/lib/di/tokens';
 
 /**
  * 元数据检索器
  */
+@injectable()
 export class MetadataRetriever {
   private prisma: PrismaClient;
   private semanticSearch: SemanticSearch;
@@ -22,15 +24,15 @@ export class MetadataRetriever {
   private contextBuilder: ContextBuilder;
   private cache: MultiLevelCache;
 
-  constructor(prismaInstance?: PrismaClient) {
-    this.prisma = prismaInstance || prisma;
+  constructor(
+    @inject(DI_TOKENS.PrismaClient) prisma: PrismaClient,
+    @inject(DI_TOKENS.MultiLevelCache) cache: MultiLevelCache
+  ) {
+    this.prisma = prisma;
+    this.cache = cache;
     this.semanticSearch = new SemanticSearch();
     this.ranker = new RelevanceRanker();
     this.contextBuilder = new ContextBuilder();
-    this.cache = new MultiLevelCache({
-      ttl: 300, // 5分钟缓存
-      maxSize: 100,
-    });
   }
 
   /**
@@ -290,3 +292,30 @@ export class MetadataRetriever {
     await this.contextBuilder.disconnect();
   }
 }
+
+/**
+ * 导出默认实例（向后兼容）
+ */
+let _metadataRetriever: MetadataRetriever | null = null;
+
+export function getMetadataRetriever(): MetadataRetriever {
+  if (!_metadataRetriever) {
+    const { getService } = require('@/lib/di/setup');
+    try {
+      _metadataRetriever = getService<MetadataRetriever>(DI_TOKENS.MetadataRetriever);
+    } catch {
+      // 回退方案：创建不使用 DI 的实例
+      const prisma = require('@/lib/prisma/client').default;
+      const { MultiLevelCache } = require('@/lib/cache/multi-level-cache');
+      const cache = new MultiLevelCache({ ttl: 300, maxSize: 100 });
+      _metadataRetriever = new MetadataRetriever(prisma, cache);
+    }
+  }
+  return _metadataRetriever;
+}
+
+export const metadataRetriever = new Proxy({} as MetadataRetriever, {
+  get(_target, prop) {
+    return getMetadataRetriever()[prop as keyof MetadataRetriever];
+  }
+});

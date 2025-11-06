@@ -1,25 +1,16 @@
 /**
  * Prisma Client Singleton
- * 避免开发环境热重载时创建多个 Prisma Client 实例
+ * 通过依赖注入容器管理
+ *
+ * 此文件保留用于向后兼容，但现在使用 DI 容器
  */
 
-import { PrismaClient } from '@/app/generated/prisma';
+import { getPrismaClient } from '@/lib/di/setup';
 
-const prismaClientSingleton = () => {
-  return new PrismaClient({
-    log:
-      process.env.NODE_ENV === 'development'
-        ? ['query', 'error', 'warn']
-        : ['error'],
-  });
-};
-
-declare const globalThis: {
-  prismaGlobal: ReturnType<typeof prismaClientSingleton>;
-} & typeof global;
-
-const prisma = globalThis.prismaGlobal ?? prismaClientSingleton();
+/**
+ * 导出 PrismaClient 实例（向后兼容）
+ * 现在通过 DI 容器管理
+ */
+const prisma = getPrismaClient();
 
 export default prisma;
-
-if (process.env.NODE_ENV !== 'production') globalThis.prismaGlobal = prisma;

@@ -3,7 +3,9 @@
  * 负责元数据的 CRUD 操作
  */
 
-import prisma from '@/lib/prisma/client';
+import { injectable, inject } from 'tsyringe';
+import { PrismaClient } from '@prisma/client';
+import { DI_TOKENS } from '@/lib/di/tokens';
 import { changeTracker } from './change-tracker';
 import type {
   CreateDatabaseMetaInput,
@@ -32,14 +34,19 @@ import type {
 /**
  * 元数据仓储类
  */
+@injectable()
 export class MetadataRepository {
+  constructor(
+    @inject(DI_TOKENS.PrismaClient) private prisma: PrismaClient
+  ) {}
+
   // ==================== 数据库元数据 ====================
 
   /**
    * 创建数据库元数据
    */
   async createDatabase(input: CreateDatabaseMetaInput): Promise<DatabaseMeta> {
-    return await prisma.databaseMeta.create({
+    return await this.prisma.databaseMeta.create({
       data: {
         sourceId: input.sourceId,
         databaseName: input.databaseName,
@@ -54,7 +61,7 @@ export class MetadataRepository {
    * 获取数据库元数据
    */
   async getDatabaseById(id: number): Promise<DatabaseMeta | null> {
-    return await prisma.databaseMeta.findUnique({
+    return await this.prisma.databaseMeta.findUnique({
       where: { id },
     });
   }
@@ -66,7 +73,7 @@ export class MetadataRepository {
     sourceId: number,
     databaseName: string
   ): Promise<DatabaseMeta | null> {
-    return await prisma.databaseMeta.findUnique({
+    return await this.prisma.databaseMeta.findUnique({
       where: {
         sourceId_databaseName: {
           sourceId,
@@ -80,7 +87,7 @@ export class MetadataRepository {
    * 获取数据源的所有数据库
    */
   async getDatabasesBySource(sourceId: number): Promise<DatabaseMeta[]> {
-    return await prisma.databaseMeta.findMany({
+    return await this.prisma.databaseMeta.findMany({
       where: { sourceId },
       orderBy: { databaseName: 'asc' },
     });
@@ -90,7 +97,7 @@ export class MetadataRepository {
    * 更新数据库元数据
    */
   async updateDatabase(id: number, input: UpdateDatabaseMetaInput): Promise<DatabaseMeta> {
-    return await prisma.databaseMeta.update({
+    return await this.prisma.databaseMeta.update({
       where: { id },
       data: input,
     });
@@ -100,7 +107,7 @@ export class MetadataRepository {
    * 删除数据库元数据
    */
   async deleteDatabase(id: number): Promise<DatabaseMeta> {
-    return await prisma.databaseMeta.delete({
+    return await this.prisma.databaseMeta.delete({
       where: { id },
     });
   }
@@ -112,7 +119,7 @@ export class MetadataRepository {
     // 查询是否已存在
     const existing = await this.getDatabaseByName(input.sourceId, input.databaseName);
 
-    const result = await prisma.databaseMeta.upsert({
+    const result = await this.prisma.databaseMeta.upsert({
       where: {
         sourceId_databaseName: {
           sourceId: input.sourceId,
@@ -152,7 +159,7 @@ export class MetadataRepository {
    * 创建表元数据
    */
   async createTable(input: CreateTableMetaInput): Promise<TableMeta> {
-    return await prisma.tableMeta.create({
+    return await this.prisma.tableMeta.create({
       data: {
         databaseId: input.databaseId,
         tableName: input.tableName,
@@ -172,7 +179,7 @@ export class MetadataRepository {
    * 获取表元数据
    */
   async getTableById(id: number): Promise<TableMeta | null> {
-    return await prisma.tableMeta.findUnique({
+    return await this.prisma.tableMeta.findUnique({
       where: { id },
     });
   }
@@ -181,7 +188,7 @@ export class MetadataRepository {
    * 通过数据库和表名获取表元数据
    */
   async getTableByName(databaseId: number, tableName: string): Promise<TableMeta | null> {
-    return await prisma.tableMeta.findUnique({
+    return await this.prisma.tableMeta.findUnique({
       where: {
         databaseId_tableName: {
           databaseId,
@@ -195,7 +202,7 @@ export class MetadataRepository {
    * 获取数据库的所有表
    */
   async getTablesByDatabase(databaseId: number): Promise<TableMeta[]> {
-    return await prisma.tableMeta.findMany({
+    return await this.prisma.tableMeta.findMany({
       where: { databaseId },
       orderBy: { tableName: 'asc' },
     });
@@ -223,7 +230,7 @@ export class MetadataRepository {
     }
 
     const [data, total] = await Promise.all([
-      prisma.tableMeta.findMany({
+      this.prisma.tableMeta.findMany({
         where,
         skip,
         take: limit,
@@ -231,7 +238,7 @@ export class MetadataRepository {
           ? { [options.orderBy]: options.orderDirection ?? 'asc' }
           : { tableName: 'asc' },
       }),
-      prisma.tableMeta.count({ where }),
+      this.prisma.tableMeta.count({ where }),
     ]);
 
     const totalPages = Math.ceil(total / limit);
@@ -251,7 +258,7 @@ export class MetadataRepository {
    * 更新表元数据
    */
   async updateTable(id: number, input: UpdateTableMetaInput): Promise<TableMeta> {
-    return await prisma.tableMeta.update({
+    return await this.prisma.tableMeta.update({
       where: { id },
       data: input,
     });
@@ -261,7 +268,7 @@ export class MetadataRepository {
    * 删除表元数据
    */
   async deleteTable(id: number): Promise<TableMeta> {
-    return await prisma.tableMeta.delete({
+    return await this.prisma.tableMeta.delete({
       where: { id },
     });
   }
@@ -273,7 +280,7 @@ export class MetadataRepository {
     // 查询是否已存在
     const existing = await this.getTableByName(input.databaseId, input.tableName);
 
-    const result = await prisma.tableMeta.upsert({
+    const result = await this.prisma.tableMeta.upsert({
       where: {
         databaseId_tableName: {
           databaseId: input.databaseId,
@@ -325,7 +332,7 @@ export class MetadataRepository {
    * 创建字段元数据
    */
   async createColumn(input: CreateColumnMetaInput): Promise<ColumnMeta> {
-    return await prisma.columnMeta.create({
+    return await this.prisma.columnMeta.create({
       data: {
         tableId: input.tableId,
         columnName: input.columnName,
@@ -347,7 +354,7 @@ export class MetadataRepository {
    * 获取字段元数据
    */
   async getColumnById(id: number): Promise<ColumnMeta | null> {
-    return await prisma.columnMeta.findUnique({
+    return await this.prisma.columnMeta.findUnique({
       where: { id },
     });
   }
@@ -356,7 +363,7 @@ export class MetadataRepository {
    * 通过表和字段名获取字段元数据
    */
   async getColumnByName(tableId: number, columnName: string): Promise<ColumnMeta | null> {
-    return await prisma.columnMeta.findUnique({
+    return await this.prisma.columnMeta.findUnique({
       where: {
         tableId_columnName: {
           tableId,
@@ -370,7 +377,7 @@ export class MetadataRepository {
    * 获取表的所有字段
    */
   async getColumnsByTable(tableId: number): Promise<ColumnMeta[]> {
-    return await prisma.columnMeta.findMany({
+    return await this.prisma.columnMeta.findMany({
       where: { tableId },
       orderBy: { ordinalPosition: 'asc' },
     });
@@ -380,7 +387,7 @@ export class MetadataRepository {
    * 更新字段元数据
    */
   async updateColumn(id: number, input: UpdateColumnMetaInput): Promise<ColumnMeta> {
-    return await prisma.columnMeta.update({
+    return await this.prisma.columnMeta.update({
       where: { id },
       data: input,
     });
@@ -390,7 +397,7 @@ export class MetadataRepository {
    * 删除字段元数据
    */
   async deleteColumn(id: number): Promise<ColumnMeta> {
-    return await prisma.columnMeta.delete({
+    return await this.prisma.columnMeta.delete({
       where: { id },
     });
   }
@@ -402,7 +409,7 @@ export class MetadataRepository {
     // 查询是否已存在
     const existing = await this.getColumnByName(input.tableId, input.columnName);
 
-    const result = await prisma.columnMeta.upsert({
+    const result = await this.prisma.columnMeta.upsert({
       where: {
         tableId_columnName: {
           tableId: input.tableId,
@@ -494,7 +501,7 @@ export class MetadataRepository {
   async createExplicitRelationship(
     input: CreateExplicitRelationshipInput
   ): Promise<ExplicitRelationship> {
-    return await prisma.explicitRelationship.create({
+    return await this.prisma.explicitRelationship.create({
       data: {
         sourceTableId: input.sourceTableId,
         sourceColumnId: input.sourceColumnId,
@@ -512,7 +519,7 @@ export class MetadataRepository {
   async getExplicitRelationshipsBySourceTable(
     tableId: number
   ): Promise<ExplicitRelationship[]> {
-    return await prisma.explicitRelationship.findMany({
+    return await this.prisma.explicitRelationship.findMany({
       where: { sourceTableId: tableId },
       include: {
         sourceTable: true,
@@ -529,7 +536,7 @@ export class MetadataRepository {
   async getExplicitRelationshipsByTargetTable(
     tableId: number
   ): Promise<ExplicitRelationship[]> {
-    return await prisma.explicitRelationship.findMany({
+    return await this.prisma.explicitRelationship.findMany({
       where: { targetTableId: tableId },
       include: {
         sourceTable: true,
@@ -544,7 +551,7 @@ export class MetadataRepository {
    * 删除显式关系
    */
   async deleteExplicitRelationship(id: number): Promise<ExplicitRelationship> {
-    return await prisma.explicitRelationship.delete({
+    return await this.prisma.explicitRelationship.delete({
       where: { id },
     });
   }
@@ -555,7 +562,7 @@ export class MetadataRepository {
   async upsertExplicitRelationship(
     input: CreateExplicitRelationshipInput
   ): Promise<ExplicitRelationship> {
-    return await prisma.explicitRelationship.upsert({
+    return await this.prisma.explicitRelationship.upsert({
       where: {
         sourceTableId_sourceColumnId_targetTableId_targetColumnId: {
           sourceTableId: input.sourceTableId,
@@ -587,7 +594,7 @@ export class MetadataRepository {
   async createInferredRelationship(
     input: CreateInferredRelationshipInput
   ): Promise<InferredRelationship> {
-    return await prisma.inferredRelationship.create({
+    return await this.prisma.inferredRelationship.create({
       data: {
         sourceTableId: input.sourceTableId,
         sourceColumnId: input.sourceColumnId,
@@ -610,7 +617,7 @@ export class MetadataRepository {
   async getInferredRelationshipsBySourceTable(
     tableId: number
   ): Promise<InferredRelationship[]> {
-    return await prisma.inferredRelationship.findMany({
+    return await this.prisma.inferredRelationship.findMany({
       where: { sourceTableId: tableId },
       include: {
         sourceTable: true,
@@ -625,7 +632,7 @@ export class MetadataRepository {
    * 获取未验证的推断关系
    */
   async getUnverifiedInferredRelationships(): Promise<InferredRelationship[]> {
-    return await prisma.inferredRelationship.findMany({
+    return await this.prisma.inferredRelationship.findMany({
       where: { isVerified: false },
       orderBy: { confidenceScore: 'desc' },
       include: {
@@ -644,7 +651,7 @@ export class MetadataRepository {
     id: number,
     input: VerifyInferredRelationshipInput
   ): Promise<InferredRelationship> {
-    return await prisma.inferredRelationship.update({
+    return await this.prisma.inferredRelationship.update({
       where: { id },
       data: {
         isVerified: input.isVerified,
@@ -658,7 +665,7 @@ export class MetadataRepository {
    * 删除推断关系
    */
   async deleteInferredRelationship(id: number): Promise<InferredRelationship> {
-    return await prisma.inferredRelationship.delete({
+    return await this.prisma.inferredRelationship.delete({
       where: { id },
     });
   }
@@ -669,7 +676,7 @@ export class MetadataRepository {
   async upsertInferredRelationship(
     input: CreateInferredRelationshipInput
   ): Promise<InferredRelationship> {
-    return await prisma.inferredRelationship.upsert({
+    return await this.prisma.inferredRelationship.upsert({
       where: {
         sourceTableId_sourceColumnId_targetTableId_targetColumnId: {
           sourceTableId: input.sourceTableId,
@@ -745,7 +752,7 @@ export class MetadataRepository {
    * 创建元数据变更记录
    */
   async createMetadataChange(input: CreateMetadataChangeInput): Promise<MetadataChange> {
-    return await prisma.metadataChange.create({
+    return await this.prisma.metadataChange.create({
       data: {
         changeType: input.changeType,
         entityType: input.entityType,
@@ -764,7 +771,7 @@ export class MetadataRepository {
     entityId: number,
     limit: number = 50
   ): Promise<MetadataChange[]> {
-    return await prisma.metadataChange.findMany({
+    return await this.prisma.metadataChange.findMany({
       where: {
         entityType,
         entityId,
@@ -778,7 +785,7 @@ export class MetadataRepository {
    * 获取最近的变更记录
    */
   async getRecentChanges(limit: number = 100): Promise<MetadataChange[]> {
-    return await prisma.metadataChange.findMany({
+    return await this.prisma.metadataChange.findMany({
       orderBy: { changedAt: 'desc' },
       take: limit,
     });
@@ -786,6 +793,26 @@ export class MetadataRepository {
 }
 
 /**
- * 默认导出单例
+ * 导出默认实例（向后兼容）
  */
-export const metadataRepository = new MetadataRepository();
+let _metadataRepository: MetadataRepository | null = null;
+
+export function getMetadataRepository(): MetadataRepository {
+  if (!_metadataRepository) {
+    const { getService } = require('@/lib/di/setup');
+    try {
+      _metadataRepository = getService<MetadataRepository>(DI_TOKENS.MetadataRepository);
+    } catch {
+      // 回退方案：创建不使用 DI 的实例
+      const prisma = require('@/lib/prisma/client').default;
+      _metadataRepository = new MetadataRepository(prisma);
+    }
+  }
+  return _metadataRepository;
+}
+
+export const metadataRepository = new Proxy({} as MetadataRepository, {
+  get(_target, prop) {
+    return getMetadataRepository()[prop as keyof MetadataRepository];
+  }
+});

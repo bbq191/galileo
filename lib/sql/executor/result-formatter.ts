@@ -3,6 +3,8 @@
  * 负责将数据库查询结果转换为标准格式
  */
 
+import 'reflect-metadata';
+import { injectable } from 'tsyringe';
 import type { FieldPacket } from 'mysql2/promise';
 import type { ColumnMetadata, ExtendedFieldPacket } from './types';
 
@@ -43,6 +45,7 @@ const MYSQL_TYPE_MAP: Record<number, string> = {
 /**
  * 结果格式化器类
  */
+@injectable()
 export class ResultFormatter {
   /**
    * 格式化列元数据
@@ -340,5 +343,17 @@ export class ResultFormatter {
   }
 }
 
-// 导出单例
-export const resultFormatter = new ResultFormatter();
+// 向后兼容：导出单例（通过 DI 容器管理）
+// 使用 getter 延迟解析，避免循环依赖问题
+let _resultFormatter: ResultFormatter | null = null;
+
+export const resultFormatter: ResultFormatter = new Proxy({} as ResultFormatter, {
+  get(target, prop) {
+    if (!_resultFormatter) {
+      const { resolve } = require('@/lib/di/container');
+      const { DI_TOKENS } = require('@/lib/di/tokens');
+      _resultFormatter = resolve<ResultFormatter>(DI_TOKENS.ResultFormatter);
+    }
+    return (_resultFormatter as any)[prop];
+  }
+});

@@ -7,8 +7,8 @@
  * - 批量处理和进度跟踪
  */
 
+import { injectable, inject } from 'tsyringe';
 import { PrismaClient } from '@prisma/client';
-import prisma from '@/lib/prisma/client';
 import type { DatabaseInfo, TableInfo, ColumnInfo } from '@/lib/metadata/types';
 import { RuleBasedAnnotator } from './rules/naming-rules';
 import { BatchProcessor, type BatchRequest, type BatchProgress } from './batch-processor';
@@ -19,10 +19,7 @@ import {
   generateBatchColumnSemanticPrompt,
 } from './prompt-templates';
 import { semanticConfig } from './config';
-
-function getPrismaClient() {
-  return prisma;
-}
+import { DI_TOKENS } from '@/lib/di/tokens';
 
 /**
  * 语义标注来源
@@ -72,14 +69,13 @@ export interface AnnotationStats {
 /**
  * 语义标注器类
  */
+@injectable()
 export class SemanticAnnotator {
-  private ruleAnnotator: RuleBasedAnnotator;
-  private batchProcessor: BatchProcessor;
-
-  constructor() {
-    this.ruleAnnotator = new RuleBasedAnnotator();
-    this.batchProcessor = new BatchProcessor();
-  }
+  constructor(
+    @inject(DI_TOKENS.PrismaClient) private prisma: PrismaClient,
+    @inject(DI_TOKENS.RuleBasedAnnotator) private ruleAnnotator: RuleBasedAnnotator,
+    @inject(DI_TOKENS.BatchProcessor) private batchProcessor: BatchProcessor
+  ) {}
 
   /**
    * 标注数据库
@@ -91,7 +87,7 @@ export class SemanticAnnotator {
     console.log(`开始标注数据库 ID: ${databaseId}`);
 
     // 获取数据库元数据
-    const database = await getPrismaClient().databaseMeta.findUnique({
+    const database = await this.prisma.databaseMeta.findUnique({
       where: { id: databaseId },
       include: { tables: true },
     });
@@ -134,7 +130,7 @@ export class SemanticAnnotator {
     });
 
     // 保存语义描述
-    await getPrismaClient().databaseMeta.update({
+    await this.prisma.databaseMeta.update({
       where: { id: databaseId },
       data: { semanticDescription: response.trim() },
     });
@@ -158,7 +154,7 @@ export class SemanticAnnotator {
     console.log(`开始标注表 ID: ${tableId}`);
 
     // 获取表元数据
-    const table = await getPrismaClient().tableMeta.findUnique({
+    const table = await this.prisma.tableMeta.findUnique({
       where: { id: tableId },
       include: {
         columns: {
@@ -221,7 +217,7 @@ export class SemanticAnnotator {
     });
 
     // 保存语义描述
-    await getPrismaClient().tableMeta.update({
+    await this.prisma.tableMeta.update({
       where: { id: tableId },
       data: { semanticDescription: response.trim() },
     });
@@ -243,7 +239,7 @@ export class SemanticAnnotator {
     force: boolean = false
   ): Promise<AnnotationResult> {
     // 获取字段元数据
-    const column = await getPrismaClient().columnMeta.findUnique({
+    const column = await this.prisma.columnMeta.findUnique({
       where: { id: columnId },
       include: {
         table: {
@@ -282,7 +278,7 @@ export class SemanticAnnotator {
 
     if (ruleResult) {
       // 规则引擎成功匹配
-      await getPrismaClient().columnMeta.update({
+      await this.prisma.columnMeta.update({
         where: { id: columnId },
         data: {
           semanticDescription: ruleResult.semantic,
@@ -316,7 +312,7 @@ export class SemanticAnnotator {
     });
 
     // 保存语义描述
-    await getPrismaClient().columnMeta.update({
+    await this.prisma.columnMeta.update({
       where: { id: columnId },
       data: {
         semanticDescription: response.trim(),
@@ -347,7 +343,7 @@ export class SemanticAnnotator {
     console.log(`开始批量标注表 ${tableId} 的字段...`);
 
     // 获取所有字段
-    const columns = await getPrismaClient().columnMeta.findMany({
+    const columns = await this.prisma.columnMeta.findMany({
       where: { tableId },
       include: {
         table: {
@@ -406,7 +402,7 @@ export class SemanticAnnotator {
 
       if (ruleResult) {
         // 规则引擎成功
-        await getPrismaClient().columnMeta.update({
+        await this.prisma.columnMeta.update({
           where: { id: column.id },
           data: {
             semanticDescription: ruleResult.semantic,
@@ -466,7 +462,7 @@ export class SemanticAnnotator {
       // 保存 AI 结果
       for (const result of results) {
         if (result.success) {
-          await getPrismaClient().columnMeta.update({
+          await this.prisma.columnMeta.update({
             where: { id: result.data.id },
             data: {
               semanticDescription: result.response.trim(),
@@ -521,7 +517,7 @@ export class SemanticAnnotator {
     const databaseResult = await this.annotateDatabase(databaseId, options.force);
 
     // 2. 获取所有表
-    const tables = await getPrismaClient().tableMeta.findMany({
+    const tables = await this.prisma.tableMeta.findMany({
       where: { databaseId },
     });
 
@@ -591,6 +587,33 @@ export class SemanticAnnotator {
 }
 
 /**
- * 导出默认实例
+ * 导出默认实例（向后兼容）
  */
-export const semanticAnnotator = new SemanticAnnotator();
+let _semanticAnnotator: SemanticAnnotator | null = null;
+
+export function getSemanticAnnotator(): SemanticAnnotator {
+  if (!_semanticAnnotator) {
+    const { getService } = require('@/lib/di/setup');
+    try {
+      _semanticAnnotator = getService<SemanticAnnotator>(DI_TOKENS.SemanticAnnotator);
+    } catch {
+      // 回退方案：创建不使用 DI 的实例
+      const prisma = require('@/lib/prisma/client').default;
+      const { RuleBasedAnnotator } = require('./rules/naming-rules');
+      const { BatchProcessor } = require('./batch-processor');
+      const { getDeepseekClient } = require('./deepseek-client');
+
+      const ruleAnnotator = new RuleBasedAnnotator(prisma);
+      const deepseekClient = getDeepseekClient();
+      const batchProcessor = new BatchProcessor(deepseekClient);
+      _semanticAnnotator = new SemanticAnnotator(prisma, ruleAnnotator, batchProcessor);
+    }
+  }
+  return _semanticAnnotator;
+}
+
+export const semanticAnnotator = new Proxy({} as SemanticAnnotator, {
+  get(_target, prop) {
+    return getSemanticAnnotator()[prop as keyof SemanticAnnotator];
+  }
+});

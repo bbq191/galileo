@@ -3,8 +3,10 @@
  * 当元数据变更时，自动失效相关的查询缓存
  */
 
-import { queryCacheManager } from './query-cache-manager';
-import { multiLevelCache } from './multi-level-cache';
+import { injectable, inject } from 'tsyringe';
+import { queryCacheManager, QueryCacheManager } from './query-cache-manager';
+import { multiLevelCache, MultiLevelCache } from './multi-level-cache';
+import { DI_TOKENS } from '@/lib/di/tokens';
 
 /**
  * 失效事件类型
@@ -41,7 +43,31 @@ export interface InvalidationOptions {
 /**
  * 缓存失效服务
  */
+@injectable()
 export class CacheInvalidationService {
+  // 依赖注入的服务
+  private queryCacheManager: QueryCacheManager;
+  private multiLevelCache: MultiLevelCache;
+
+  constructor(
+    @inject(DI_TOKENS.QueryCacheManager) injectedQueryCacheManager?: QueryCacheManager,
+    @inject(DI_TOKENS.MultiLevelCache) injectedMultiLevelCache?: MultiLevelCache
+  ) {
+    // 如果通过 DI 注入，使用注入的实例
+    if (injectedQueryCacheManager) {
+      this.queryCacheManager = injectedQueryCacheManager;
+    } else {
+      // 向后兼容：使用全局单例
+      this.queryCacheManager = queryCacheManager;
+    }
+
+    if (injectedMultiLevelCache) {
+      this.multiLevelCache = injectedMultiLevelCache;
+    } else {
+      // 向后兼容：使用全局单例
+      this.multiLevelCache = multiLevelCache;
+    }
+  }
   /**
    * 触发缓存失效
    * @param event 失效事件
@@ -69,60 +95,60 @@ export class CacheInvalidationService {
           // 元数据同步：失效所有查询缓存（意图和SQL）
           if (invalidateQueries) {
             await Promise.all([
-              queryCacheManager.invalidateIntents(),
-              queryCacheManager.invalidateSQL(),
+              this.queryCacheManager.invalidateIntents(),
+              this.queryCacheManager.invalidateSQL(),
             ]);
           }
           // 失效元数据缓存
           if (invalidateMetadata) {
-            await multiLevelCache.invalidate('metadata_synced');
+            await this.multiLevelCache.invalidate('metadata_synced');
           }
           break;
 
         case InvalidationEvent.TABLE_STRUCTURE_CHANGED:
           // 表结构变更：失效所有查询缓存和相关元数据缓存
           if (invalidateQueries) {
-            await queryCacheManager.invalidateAll();
+            await this.queryCacheManager.invalidateAll();
           }
           if (invalidateMetadata) {
-            await multiLevelCache.invalidate('table_structure_changed');
+            await this.multiLevelCache.invalidate('table_structure_changed');
           }
           break;
 
         case InvalidationEvent.RELATIONSHIP_CHANGED:
           // 关系变更：失效 SQL 缓存（因为 JOIN 条件可能改变）
           if (invalidateQueries) {
-            await queryCacheManager.invalidateSQL();
+            await this.queryCacheManager.invalidateSQL();
           }
           if (invalidateMetadata) {
-            await multiLevelCache.invalidate('relationship_changed');
+            await this.multiLevelCache.invalidate('relationship_changed');
           }
           break;
 
         case InvalidationEvent.DATABASE_SYNCED:
           // 数据库同步：失效所有相关缓存
           if (invalidateQueries) {
-            await queryCacheManager.invalidateAll();
+            await this.queryCacheManager.invalidateAll();
           }
           if (invalidateMetadata) {
-            await multiLevelCache.invalidate('database_synced');
+            await this.multiLevelCache.invalidate('database_synced');
           }
           break;
 
         case InvalidationEvent.DATA_UPDATED:
           // 数据更新：只失效结果缓存
           if (invalidateQueries) {
-            await queryCacheManager.invalidateResults();
+            await this.queryCacheManager.invalidateResults();
           }
           break;
 
         case InvalidationEvent.MANUAL_SYNC:
           // 手动同步：失效所有查询缓存
           if (invalidateQueries) {
-            await queryCacheManager.invalidateAll();
+            await this.queryCacheManager.invalidateAll();
           }
           if (invalidateMetadata) {
-            await multiLevelCache.invalidate('manual_sync');
+            await this.multiLevelCache.invalidate('manual_sync');
           }
           break;
 
@@ -153,16 +179,16 @@ export class CacheInvalidationService {
 
     try {
       // 失效查询缓存（因为表结构可能影响查询）
-      await queryCacheManager.invalidateAll();
+      await this.queryCacheManager.invalidateAll();
 
       // 失效特定表的元数据缓存
-      await multiLevelCache.delete('table_meta', { id: tableId, version: '*' });
+      await this.multiLevelCache.delete('table_meta', { id: tableId, version: '*' });
 
       // 失效该表的字段缓存
-      await multiLevelCache.delete('column_meta', { tableId });
+      await this.multiLevelCache.delete('column_meta', { tableId });
 
       // 失效关系缓存
-      await multiLevelCache.invalidate(
+      await this.multiLevelCache.invalidate(
         'table_structure_changed',
         `relationships:*:table:${tableId}*`
       );
@@ -189,13 +215,13 @@ export class CacheInvalidationService {
 
     try {
       // 失效所有查询缓存
-      await queryCacheManager.invalidateAll();
+      await this.queryCacheManager.invalidateAll();
 
       // 失效数据库元数据缓存
-      await multiLevelCache.delete('database_meta', { id: databaseId });
+      await this.multiLevelCache.delete('database_meta', { id: databaseId });
 
       // 失效该数据库的表列表缓存
-      await multiLevelCache.invalidate(
+      await this.multiLevelCache.invalidate(
         'database_synced',
         `tables:list:db:${databaseId}*`
       );
@@ -215,11 +241,11 @@ export class CacheInvalidationService {
 
     try {
       // 失效 SQL 缓存（因为 JOIN 条件可能改变）
-      await queryCacheManager.invalidateSQL();
+      await this.queryCacheManager.invalidateSQL();
 
       // 失效关系图谱缓存
-      await multiLevelCache.invalidate('relationship_changed', 'graph:*');
-      await multiLevelCache.invalidate('relationship_changed', 'relationships:*');
+      await this.multiLevelCache.invalidate('relationship_changed', 'graph:*');
+      await this.multiLevelCache.invalidate('relationship_changed', 'relationships:*');
 
       console.log('[CacheInvalidation] 关系缓存失效完成');
     } catch (error) {
@@ -236,10 +262,10 @@ export class CacheInvalidationService {
 
     try {
       // 清空查询缓存
-      await queryCacheManager.invalidateAll();
+      await this.queryCacheManager.invalidateAll();
 
       // 清空元数据缓存
-      await multiLevelCache.clear();
+      await this.multiLevelCache.clear();
 
       console.log('[CacheInvalidation] 所有缓存已清空');
     } catch (error) {
@@ -256,13 +282,14 @@ export class CacheInvalidationService {
     cacheStats: any;
   } {
     return {
-      queryCacheStats: queryCacheManager.getStatistics(),
-      cacheStats: multiLevelCache.getStats(),
+      queryCacheStats: this.queryCacheManager.getStatistics(),
+      cacheStats: this.multiLevelCache.getStats(),
     };
   }
 }
 
-// 导出单例
+// 导出单例（向后兼容）
+// 注意：通过 DI 使用时，应该注入 CacheInvalidationService 类而不是使用此单例
 export const cacheInvalidationService = new CacheInvalidationService();
 
 /**

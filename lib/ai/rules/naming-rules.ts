@@ -7,13 +7,10 @@
  * - 支持自定义规则和数据字典
  */
 
+import { injectable, inject } from 'tsyringe';
 import type { ColumnInfo } from '@/lib/metadata/types';
 import { PrismaClient } from '@prisma/client';
-import prisma from '@/lib/prisma/client';
-
-function getPrismaClient() {
-  return prisma;
-}
+import { DI_TOKENS } from '@/lib/di/tokens';
 
 /**
  * 命名规则定义
@@ -357,10 +354,14 @@ export interface RuleAnnotationResult {
 /**
  * 基于规则的标注器
  */
+@injectable()
 export class RuleBasedAnnotator {
   private rules: NamingRule[];
 
-  constructor(customRules: NamingRule[] = []) {
+  constructor(
+    @inject(DI_TOKENS.PrismaClient) private prisma: PrismaClient,
+    customRules: NamingRule[] = []
+  ) {
     // 合并内置规则和自定义规则，并按优先级排序
     this.rules = [...BUILTIN_RULES, ...customRules].sort(
       (a, b) => (a.priority || 999) - (b.priority || 999)
@@ -425,10 +426,8 @@ export class RuleBasedAnnotator {
    */
   private async queryDataDictionary(columnName: string) {
     try {
-      const client = getPrismaClient();
-
       // 精确匹配
-      let entry = await client.dataDictionary.findFirst({
+      let entry = await this.prisma.dataDictionary.findFirst({
         where: {
           field_pattern: columnName,
           is_enabled: true,
@@ -438,7 +437,7 @@ export class RuleBasedAnnotator {
       if (entry) return entry;
 
       // 模糊匹配（LIKE）
-      const entries = await client.dataDictionary.findMany({
+      const entries = await this.prisma.dataDictionary.findMany({
         where: {
           is_enabled: true,
         },
@@ -542,6 +541,26 @@ export class RuleBasedAnnotator {
 }
 
 /**
- * 导出默认实例
+ * 导出默认实例（向后兼容）
  */
-export const ruleBasedAnnotator = new RuleBasedAnnotator();
+let _ruleBasedAnnotator: RuleBasedAnnotator | null = null;
+
+export function getRuleBasedAnnotator(): RuleBasedAnnotator {
+  if (!_ruleBasedAnnotator) {
+    const { getService } = require('@/lib/di/setup');
+    try {
+      _ruleBasedAnnotator = getService<RuleBasedAnnotator>(DI_TOKENS.RuleBasedAnnotator);
+    } catch {
+      // 回退方案：创建不使用 DI 的实例
+      const prisma = require('@/lib/prisma/client').default;
+      _ruleBasedAnnotator = new RuleBasedAnnotator(prisma);
+    }
+  }
+  return _ruleBasedAnnotator;
+}
+
+export const ruleBasedAnnotator = new Proxy({} as RuleBasedAnnotator, {
+  get(_target, prop) {
+    return getRuleBasedAnnotator()[prop as keyof RuleBasedAnnotator];
+  }
+});

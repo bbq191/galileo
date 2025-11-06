@@ -4,11 +4,10 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { connectionManager } from '@/lib/database';
 import type { DatabaseConfig } from '@/lib/database';
-import prisma from '@/lib/prisma/client';
 import { ConnectionPool } from '@/lib/database/connection-pool';
 import { DEFAULT_POOL_CONFIG } from '@/lib/database/connection-config';
+import { getService } from '@/lib/di/helpers/app-router';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -23,6 +22,10 @@ export async function POST(
 ) {
   try {
     const { id } = await context.params;
+
+    // 获取 DI 服务
+    const prisma = getService.prisma();
+    const connectionManager = getService.connectionManager();
 
     // 检查连接是否存在于 connectionManager 中
     if (await connectionManager.hasConnection(id)) {

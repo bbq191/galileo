@@ -3,6 +3,8 @@
  * 负责管理多个数据库连接池
  */
 
+import { injectable, inject } from 'tsyringe';
+import type { PrismaClient } from '@prisma/client';
 import { ConnectionPool } from './connection-pool';
 import type {
   DatabaseConfig,
@@ -14,10 +16,13 @@ import { DEFAULT_POOL_CONFIG } from './connection-config';
 import { encryptPassword } from './encryption';
 import prisma from '@/lib/prisma/client';
 import { createLogger } from '@/lib/utils/logger';
+import { DI_TOKENS } from '@/lib/di/tokens';
+import type { IConnectionPoolFactory } from '@/lib/di/factories/connection-pool.factory';
 
 /**
- * 连接管理器单例
+ * 连接管理器
  */
+@injectable()
 class ConnectionManager {
   private pools: Map<string, ConnectionPool> = new Map();
   private healthCheckInterval: NodeJS.Timeout | null = null;
@@ -25,10 +30,68 @@ class ConnectionManager {
   private isInitialized = false;
   private initPromise: Promise<void> | null = null;
   private logger = createLogger('ConnectionManager');
+  private signalHandlersRegistered = false;
 
-  constructor() {
-    // 启动定期健康检查
+  // DI 注入的依赖
+  private prisma: PrismaClient;
+  private poolFactory: IConnectionPoolFactory;
+
+  constructor(
+    @inject(DI_TOKENS.PrismaClient) prisma?: PrismaClient,
+    @inject(DI_TOKENS.ConnectionPoolFactory) poolFactory?: IConnectionPoolFactory
+  ) {
+    // 如果通过 DI 注入，使用注入的实例
+    if (prisma) {
+      this.prisma = prisma;
+    } else {
+      // 向后兼容：使用全局 prisma
+      this.prisma = prisma as any;
+    }
+
+    if (poolFactory) {
+      this.poolFactory = poolFactory;
+    } else {
+      // 向后兼容：直接创建 ConnectionPool（需要创建默认工厂）
+      this.poolFactory = {
+        create: (config: DatabaseConfig, poolConfig: PoolConfig) =>
+          new ConnectionPool(config, poolConfig),
+      };
+    }
+  }
+
+  /**
+   * 启动所有生命周期服务
+   * 包括健康检查和信号处理器
+   */
+  start(): void {
     this.startHealthCheck();
+    this.registerSignalHandlers();
+  }
+
+  /**
+   * 注册进程信号处理器（优雅关闭）
+   */
+  registerSignalHandlers(): void {
+    if (this.signalHandlersRegistered) {
+      return;
+    }
+
+    if (typeof process !== 'undefined') {
+      process.on('SIGINT', async () => {
+        console.log('\n正在优雅关闭连接管理器...');
+        await this.closeAll();
+        process.exit(0);
+      });
+
+      process.on('SIGTERM', async () => {
+        console.log('\n正在优雅关闭连接管理器...');
+        await this.closeAll();
+        process.exit(0);
+      });
+
+      this.signalHandlersRegistered = true;
+      this.logger.info('信号处理器已注册');
+    }
   }
 
   /**
@@ -96,8 +159,8 @@ class ConnectionManager {
         password: encryptedPassword,
       };
 
-      // 创建连接池
-      const pool = new ConnectionPool(configWithEncryption, poolConfig);
+      // 创建连接池（使用工厂）
+      const pool = this.poolFactory.create(configWithEncryption, poolConfig);
       await pool.initialize();
 
       // 存储连接池
@@ -167,7 +230,7 @@ class ConnectionManager {
     this.pools.delete(id);
 
     // 更新数据库状态
-    await prisma.dataSource.update({
+    await this.prisma.dataSource.update({
       where: { id: parseInt(id) },
       data: { status: 'inactive' },
     });
@@ -218,7 +281,7 @@ class ConnectionManager {
    */
   async loadConnectionsFromDatabase(): Promise<void> {
     try {
-      const dataSources = await prisma.dataSource.findMany({
+      const dataSources = await this.prisma.dataSource.findMany({
         where: { status: 'active' },
       });
 
@@ -237,8 +300,8 @@ class ConnectionManager {
             databases: [], // 将在后续从 databases_meta 加载
           };
 
-          // 创建连接池（不保存到数据库，因为已存在）
-          const pool = new ConnectionPool(config, DEFAULT_POOL_CONFIG);
+          // 创建连接池（不保存到数据库，因为已存在，使用工厂）
+          const pool = this.poolFactory.create(config, DEFAULT_POOL_CONFIG);
           await pool.initialize();
           this.pools.set(config.id, pool);
 
@@ -250,7 +313,7 @@ class ConnectionManager {
             { metadata: { dataSourceId: ds.id, dataSourceName: ds.name } }
           );
           // 更新状态为错误
-          await prisma.dataSource.update({
+          await this.prisma.dataSource.update({
             where: { id: ds.id },
             data: { status: 'error' },
           });
@@ -281,7 +344,7 @@ class ConnectionManager {
 
           // 更新数据库状态
           const status = health.healthy ? 'active' : 'error';
-          await prisma.dataSource.update({
+          await this.prisma.dataSource.update({
             where: { id: parseInt(id) },
             data: { status },
           });
@@ -340,7 +403,7 @@ class ConnectionManager {
    */
   private async saveToDatabase(config: DatabaseConfig): Promise<void> {
     try {
-      await prisma.dataSource.upsert({
+      await this.prisma.dataSource.upsert({
         where: { name: config.name },
         update: {
           type: config.type,
@@ -395,21 +458,13 @@ class ConnectionManager {
   }
 }
 
-// 导出单例实例
+// 导出类（用于 DI）
+export { ConnectionManager };
+
+// 导出单例实例（向后兼容）
+// 注意：通过 DI 使用时，应该注入 ConnectionManager 类而不是使用此单例
 const connectionManager = new ConnectionManager();
+// 启动生命周期服务（仅全局单例）
+connectionManager.start();
+
 export default connectionManager;
-
-// 优雅关闭处理
-if (typeof process !== 'undefined') {
-  process.on('SIGINT', async () => {
-    console.log('\n正在优雅关闭连接管理器...');
-    await connectionManager.closeAll();
-    process.exit(0);
-  });
-
-  process.on('SIGTERM', async () => {
-    console.log('\n正在优雅关闭连接管理器...');
-    await connectionManager.closeAll();
-    process.exit(0);
-  });
-}
