@@ -326,4 +326,131 @@ export class MetadataOrchestrator {
       throw error;
     }
   }
+
+  /**
+   * 搜索元数据（数据库、表、列）
+   *
+   * @param query - 搜索关键词
+   * @param options - 搜索选项
+   * @returns 搜索结果
+   */
+  async searchMetadata(
+    query: string,
+    options: {
+      type?: 'database' | 'table' | 'column' | 'all';
+      sourceId?: number;
+      databaseId?: number;
+      page?: number;
+      limit?: number;
+    } = {}
+  ) {
+    try {
+      const { type = 'all', sourceId, databaseId, page = 1, limit = 20 } = options;
+      const skip = (page - 1) * limit;
+
+      console.log(`[MetadataOrchestrator] Searching metadata: "${query}", type: ${type}`);
+
+      const results: any = {
+        databases: [],
+        tables: [],
+        columns: [],
+      };
+
+      // 搜索数据库
+      if (!type || type === 'database' || type === 'all') {
+        results.databases = await this.repository.searchDatabases(query, {
+          sourceId,
+          limit: type === 'database' ? limit : 10,
+          skip: type === 'database' ? skip : 0,
+        });
+      }
+
+      // 搜索表
+      if (!type || type === 'table' || type === 'all') {
+        results.tables = await this.repository.searchTables(query, {
+          sourceId,
+          databaseId,
+          limit: type === 'table' ? limit : 10,
+          skip: type === 'table' ? skip : 0,
+        });
+      }
+
+      // 搜索列
+      if (!type || type === 'column' || type === 'all') {
+        results.columns = await this.repository.searchColumns(query, {
+          sourceId,
+          databaseId,
+          limit: type === 'column' ? limit : 10,
+          skip: type === 'column' ? skip : 0,
+        });
+      }
+
+      return results;
+    } catch (error) {
+      console.error(`[MetadataOrchestrator] Search failed:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取数据库列表
+   *
+   * @param sourceId - 数据源 ID
+   * @param databaseId - 数据库 ID（可选，获取单个数据库）
+   * @returns 数据库列表
+   */
+  async getDatabases(sourceId?: number, databaseId?: number) {
+    try {
+      if (databaseId) {
+        const database = await this.repository.getDatabaseById(databaseId);
+        return database ? [database] : [];
+      }
+
+      if (sourceId) {
+        return await this.repository.getDatabasesBySource(sourceId);
+      }
+
+      throw new Error('sourceId or databaseId is required');
+    } catch (error) {
+      console.error(`[MetadataOrchestrator] Failed to get databases:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取表列表
+   *
+   * @param databaseId - 数据库 ID
+   * @param options - 查询选项
+   * @returns 表列表（分页）
+   */
+  async getTables(databaseId: number, options?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    orderBy?: string;
+    orderDirection?: 'asc' | 'desc';
+  }) {
+    try {
+      return await this.repository.getTablesPaginated(databaseId, options || {});
+    } catch (error) {
+      console.error(`[MetadataOrchestrator] Failed to get tables:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取列列表
+   *
+   * @param tableId - 表 ID
+   * @returns 列列表
+   */
+  async getColumns(tableId: number) {
+    try {
+      return await this.repository.getColumnsByTable(tableId);
+    } catch (error) {
+      console.error(`[MetadataOrchestrator] Failed to get columns:`, error);
+      throw error;
+    }
+  }
 }

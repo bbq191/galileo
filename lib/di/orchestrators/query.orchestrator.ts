@@ -51,6 +51,9 @@ export interface QueryResult {
   /** 查询数据 */
   data?: any[];
 
+  /** 查询意图（用于审计日志） */
+  intent?: QueryIntent;
+
   /** 元数据 */
   metadata?: {
     /** 生成的 SQL */
@@ -229,6 +232,7 @@ export class QueryOrchestrator {
       if (context.tables.length === 0) {
         return {
           success: false,
+          intent: resolvedIntent,
           error: '未找到相关的数据表，请检查查询内容',
           performance: {
             intentRecognitionTime: timings.intentRecognition,
@@ -250,6 +254,7 @@ export class QueryOrchestrator {
       if (options.explainOnly) {
         return {
           success: true,
+          intent: resolvedIntent,
           metadata: {
             generatedSQL: sqlResult.sql,
             explanation: sqlResult.explanation,
@@ -285,6 +290,7 @@ export class QueryOrchestrator {
       if (!execResult.success) {
         return {
           success: false,
+          intent: resolvedIntent,
           error: execResult.error || 'Query execution failed',
           metadata: {
             generatedSQL: sqlResult.sql,
@@ -308,6 +314,7 @@ export class QueryOrchestrator {
       const result: QueryResult = {
         success: true,
         data: execResult.data,
+        intent: resolvedIntent,
         metadata: {
           generatedSQL: sqlResult.sql,
           explanation: sqlResult.explanation,

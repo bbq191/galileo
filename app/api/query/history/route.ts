@@ -5,11 +5,13 @@
  * 功能：
  * - 获取用户的查询历史
  * - 支持分页和筛选
+ *
+ * 重构后使用 AuditOrchestrator 和统一错误处理
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { AuditLogger } from '@/lib/audit/audit-logger';
-import prisma from '@/lib/prisma/client';
+import { getAuditOrchestrator } from '@/lib/di/setup';
+import { safeServerErrorResponse } from '@/lib/api/response';
 
 export interface QueryHistoryResponse {
   success: boolean;
@@ -44,42 +46,29 @@ export async function GET(request: NextRequest) {
 
     console.log(`[Query History] Fetching history: page=${page}, limit=${limit}`);
 
-    // 构建筛选条件
-    const filters: any = {
+    // 使用 AuditOrchestrator 获取查询历史
+    const auditOrchestrator = getAuditOrchestrator();
+    const result = await auditOrchestrator.getQueryHistory({
+      userId: userId || undefined,
       page,
       limit,
-    };
-
-    if (userId) {
-      filters.userId = userId;
-    }
-
-    if (success !== null && success !== undefined) {
-      filters.success = success === 'true';
-    }
-
-    if (startDate) {
-      filters.startDate = new Date(startDate);
-    }
-
-    if (endDate) {
-      filters.endDate = new Date(endDate);
-    }
-
-    // 获取查询历史
-    const auditLogger = new AuditLogger(prisma);
-    const result = await auditLogger.queryWithPagination(filters);
+      success: success === 'true' ? true : success === 'false' ? false : undefined,
+      startDate: startDate ? new Date(startDate) : undefined,
+      endDate: endDate ? new Date(endDate) : undefined,
+    });
 
     // 格式化返回数据
     const formattedData = result.data.map(log => ({
-      id: log.id!,
+      id: log.id || 0,
       naturalLanguageQuery: log.naturalLanguageQuery,
       generatedSQL: log.generatedSQL,
-      executionSuccess: log.executionResult.success,
-      rowCount: log.executionResult.rowCount,
-      executionTime: log.performance.executionTime,
-      timestamp: log.timestamp.toISOString(),
+      executionSuccess: log.executionSuccess,
+      rowCount: log.rowCount,
+      executionTime: log.executionTime,
+      timestamp: log.timestamp,
     }));
+
+    console.log(`[Query History] Retrieved ${formattedData.length} history entries`);
 
     return NextResponse.json({
       success: true,
@@ -90,9 +79,12 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error('[Query History] Error:', error);
 
-    return NextResponse.json({
-      success: false,
-      error: error.message || '获取查询历史失败',
-    } as QueryHistoryResponse, { status: 500 });
+    return safeServerErrorResponse(
+      error instanceof Error ? error : new Error('获取查询历史失败'),
+      {
+        context: 'query-history-get',
+        metadata: { operation: 'get_query_history' },
+      }
+    );
   }
 }

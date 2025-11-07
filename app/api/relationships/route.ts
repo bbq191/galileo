@@ -1,18 +1,88 @@
 /**
  * 关系查询 API
  * GET /api/relationships - 获取关系列表
+ *
+ * 重构后使用 RelationshipOrchestrator 和 DI 容器
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma/client';
+import { getRelationshipOrchestrator, getDatabaseService } from '@/lib/di/setup';
+import { safeServerErrorResponse } from '@/lib/api/response';
 
 /**
  * GET /api/relationships
- * 获取关系列表（显式关系和推断关系）
+ * 获取关系信息
+ *
+ * 支持三种模式：
+ * - mode=list (默认): 返回关系列表（显式关系和推断关系）
+ * - mode=graph: 返回关系图谱
+ * - mode=stats: 返回统计信息
  */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+
+    // 模式参数
+    const mode = searchParams.get('mode') || 'list'; // 'list' | 'graph' | 'stats'
+    const dataSourceId = searchParams.get('dataSourceId');
+
+    // 使用 RelationshipOrchestrator
+    const orchestrator = getRelationshipOrchestrator();
+
+    // 模式：关系图谱
+    if (mode === 'graph') {
+      if (!dataSourceId) {
+        return NextResponse.json(
+          {
+            status: 'error',
+            message: 'dataSourceId is required for graph mode',
+          },
+          { status: 400 }
+        );
+      }
+
+      const databases = searchParams.get('databases')?.split(',');
+      const minConfidence = parseFloat(searchParams.get('minConfidence') || '0.70');
+
+      const graph = await orchestrator.buildRelationshipGraph(
+        parseInt(dataSourceId),
+        databases,
+        minConfidence
+      );
+
+      return NextResponse.json({
+        status: 'success',
+        data: graph,
+      });
+    }
+
+    // 模式：统计信息
+    if (mode === 'stats') {
+      if (!dataSourceId) {
+        return NextResponse.json(
+          {
+            status: 'error',
+            message: 'dataSourceId is required for stats mode',
+          },
+          { status: 400 }
+        );
+      }
+
+      const databases = searchParams.get('databases')?.split(',');
+      const stats = await orchestrator.getStatistics(
+        parseInt(dataSourceId),
+        databases
+      );
+
+      return NextResponse.json({
+        status: 'success',
+        data: stats,
+      });
+    }
+
+    // 模式：关系列表（默认，向后兼容）
+    const dbService = getDatabaseService() as any;
+    const prisma = dbService.prisma;
 
     // 分页参数
     const page = parseInt(searchParams.get('page') || '1');
@@ -190,15 +260,18 @@ export async function GET(request: NextRequest) {
         totalPages: Math.ceil(total / limit),
       },
     });
+
   } catch (error) {
-    console.error('获取关系列表失败:', error);
-    return NextResponse.json(
+    console.error('[GET /api/relationships] Error:', error);
+
+    return safeServerErrorResponse(
+      error instanceof Error ? error : new Error('Failed to fetch relationships'),
       {
-        status: 'error',
-        message: 'Failed to fetch relationships',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
+        context: 'relationships-get',
+        metadata: {
+          operation: 'get_relationships',
+        },
+      }
     );
   }
 }

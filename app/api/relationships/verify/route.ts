@@ -1,14 +1,23 @@
 /**
  * 关系验证 API
  * POST /api/relationships/verify - 验证或拒绝推断关系
+ *
+ * 重构后使用 RelationshipOrchestrator 和统一错误处理
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma/client';
+import { getRelationshipOrchestrator, getDatabaseService } from '@/lib/di/setup';
+import { safeServerErrorResponse } from '@/lib/api/response';
 
 /**
  * POST /api/relationships/verify
  * 验证或拒绝推断关系
+ *
+ * 请求体:
+ * - relationshipId: 推断关系 ID (必需)
+ * - verified: 是否验证通过 (必需)
+ * - verifiedBy: 验证人 (可选,默认 'system')
+ * - action: 操作类型 ('verify' | 'reject' | 'convert', 可选)
  */
 export async function POST(request: NextRequest) {
   try {
@@ -30,6 +39,9 @@ export async function POST(request: NextRequest) {
     const verifiedBy = body.verifiedBy || 'system';
     const action = body.action; // 'verify' | 'reject' | 'convert'
 
+    const dbService = getDatabaseService() as any;
+    const prisma = dbService.prisma;
+
     // 检查关系是否存在
     const relationship = await prisma.inferredRelationship.findUnique({
       where: { id: relationshipId },
@@ -44,6 +56,8 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       );
     }
+
+    console.log(`[POST /api/relationships/verify] Verifying relationship ${relationshipId}, action: ${action || 'verify'}`);
 
     // 根据操作类型处理
     if (action === 'convert' && verified) {
@@ -64,6 +78,8 @@ export async function POST(request: NextRequest) {
         where: { id: relationshipId },
       });
 
+      console.log(`[POST /api/relationships/verify] Converted inferred relationship ${relationshipId} to explicit`);
+
       return NextResponse.json({
         status: 'success',
         message: 'Inferred relationship converted to explicit relationship',
@@ -71,26 +87,57 @@ export async function POST(request: NextRequest) {
           explicitRelationship,
         },
       });
+
     } else if (action === 'reject' || verified === false) {
-      // 拒绝推断关系，直接删除
-      await prisma.inferredRelationship.delete({
-        where: { id: relationshipId },
+      // 使用 RelationshipOrchestrator 删除无效关系
+      const orchestrator = getRelationshipOrchestrator();
+      const success = await orchestrator.verifyRelationship({
+        relationshipId,
+        isValid: false,
       });
+
+      if (!success) {
+        return NextResponse.json(
+          {
+            status: 'error',
+            message: 'Failed to reject relationship',
+          },
+          { status: 500 }
+        );
+      }
+
+      console.log(`[POST /api/relationships/verify] Rejected relationship ${relationshipId}`);
 
       return NextResponse.json({
         status: 'success',
         message: 'Inferred relationship rejected and removed',
       });
+
     } else {
-      // 仅标记为已验证
-      const updated = await prisma.inferredRelationship.update({
-        where: { id: relationshipId },
-        data: {
-          isVerified: verified,
-          verifiedBy,
-          verifiedAt: verified ? new Date() : null,
-        },
+      // 使用 RelationshipOrchestrator 标记为已验证
+      const orchestrator = getRelationshipOrchestrator();
+      const success = await orchestrator.verifyRelationship({
+        relationshipId,
+        isValid: verified,
+        method: 'manual',
       });
+
+      if (!success) {
+        return NextResponse.json(
+          {
+            status: 'error',
+            message: 'Failed to verify relationship',
+          },
+          { status: 500 }
+        );
+      }
+
+      // 获取更新后的关系
+      const updated = await prisma.inferredRelationship.findUnique({
+        where: { id: relationshipId },
+      });
+
+      console.log(`[POST /api/relationships/verify] Verified relationship ${relationshipId}`);
 
       return NextResponse.json({
         status: 'success',
@@ -100,15 +147,16 @@ export async function POST(request: NextRequest) {
         data: updated,
       });
     }
+
   } catch (error) {
-    console.error('验证关系失败:', error);
-    return NextResponse.json(
+    console.error('[POST /api/relationships/verify] Error:', error);
+
+    return safeServerErrorResponse(
+      error instanceof Error ? error : new Error('Failed to verify relationship'),
       {
-        status: 'error',
-        message: 'Failed to verify relationship',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
+        context: 'relationships-verify-post',
+        metadata: { operation: 'verify_relationship' },
+      }
     );
   }
 }

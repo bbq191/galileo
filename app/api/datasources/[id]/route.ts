@@ -6,9 +6,9 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { connectionManager } from '@/lib/database';
-import { PrismaClient } from '@prisma/client';
-import prisma from '@/lib/prisma/client';
+import { safeServerErrorResponse, safeErrorResponse } from '@/lib/api/response';
+import { ErrorCategory } from '@/lib/security/error-sanitizer';
+import { getDataSourceOrchestrator } from '@/lib/di/setup';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -25,21 +25,11 @@ export async function GET(
     const { id } = await context.params;
     const dataSourceId = parseInt(id);
 
-    const dataSource = await (prisma as PrismaClient).dataSource.findUnique({
-      where: { id: dataSourceId },
-      include: {
-        databases: {
-          include: {
-            tables: {
-              select: {
-                id: true,
-                tableName: true,
-              },
-            },
-          },
-        },
-      },
-    });
+    // 使用 DataSourceOrchestrator 获取数据源列表，然后筛选
+    const orchestrator = getDataSourceOrchestrator();
+    const dataSources = await orchestrator.listDataSources();
+
+    const dataSource = dataSources.find(ds => ds.id === dataSourceId);
 
     if (!dataSource) {
       return NextResponse.json(
@@ -51,30 +41,17 @@ export async function GET(
       );
     }
 
-    // 获取连接统计
-    const hasConnection = await connectionManager.hasConnection(id);
-    const stats = hasConnection ? await connectionManager.getConnectionStats(id) : null;
-
     return NextResponse.json({
       status: 'success',
-      data: {
-        ...dataSource,
-        passwordEncrypted: undefined, // 不返回密码
-        databases: Array.isArray(dataSource.targetDatabases) ? dataSource.targetDatabases : (dataSource.targetDatabases ? [dataSource.targetDatabases as string] : []),
-        targetDatabases: undefined, // 不直接返回内部字段
-        connectionStats: stats,
-        isConnected: hasConnection,
-      },
+      data: dataSource,
     });
   } catch (error) {
-    console.error('获取数据源详情失败:', error);
-    return NextResponse.json(
+    return safeServerErrorResponse(
+      error instanceof Error ? error : new Error('Failed to fetch data source'),
       {
-        status: 'error',
-        message: 'Failed to fetch data source',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
+        context: 'datasource-detail',
+        metadata: { operation: 'fetch_datasource' },
+      }
     );
   }
 }
@@ -91,37 +68,51 @@ export async function PUT(
     const dataSourceId = parseInt(id);
     const body = await request.json();
 
-    const dataSource = await (prisma as PrismaClient).dataSource.update({
-      where: { id: dataSourceId },
-      data: {
-        name: body.name,
-        host: body.host,
-        port: body.port,
-        username: body.username,
-        // 如果提供了新密码，则更新
-        ...(body.password && { passwordEncrypted: body.password }),
-        // 更新目标数据库列表
-        targetDatabases: body.databases && body.databases.length > 0 ? body.databases : null,
-      },
+    console.log(`[PUT /api/datasources/${id}] Updating data source...`);
+
+    // 使用 DataSourceOrchestrator 更新数据源
+    const orchestrator = getDataSourceOrchestrator();
+    const result = await orchestrator.updateDataSource({
+      id: dataSourceId,
+      name: body.name,
+      host: body.host,
+      port: body.port,
+      username: body.username,
+      password: body.password,
+      databases: body.databases,
+      description: body.description,
+      reconnect: body.reconnect !== false, // 默认重建连接
     });
+
+    if (!result.success) {
+      return NextResponse.json(
+        {
+          status: 'error',
+          message: result.error || 'Failed to update data source',
+        },
+        { status: 400 }
+      );
+    }
+
+    console.log(`[PUT /api/datasources/${id}] Data source updated successfully`);
 
     return NextResponse.json({
       status: 'success',
-      message: 'Data source updated successfully',
+      message: result.message,
       data: {
-        ...dataSource,
-        passwordEncrypted: undefined,
+        id: result.dataSource?.id,
+        name: result.dataSource?.name,
+        type: result.dataSource?.type,
+        status: result.dataSource?.status,
       },
     });
   } catch (error) {
-    console.error('更新数据源失败:', error);
-    return NextResponse.json(
+    return safeErrorResponse(
+      error instanceof Error ? error : new Error('Failed to update data source'),
       {
-        status: 'error',
-        message: 'Failed to update data source',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
+        category: ErrorCategory.DATABASE,
+        statusCode: 500,
+      }
     );
   }
 }
@@ -137,29 +128,36 @@ export async function DELETE(
     const { id } = await context.params;
     const dataSourceId = parseInt(id);
 
-    // 先关闭连接
-    if (await connectionManager.hasConnection(id)) {
-      await connectionManager.closeConnection(id);
+    console.log(`[DELETE /api/datasources/${id}] Deleting data source...`);
+
+    // 使用 DataSourceOrchestrator 删除数据源
+    const orchestrator = getDataSourceOrchestrator();
+    const result = await orchestrator.deleteDataSource(dataSourceId);
+
+    if (!result.success) {
+      return NextResponse.json(
+        {
+          status: 'error',
+          message: result.error || 'Failed to delete data source',
+        },
+        { status: 400 }
+      );
     }
 
-    // 删除数据库记录（级联删除相关数据）
-    await (prisma as PrismaClient).dataSource.delete({
-      where: { id: dataSourceId },
-    });
+    console.log(`[DELETE /api/datasources/${id}] Data source deleted successfully`);
 
     return NextResponse.json({
       status: 'success',
-      message: 'Data source deleted successfully',
+      message: result.message,
+      data: result.metadata,
     });
   } catch (error) {
-    console.error('删除数据源失败:', error);
-    return NextResponse.json(
+    return safeErrorResponse(
+      error instanceof Error ? error : new Error('Failed to delete data source'),
       {
-        status: 'error',
-        message: 'Failed to delete data source',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
+        category: ErrorCategory.DATABASE,
+        statusCode: 500,
+      }
     );
   }
 }

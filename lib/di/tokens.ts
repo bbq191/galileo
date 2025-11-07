@@ -65,6 +65,9 @@ export const DI_TOKENS = {
   MetadataOrchestrator: Symbol.for('MetadataOrchestrator'),
   QueryOrchestrator: Symbol.for('QueryOrchestrator'),
   AuditOrchestrator: Symbol.for('AuditOrchestrator'),
+  DataSourceOrchestrator: Symbol.for('DataSourceOrchestrator'),
+  CacheOrchestrator: Symbol.for('CacheOrchestrator'),
+  RelationshipOrchestrator: Symbol.for('RelationshipOrchestrator'),
 } as const;
 
 export type DIToken = (typeof DI_TOKENS)[keyof typeof DI_TOKENS];

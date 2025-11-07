@@ -8,9 +8,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { AuditLogger, AuditAnalyzer } from '@/lib/audit';
-import { PrismaClient } from '@prisma/client';
-import prisma from '@/lib/prisma/client';
+import { safeServerErrorResponse } from '@/lib/api/response';
+import { getAuditOrchestrator } from '@/lib/di/setup';
 
 export interface AuditStatsResponse {
   success: boolean;
@@ -22,39 +21,12 @@ export interface AuditStatsResponse {
       successRate: number;
       avgExecutionTime: number;
     };
-    popularQueries?: Array<{
-      naturalLanguageQuery: string;
+    anomalies?: Array<{
+      type: string;
+      severity: string;
+      description: string;
       count: number;
-      avgExecutionTime: number;
-      successRate: number;
-    }>;
-    userActivity?: Array<{
-      userId: string;
-      userName?: string;
-      totalQueries: number;
-      successQueries: number;
-      failedQueries: number;
-      avgExecutionTime: number;
-    }>;
-    databaseUsage?: Array<{
-      databaseName: string;
-      queryCount: number;
-      successRate: number;
-      avgExecutionTime: number;
-    }>;
-    tableUsage?: Array<{
-      tableName: string;
-      databaseName: string;
-      queryCount: number;
-      avgExecutionTime: number;
-      successRate: number;
-    }>;
-    timeRangeStats?: Array<{
-      date: string;
-      totalQueries: number;
-      successQueries: number;
-      failedQueries: number;
-      avgExecutionTime: number;
+      details?: any;
     }>;
   };
   error?: string;
@@ -75,112 +47,42 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
-    const includeDetails = searchParams.get('includeDetails') === 'true';
+    const detectAnomalies = searchParams.get('detectAnomalies') === 'true';
+    const timeWindowMinutes = parseInt(searchParams.get('timeWindow') || '60');
 
-    console.log(`[Audit Stats] Fetching stats: includeDetails=${includeDetails}`);
+    console.log(`[GET /api/audit/stats] Fetching stats: detectAnomalies=${detectAnomalies}`);
 
-    const auditLogger = new AuditLogger(prisma as PrismaClient);
-    const auditAnalyzer = new AuditAnalyzer(prisma as PrismaClient);
+    // 使用 AuditOrchestrator 获取统计数据
+    const orchestrator = getAuditOrchestrator();
+    const stats = await orchestrator.getStatistics({
+      startDate: startDate ? new Date(startDate) : undefined,
+      endDate: endDate ? new Date(endDate) : undefined,
+    });
 
-    // 构建日期范围
-    const dateFilters: any = {};
-    if (startDate) {
-      dateFilters.startDate = new Date(startDate);
-    }
-    if (endDate) {
-      dateFilters.endDate = new Date(endDate);
-    }
-
-    // 1. 获取基本统计数据
-    const overview = await auditLogger.getStats(dateFilters);
-    console.log(`[Audit Stats] Overview: ${overview.totalQueries} queries`);
+    console.log(`[GET /api/audit/stats] Stats: ${stats.totalQueries} queries, ${stats.successRate.toFixed(1)}% success rate`);
 
     const responseData: any = {
       overview: {
-        totalQueries: overview.totalQueries,
-        successQueries: overview.successQueries,
-        failedQueries: overview.failedQueries,
-        successRate: overview.successRate,
-        avgExecutionTime: overview.avgExecutionTime,
+        totalQueries: stats.totalQueries,
+        successQueries: stats.successQueries,
+        failedQueries: stats.failedQueries,
+        successRate: stats.successRate,
+        avgExecutionTime: stats.avgExecutionTime,
       },
     };
 
-    // 2. 如果需要详细数据
-    if (includeDetails) {
-      // 热门查询
-      const popularQueries = await auditAnalyzer.analyzePopularQueries(
-        dateFilters.startDate,
-        dateFilters.endDate,
-        10
-      );
+    // 如果需要检测异常
+    if (detectAnomalies) {
+      const anomalies = await orchestrator.detectAnomalies(timeWindowMinutes);
+      console.log(`[GET /api/audit/stats] Detected ${anomalies.length} anomalies`);
 
-      // 用户活动
-      const userActivity = await auditAnalyzer.analyzeUserActivity(
-        dateFilters.startDate,
-        dateFilters.endDate,
-        10
-      );
-
-      // 数据库使用情况
-      const databaseUsage = await auditAnalyzer.analyzeDatabaseUsage(
-        dateFilters.startDate,
-        dateFilters.endDate
-      );
-
-      // 表使用统计
-      const tableUsage = await auditAnalyzer.analyzeTableUsage(
-        dateFilters.startDate,
-        dateFilters.endDate
-      );
-
-      // 时间范围统计（最近7天）
-      let timeRangeStats: any[] = [];
-      if (!startDate || !endDate) {
-        const end = new Date();
-        const start = new Date();
-        start.setDate(start.getDate() - 7);
-        timeRangeStats = await auditAnalyzer.analyzeTimeRangeStats(start, end);
-      } else {
-        timeRangeStats = await auditAnalyzer.analyzeTimeRangeStats(
-          new Date(startDate),
-          new Date(endDate)
-        );
-      }
-
-      responseData.popularQueries = popularQueries.map(q => ({
-        naturalLanguageQuery: q.naturalLanguageQuery,
-        count: q.count,
-        avgExecutionTime: q.avgExecutionTime,
-        successRate: q.successRate,
+      responseData.anomalies = anomalies.map(a => ({
+        type: a.type,
+        severity: a.severity,
+        description: a.description,
+        count: a.count,
+        details: a.details,
       }));
-
-      responseData.userActivity = userActivity.map(u => ({
-        userId: u.userId,
-        userName: u.userName,
-        totalQueries: u.totalQueries,
-        successQueries: u.successQueries,
-        failedQueries: u.failedQueries,
-        avgExecutionTime: u.avgExecutionTime,
-      }));
-
-      responseData.databaseUsage = databaseUsage.map(d => ({
-        databaseName: d.databaseName,
-        queryCount: d.queryCount,
-        successRate: d.successRate,
-        avgExecutionTime: d.avgExecutionTime,
-      }));
-
-      responseData.tableUsage = tableUsage.map(t => ({
-        tableName: t.tableName,
-        databaseName: t.databaseName,
-        queryCount: t.queryCount,
-        avgExecutionTime: t.avgExecutionTime,
-        successRate: t.successRate,
-      }));
-
-      responseData.timeRangeStats = timeRangeStats;
-
-      console.log(`[Audit Stats] Detailed stats included`);
     }
 
     return NextResponse.json({
@@ -189,11 +91,12 @@ export async function GET(request: NextRequest) {
     } as AuditStatsResponse);
 
   } catch (error: any) {
-    console.error('[Audit Stats] Error:', error);
-
-    return NextResponse.json({
-      success: false,
-      error: error.message || '获取统计数据失败',
-    } as AuditStatsResponse, { status: 500 });
+    return safeServerErrorResponse(
+      error instanceof Error ? error : new Error('Failed to fetch audit stats'),
+      {
+        context: 'audit-stats',
+        metadata: { operation: 'fetch_audit_stats' },
+      }
+    );
   }
 }

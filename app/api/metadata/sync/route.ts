@@ -1,14 +1,15 @@
 /**
  * 元数据同步 API
  * POST /api/metadata/sync
+ *
+ * 使用 MetadataOrchestrator 简化元数据同步流程
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { metadataSyncService } from '@/lib/metadata/sync/metadata-sync-service';
+import { getMetadataOrchestrator } from '@/lib/di/setup';
 import { schemas } from '@/lib/validation/schemas';
 import { validateOrRespond } from '@/lib/validation/validator';
 import { safeServerErrorResponse } from '@/lib/api/response';
-import { ErrorCategory } from '@/lib/security/error-sanitizer';
 
 /**
  * 同步请求体
@@ -36,6 +37,7 @@ interface SyncRequest {
  */
 export async function POST(request: NextRequest) {
   let requestDataSourceId: number | undefined;
+
   try {
     const body = await request.json();
     requestDataSourceId = body.dataSourceId;
@@ -48,10 +50,11 @@ export async function POST(request: NextRequest) {
 
     const { dataSourceId, databases, inferRelationships, minConfidence, trackChanges } = validation.data;
 
-    console.log(`开始同步数据源: ${dataSourceId}`);
+    console.log(`[Metadata Sync] Starting sync for data source ${dataSourceId}`);
 
-    // 执行同步
-    const result = await metadataSyncService.syncDataSource({
+    // 使用 MetadataOrchestrator 执行同步
+    const orchestrator = getMetadataOrchestrator();
+    const result = await orchestrator.syncDataSource({
       dataSourceId,
       databases,
       inferRelationships: inferRelationships ?? true,
@@ -60,12 +63,33 @@ export async function POST(request: NextRequest) {
     });
 
     // 返回结果
-    return NextResponse.json({
-      status: 'success',
-      message: `Successfully synced ${result.databaseCount} database(s)`,
-      data: result,
-    });
+    if (result.success) {
+      return NextResponse.json({
+        status: 'success',
+        message: `Successfully synced ${result.databaseCount} database(s)`,
+        data: {
+          databaseCount: result.databaseCount,
+          tableCount: result.tableCount,
+          columnCount: result.columnCount,
+          relationshipCount: result.relationshipCount,
+          changes: result.changes,
+          duration: result.duration,
+        },
+      });
+    } else {
+      return NextResponse.json({
+        status: 'error',
+        message: 'Metadata sync failed',
+        error: result.error,
+        data: {
+          duration: result.duration,
+        },
+      }, { status: 500 });
+    }
+
   } catch (error) {
+    console.error('[Metadata Sync] Sync failed:', error);
+
     // 使用安全的错误响应（已脱敏，不泄露堆栈信息）
     return safeServerErrorResponse(
       error instanceof Error ? error : new Error('Failed to sync metadata'),

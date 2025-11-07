@@ -7,10 +7,11 @@
  * - 执行完整的 SQL 生成和执行流程
  * - 返回查询结果和元数据
  * - 支持跨数据库查询
+ * - 完整的审计日志记录
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getQueryOrchestrator } from '@/lib/di/setup';
+import { getQueryOrchestrator, getAuditOrchestrator } from '@/lib/di/setup';
 import type { QueryOrchestrator } from '@/lib/di/orchestrators/query.orchestrator';
 import { schemas } from '@/lib/validation/schemas';
 import { validateOrRespond } from '@/lib/validation/validator';
@@ -56,6 +57,14 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
   const sessionId = request.headers.get('x-session-id') || `session-${Date.now()}`;
 
+  // 提取用户信息和请求元数据
+  const userId = request.headers.get('x-user-id') || undefined;
+  const userName = request.headers.get('x-user-name') || undefined;
+  const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || undefined;
+  const userAgent = request.headers.get('user-agent') || undefined;
+
+  let naturalLanguageQuery = '';
+
   try {
     // 解析请求体
     const body = await request.json();
@@ -67,6 +76,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { query, options } = inputValidation.data;
+    naturalLanguageQuery = query;
 
     console.log(`[Query Execute] Starting query execution: "${query}"`);
 
@@ -77,9 +87,43 @@ export async function POST(request: NextRequest) {
       sessionId,
     });
 
-    // TODO: Add audit logging when we have the complete intent data
-    // const auditOrchestrator = getAuditOrchestrator();
-    // await auditOrchestrator.logQuery({...});
+    // 记录审计日志
+    const auditOrchestrator = getAuditOrchestrator();
+
+    // 异步记录审计日志，不阻塞响应
+    if (result.intent && result.metadata && result.performance) {
+      auditOrchestrator.logQuery({
+        userId,
+        userName,
+        sessionId,
+        naturalLanguageQuery: query,
+        intent: result.intent,
+        generatedSQL: result.metadata.generatedSQL,
+        executionResult: {
+          success: result.success,
+          rowCount: result.metadata.rowCount,
+          error: result.error,
+        },
+        metadata: {
+          usedDatabases: result.metadata.usedDatabases || [],
+          usedTables: result.metadata.usedTables || [],
+          usedColumns: [], // TODO: Extract from SQL or metadata
+        },
+        performance: {
+          intentRecognitionTime: result.performance.intentRecognitionTime,
+          sqlGenerationTime: result.performance.sqlGenerationTime,
+          validationTime: 0, // TODO: Add validation timing if available
+          executionTime: result.performance.queryExecutionTime,
+          totalTime: result.performance.totalTime,
+        },
+        timestamp: new Date(),
+        ipAddress,
+        userAgent,
+      }).catch((error) => {
+        // 审计日志失败不应影响主流程
+        console.error('[Query Execute] Failed to log audit entry:', error);
+      });
+    }
 
     // 返回结果
     if (result.success) {
@@ -99,6 +143,23 @@ export async function POST(request: NextRequest) {
     }
 
   } catch (error: any) {
+    // 记录错误审计日志
+    const auditOrchestrator = getAuditOrchestrator();
+    auditOrchestrator.logError({
+      sessionId,
+      errorType: error?.constructor?.name || 'UnknownError',
+      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      errorStack: error instanceof Error ? error.stack : undefined,
+      context: {
+        naturalLanguageQuery,
+        userId,
+        userName,
+      },
+      timestamp: new Date(),
+    }).catch((err) => {
+      console.error('[Query Execute] Failed to log error audit entry:', err);
+    });
+
     // 使用安全的错误脱敏
     const safeError = sanitizeError(
       error instanceof Error ? error : new Error('查询执行失败'),

@@ -1,15 +1,25 @@
 /**
  * 元数据搜索 API
  * GET /api/metadata/search - 全文搜索元数据
+ *
+ * 重构后使用 MetadataOrchestrator 和统一错误处理
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-import prisma from '@/lib/prisma/client';
+import { getMetadataOrchestrator } from '@/lib/di/setup';
+import { safeServerErrorResponse } from '@/lib/api/response';
 
 /**
  * GET /api/metadata/search
  * 搜索元数据（数据库、表、列）
+ *
+ * 查询参数:
+ * - q / query: 搜索关键词 (必需)
+ * - type: 搜索类型 (database/table/column/all, 默认 all)
+ * - sourceId: 数据源 ID (可选)
+ * - databaseId: 数据库 ID (可选)
+ * - page: 页码 (默认 1)
+ * - limit: 每页数量 (默认 20)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -17,15 +27,15 @@ export async function GET(request: NextRequest) {
 
     // 搜索参数
     const query = searchParams.get('q') || searchParams.get('query');
-    const type = searchParams.get('type'); // 'database' | 'table' | 'column' | 'all'
+    const type = (searchParams.get('type') || 'all') as 'database' | 'table' | 'column' | 'all';
     const sourceId = searchParams.get('sourceId');
     const databaseId = searchParams.get('databaseId');
 
     // 分页参数
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '20');
-    const skip = (page - 1) * limit;
 
+    // 参数验证
     if (!query) {
       return NextResponse.json(
         {
@@ -36,174 +46,48 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const results: any = {
-      databases: [],
-      tables: [],
-      columns: [],
-    };
+    console.log(`[GET /api/metadata/search] Searching: "${query}", type: ${type}`);
 
-    // 搜索数据库
-    if (!type || type === 'database' || type === 'all') {
-      const where: any = {
-        OR: [
-          { databaseName: { contains: query } },
-          { semanticDescription: { contains: query } },
-        ],
-      };
+    // 使用 MetadataOrchestrator 搜索元数据
+    const orchestrator = getMetadataOrchestrator();
+    const results = await orchestrator.searchMetadata(query, {
+      type,
+      sourceId: sourceId ? parseInt(sourceId) : undefined,
+      databaseId: databaseId ? parseInt(databaseId) : undefined,
+      page,
+      limit,
+    });
 
-      if (sourceId) {
-        where.sourceId = parseInt(sourceId);
-      }
-
-      results.databases = await (prisma as PrismaClient).databaseMeta.findMany({
-        where,
-        take: type === 'database' ? limit : 10,
-        skip: type === 'database' ? skip : 0,
-        select: {
-          id: true,
-          databaseName: true,
-          semanticDescription: true,
-          sourceId: true,
-          source: {
-            select: {
-              name: true,
-              type: true,
-            },
-          },
-          _count: {
-            select: { tables: true },
-          },
-        },
-        orderBy: { databaseName: 'asc' },
-      });
-    }
-
-    // 搜索表
-    if (!type || type === 'table' || type === 'all') {
-      const where: any = {
-        OR: [
-          { tableName: { contains: query } },
-          { tableComment: { contains: query } },
-          { semanticDescription: { contains: query } },
-        ],
-      };
-
-      if (databaseId) {
-        where.databaseId = parseInt(databaseId);
-      } else if (sourceId) {
-        where.database = {
-          sourceId: parseInt(sourceId),
-        };
-      }
-
-      const tables = await (prisma as PrismaClient).tableMeta.findMany({
-        where,
-        take: type === 'table' ? limit : 10,
-        skip: type === 'table' ? skip : 0,
-        select: {
-          id: true,
-          tableName: true,
-          tableComment: true,
-          semanticDescription: true,
-          rowCount: true,
-          databaseId: true,
-          database: {
-            select: {
-              databaseName: true,
-              source: {
-                select: {
-                  name: true,
-                },
-              },
-            },
-          },
-          _count: {
-            select: { columns: true },
-          },
-        },
-        orderBy: { tableName: 'asc' },
-      });
-
-      // 转换 BigInt 为字符串
-      results.tables = tables.map((table: any) => ({
+    // 转换 BigInt 为字符串 (用于表的 rowCount)
+    if (results.tables && results.tables.length > 0) {
+      results.tables = results.tables.map((table: any) => ({
         ...table,
         rowCount: table.rowCount ? table.rowCount.toString() : '0',
       }));
     }
 
-    // 搜索列
-    if (!type || type === 'column' || type === 'all') {
-      const where: any = {
-        OR: [
-          { columnName: { contains: query } },
-          { columnComment: { contains: query } },
-          { semanticDescription: { contains: query } },
-        ],
-      };
-
-      if (databaseId) {
-        where.table = {
-          databaseId: parseInt(databaseId),
-        };
-      } else if (sourceId) {
-        where.table = {
-          database: {
-            sourceId: parseInt(sourceId),
-          },
-        };
-      }
-
-      results.columns = await (prisma as PrismaClient).columnMeta.findMany({
-        where,
-        take: type === 'column' ? limit : 10,
-        skip: type === 'column' ? skip : 0,
-        select: {
-          id: true,
-          columnName: true,
-          dataType: true,
-          columnComment: true,
-          semanticDescription: true,
-          isPrimaryKey: true,
-          isUnique: true,
-          tableId: true,
-          table: {
-            select: {
-              tableName: true,
-              databaseId: true,
-              database: {
-                select: {
-                  databaseName: true,
-                  source: {
-                    select: {
-                      name: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-        orderBy: { columnName: 'asc' },
-      });
-    }
-
     // 计算总数
-    const total =
-      results.databases.length +
-      results.tables.length +
-      results.columns.length;
+    const total = results.databases.length + results.tables.length + results.columns.length;
 
     // 如果是搜索全部，合并结果并分页
-    if (type === 'all' || !type) {
+    if (type === 'all') {
       const allResults = [
         ...results.databases.map((d: any) => ({ ...d, _type: 'database' })),
         ...results.tables.map((t: any) => ({ ...t, _type: 'table' })),
         ...results.columns.map((c: any) => ({ ...c, _type: 'column' })),
       ];
 
+      const skip = (page - 1) * limit;
+      const paginatedResults = allResults.slice(skip, skip + limit);
+
+      console.log(
+        `[GET /api/metadata/search] Found ${total} results ` +
+        `(${results.databases.length} databases, ${results.tables.length} tables, ${results.columns.length} columns)`
+      );
+
       return NextResponse.json({
         status: 'success',
-        data: allResults.slice(skip, skip + limit),
+        data: paginatedResults,
         summary: {
           databases: results.databases.length,
           tables: results.tables.length,
@@ -219,6 +103,10 @@ export async function GET(request: NextRequest) {
     }
 
     // 返回分类结果
+    console.log(
+      `[GET /api/metadata/search] Found ${total} ${type} results`
+    );
+
     return NextResponse.json({
       status: 'success',
       data: results,
@@ -234,15 +122,16 @@ export async function GET(request: NextRequest) {
         totalPages: Math.ceil(total / limit),
       },
     });
+
   } catch (error) {
-    console.error('搜索元数据失败:', error);
-    return NextResponse.json(
+    console.error('[GET /api/metadata/search] Error:', error);
+
+    return safeServerErrorResponse(
+      error instanceof Error ? error : new Error('Failed to search metadata'),
       {
-        status: 'error',
-        message: 'Failed to search metadata',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
+        context: 'metadata-search',
+        metadata: { operation: 'search_metadata' },
+      }
     );
   }
 }

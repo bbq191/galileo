@@ -134,11 +134,27 @@ export function setupDependencyInjection(): void {
   const { AuditOrchestrator } = require('./orchestrators/audit.orchestrator');
   registerSingleton(DI_TOKENS.AuditOrchestrator, AuditOrchestrator);
 
+  // 注册 DataSourceOrchestrator
+  const { DataSourceOrchestrator } = require('./orchestrators/datasource.orchestrator');
+  registerSingleton(DI_TOKENS.DataSourceOrchestrator, DataSourceOrchestrator);
+
+  // 注册 CacheWarmer（CacheOrchestrator 依赖）
+  const { CacheWarmer } = require('@/lib/cache/cache-warmer');
+  registerSingleton(DI_TOKENS.CacheWarmer, CacheWarmer);
+
+  // 注册 CacheOrchestrator
+  const { CacheOrchestrator } = require('./orchestrators/cache.orchestrator');
+  registerSingleton(DI_TOKENS.CacheOrchestrator, CacheOrchestrator);
+
+  // 注册 RelationshipOrchestrator
+  const { RelationshipOrchestrator } = require('./orchestrators/relationship.orchestrator');
+  registerSingleton(DI_TOKENS.RelationshipOrchestrator, RelationshipOrchestrator);
+
   console.log('[DI] Dependency injection setup completed');
   console.log('[DI] Phase 2.1 services registered: ConnectionPoolFactory, MultiLevelCache, ConnectionManager, QueryCacheManager, CacheInvalidationService');
   console.log('[DI] Phase 2.2 services registered: DeepseekClient, BatchProcessor, RuleBasedAnnotator, SemanticAnnotator, MetadataRepository, MetadataRetriever, MetadataSyncService');
   console.log('[DI] Phase 2.3 services registered: ResultFormatter, TimeParser, EntityResolver, CrossDatabaseHandler, IntentRecognizer, SQLGenerator, QueryExecutor');
-  console.log('[DI] Phase 3 orchestrators registered: MetadataOrchestrator, QueryOrchestrator, AuditOrchestrator');
+  console.log('[DI] Phase 3 orchestrators registered: MetadataOrchestrator, QueryOrchestrator, AuditOrchestrator, DataSourceOrchestrator, CacheOrchestrator, RelationshipOrchestrator');
 }
 
 /**
@@ -252,6 +268,27 @@ export function getQueryOrchestrator(): import('./orchestrators/query.orchestrat
  */
 export function getAuditOrchestrator(): import('./orchestrators/audit.orchestrator').AuditOrchestrator {
   return getService(DI_TOKENS.AuditOrchestrator);
+}
+
+/**
+ * 便捷方法：获取 DataSourceOrchestrator
+ */
+export function getDataSourceOrchestrator(): import('./orchestrators/datasource.orchestrator').DataSourceOrchestrator {
+  return getService(DI_TOKENS.DataSourceOrchestrator);
+}
+
+/**
+ * 便捷方法：获取 CacheOrchestrator
+ */
+export function getCacheOrchestrator(): import('./orchestrators/cache.orchestrator').CacheOrchestrator {
+  return getService(DI_TOKENS.CacheOrchestrator);
+}
+
+/**
+ * 便捷方法：获取 RelationshipOrchestrator
+ */
+export function getRelationshipOrchestrator(): import('./orchestrators/relationship.orchestrator').RelationshipOrchestrator {
+  return getService(DI_TOKENS.RelationshipOrchestrator);
 }
 
 /**

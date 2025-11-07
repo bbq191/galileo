@@ -5,16 +5,18 @@
  * 功能：
  * - 直接执行用户提供的 SQL
  * - 进行安全验证
- * - 需要权限控制（当前简化版本）
+ * - 使用 AuditOrchestrator 记录审计日志
+ *
+ * 重构后使用 DI 容器和统一错误处理
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { SQLValidator } from '@/lib/sql/validator/sql-validator';
-import { getQueryExecutor } from '@/lib/di/setup';
-import { AuditLogger } from '@/lib/audit/audit-logger';
-import prisma from '@/lib/prisma/client';
+import { getQueryExecutor, getAuditOrchestrator } from '@/lib/di/setup';
 import type { MetadataContext } from '@/lib/metadata/retrieval/types';
 import type { QueryExecutor } from '@/lib/sql/executor/query-executor';
+import { safeServerErrorResponse, safeErrorResponse } from '@/lib/api/response';
+import { ErrorCategory } from '@/lib/security/error-sanitizer';
 
 export interface ExecuteSQLRequest {
   sql: string;  // SQL 查询语句
@@ -48,7 +50,15 @@ export interface ExecuteSQLResponse {
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
-  let sessionId = request.headers.get('x-session-id') || `session-${Date.now()}`;
+  const sessionId = request.headers.get('x-session-id') || `session-${Date.now()}`;
+
+  // 提取用户信息和请求元数据
+  const userId = request.headers.get('x-user-id') || undefined;
+  const userName = request.headers.get('x-user-name') || undefined;
+  const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || undefined;
+  const userAgent = request.headers.get('user-agent') || undefined;
+
+  let sqlStatement = '';
 
   try {
     // 解析请求体
@@ -61,10 +71,10 @@ export async function POST(request: NextRequest) {
       } as ExecuteSQLResponse, { status: 400 });
     }
 
+    sqlStatement = body.sql;
     console.log(`[SQL Execute] Executing SQL: ${body.sql.substring(0, 100)}...`);
 
     // 构建基本的元数据上下文（用于验证）
-    // 注意：这里是简化版本，实际应该从SQL中解析出涉及的表并获取完整元数据
     const basicContext: MetadataContext = {
       tables: [],
       relationships: [],
@@ -78,9 +88,11 @@ export async function POST(request: NextRequest) {
     console.log(`[SQL Execute] SQL validated: ${validation.isValid}`);
 
     if (!validation.isValid) {
-      // 记录失败的审计日志
-      const auditLogger = new AuditLogger(prisma);
-      await auditLogger.log({
+      // 使用 AuditOrchestrator 记录失败的审计日志
+      const auditOrchestrator = getAuditOrchestrator();
+      auditOrchestrator.logQuery({
+        userId,
+        userName,
         sessionId,
         naturalLanguageQuery: '[Direct SQL]',
         intent: {
@@ -91,6 +103,7 @@ export async function POST(request: NextRequest) {
         generatedSQL: body.sql,
         executionResult: {
           success: false,
+          rowCount: 0,
           error: validation.errors.map(e => e.message).join('; '),
         },
         metadata: {
@@ -106,8 +119,10 @@ export async function POST(request: NextRequest) {
           totalTime: Date.now() - startTime,
         },
         timestamp: new Date(),
-        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || undefined,
-        userAgent: request.headers.get('user-agent') || undefined,
+        ipAddress,
+        userAgent,
+      }).catch((err) => {
+        console.error('[SQL Execute] Failed to log audit entry:', err);
       });
 
       return NextResponse.json({
@@ -133,9 +148,11 @@ export async function POST(request: NextRequest) {
     );
     console.log(`[SQL Execute] Query executed: ${result.success}`);
 
-    // 3. 记录审计日志
-    const auditLogger = new AuditLogger(prisma);
-    await auditLogger.log({
+    // 3. 使用 AuditOrchestrator 记录审计日志
+    const auditOrchestrator = getAuditOrchestrator();
+    auditOrchestrator.logQuery({
+      userId,
+      userName,
       sessionId,
       naturalLanguageQuery: '[Direct SQL]',
       intent: {
@@ -162,8 +179,10 @@ export async function POST(request: NextRequest) {
         totalTime: Date.now() - startTime,
       },
       timestamp: new Date(),
-      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || undefined,
-      userAgent: request.headers.get('user-agent') || undefined,
+      ipAddress,
+      userAgent,
+    }).catch((err) => {
+      console.error('[SQL Execute] Failed to log audit entry:', err);
     });
 
     // 4. 返回结果
@@ -197,9 +216,29 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('[SQL Execute] Error:', error);
 
-    return NextResponse.json({
-      success: false,
-      error: error.message || 'SQL 执行失败',
-    } as ExecuteSQLResponse, { status: 500 });
+    // 记录错误审计日志
+    const auditOrchestrator = getAuditOrchestrator();
+    auditOrchestrator.logError({
+      sessionId,
+      errorType: error?.constructor?.name || 'UnknownError',
+      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      errorStack: error instanceof Error ? error.stack : undefined,
+      context: {
+        sql: sqlStatement,
+        userId,
+        userName,
+      },
+      timestamp: new Date(),
+    }).catch((err) => {
+      console.error('[SQL Execute] Failed to log error audit entry:', err);
+    });
+
+    return safeErrorResponse(
+      error instanceof Error ? error : new Error('SQL 执行失败'),
+      {
+        category: ErrorCategory.DATABASE,
+        statusCode: 500,
+      }
+    );
   }
 }

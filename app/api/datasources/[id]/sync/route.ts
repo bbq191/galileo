@@ -1,271 +1,67 @@
+/**
+ * 数据源元数据同步 API
+ * POST /api/datasources/:id/sync - 同步数据源的元数据
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
-import { connectionManager } from '@/lib/database';
-import { CollectorFactory } from '@/lib/metadata/collectors';
-import { PrismaClient } from '@prisma/client';
-import { DatabaseConfig } from '@/lib/database/connection-config';
-import prisma from '@/lib/prisma/client';
-import crypto from 'crypto';
+import { safeServerErrorResponse } from '@/lib/api/response';
+import { getMetadataOrchestrator } from '@/lib/di/setup';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-function calculateStructureHash(columns: any[]): string {
-  const structureString = columns
-    .sort((a, b) => a.ordinalPosition - b.ordinalPosition)
-    .map((col) => `${col.columnName}:${col.columnType}:${col.isNullable}:${col.isPrimaryKey}`)
-    .join('|');
-  return crypto.createHash('sha256').update(structureString).digest('hex');
-}
-
+/**
+ * 同步数据源元数据
+ */
 export async function POST(request: NextRequest, context: RouteContext) {
   const startTime = Date.now();
-  let syncStats = {
-    databasesAdded: 0,
-    databasesUpdated: 0,
-    tablesAdded: 0,
-    tablesUpdated: 0,
-    columnsAdded: 0,
-    columnsUpdated: 0,
-  };
 
   try {
     const { id } = await context.params;
     const dataSourceId = parseInt(id);
 
-    console.log(`[Sync] Starting sync for data source ${dataSourceId}...`);
+    console.log(`[POST /api/datasources/${id}/sync] Starting metadata sync...`);
 
-    const dataSource = await (prisma as PrismaClient).dataSource.findUnique({
-      where: { id: dataSourceId },
-    });
+    // 解析请求体（可选参数）
+    const body = await request.json().catch(() => ({}));
+    const {
+      databases,
+      inferRelationships = true,
+      minConfidence = 0.70,
+      trackChanges = true,
+    } = body;
 
-    if (!dataSource) {
-      return NextResponse.json(
-        { status: 'error', message: 'Data source not found' },
-        { status: 404 }
-      );
-    }
-
-    // 检查连接是否存在，如果不存在则尝试从数据库重新加载
-    if (!(await connectionManager.hasConnection(id))) {
-      console.log(`[Sync] Connection ${id} not found in memory, attempting to create...`);
-
-      try {
-        // 创建连接配置
-        const config: DatabaseConfig = {
-          id: dataSource.id.toString(),
-          name: dataSource.name,
-          type: dataSource.type as any,
-          host: dataSource.host,
-          port: dataSource.port,
-          username: dataSource.username,
-          password: dataSource.passwordEncrypted,
-          databases: [],
-        };
-
-        // 创建连接
-        await connectionManager.createConnection(config);
-        console.log(`[Sync] Connection ${id} created successfully`);
-      } catch (error) {
-        console.error(`[Sync] Failed to create connection ${id}:`, error);
-        return NextResponse.json(
-          {
-            status: 'error',
-            message: 'Failed to establish database connection. Please test connection first.',
-            error: error instanceof Error ? error.message : 'Unknown error'
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    const pool = await connectionManager.getConnection(id);
-
-    const collector = CollectorFactory.createCollector(
-      pool,
-      dataSource.type as 'mysql' | 'mariadb' | 'postgresql'
-    );
-
-    console.log(`[Sync] Collector created successfully, type: ${dataSource.type}`);
-
-    const databases = await collector.collectDatabases(id);
-    console.log(`[Sync] Found ${databases.length} databases`);
-
-    let targetDatabases = databases;
-    if (dataSource.targetDatabases && Array.isArray(dataSource.targetDatabases)) {
-      const targetNames = dataSource.targetDatabases as string[];
-      if (targetNames.length > 0) {
-        targetDatabases = databases.filter((db) => targetNames.includes(db.name));
-        console.log(`[Sync] Filtered to ${targetDatabases.length} databases based on config`);
-      }
-    }
-
-    const systemDatabases = ['information_schema', 'mysql', 'performance_schema', 'sys', 'phpmyadmin'];
-    targetDatabases = targetDatabases.filter((db) => !systemDatabases.includes(db.name.toLowerCase()));
-    console.log(`[Sync] Remaining ${targetDatabases.length} databases after excluding system databases`);
-
-    for (const dbInfo of targetDatabases) {
-      console.log(`[Sync] Syncing database: ${dbInfo.name}`);
-
-      try {
-        const database = await (prisma as PrismaClient).databaseMeta.upsert({
-          where: {
-            sourceId_databaseName: {
-              sourceId: dataSourceId,
-              databaseName: dbInfo.name,
-            },
-          },
-          update: { lastSyncedAt: new Date() },
-          create: {
-            sourceId: dataSourceId,
-            databaseName: dbInfo.name,
-            lastSyncedAt: new Date(),
-          },
-        });
-
-        if (database.lastSyncedAt && new Date().getTime() - database.lastSyncedAt.getTime() < 60000) {
-          syncStats.databasesUpdated++;
-        } else {
-          syncStats.databasesAdded++;
-        }
-
-        const tables = await collector.collectTables(id, dbInfo.name);
-        console.log(`[Sync] Database ${dbInfo.name} has ${tables.length} tables`);
-
-        const existingTables = await (prisma as PrismaClient).tableMeta.findMany({
-          where: { databaseId: database.id },
-          select: { id: true, tableName: true },
-        });
-        const existingTableNames = new Set(existingTables.map((t: any) => t.tableName));
-
-        for (const tableInfo of tables) {
-          try {
-            const columns = await collector.collectColumns(id, dbInfo.name, tableInfo.tableName);
-            const structureHash = calculateStructureHash(columns);
-
-            const table = await (prisma as PrismaClient).tableMeta.upsert({
-              where: {
-                databaseId_tableName: {
-                  databaseId: database.id,
-                  tableName: tableInfo.tableName,
-                },
-              },
-              update: {
-                tableComment: tableInfo.tableComment || null,
-                rowCount: BigInt(tableInfo.rowCount || 0),
-                structureHash,
-                updatedTime: tableInfo.updateTime || null,
-                lastSyncedAt: new Date(),
-              },
-              create: {
-                databaseId: database.id,
-                tableName: tableInfo.tableName,
-                tableComment: tableInfo.tableComment || null,
-                rowCount: BigInt(tableInfo.rowCount || 0),
-                structureHash,
-                createdTime: tableInfo.createTime || null,
-                updatedTime: tableInfo.updateTime || null,
-                lastSyncedAt: new Date(),
-              },
-            });
-
-            if (existingTableNames.has(tableInfo.tableName)) {
-              syncStats.tablesUpdated++;
-            } else {
-              syncStats.tablesAdded++;
-            }
-
-            const existingColumns = await (prisma as PrismaClient).columnMeta.findMany({
-              where: { tableId: table.id },
-              select: { id: true, columnName: true },
-            });
-            const existingColumnNames = new Set(existingColumns.map((c: any) => c.columnName));
-
-            for (const columnInfo of columns) {
-              const isPrimaryKey = columnInfo.columnKey === 'PRI';
-              const isUnique = columnInfo.columnKey === 'UNI';
-              const isNullable = Boolean(columnInfo.isNullable);
-
-              await (prisma as PrismaClient).columnMeta.upsert({
-                where: {
-                  tableId_columnName: {
-                    tableId: table.id,
-                    columnName: columnInfo.columnName,
-                  },
-                },
-                update: {
-                  dataType: columnInfo.dataType,
-                  columnType: columnInfo.columnType,
-                  columnComment: columnInfo.columnComment || null,
-                  isNullable,
-                  isPrimaryKey,
-                  isUnique,
-                  defaultValue: columnInfo.defaultValue || null,
-                  ordinalPosition: columnInfo.ordinalPosition,
-                },
-                create: {
-                  tableId: table.id,
-                  columnName: columnInfo.columnName,
-                  dataType: columnInfo.dataType,
-                  columnType: columnInfo.columnType,
-                  columnComment: columnInfo.columnComment || null,
-                  isNullable,
-                  isPrimaryKey,
-                  isUnique,
-                  defaultValue: columnInfo.defaultValue || null,
-                  ordinalPosition: columnInfo.ordinalPosition,
-                },
-              });
-
-              if (existingColumnNames.has(columnInfo.columnName)) {
-                syncStats.columnsUpdated++;
-              } else {
-                syncStats.columnsAdded++;
-              }
-            }
-
-            console.log(`[Sync] Table ${tableInfo.tableName} synced (${columns.length} columns)`);
-          } catch (tableError) {
-            console.error(`[Sync] Table ${tableInfo.tableName} sync failed:`, tableError);
-          }
-        }
-
-        console.log(`[Sync] Database ${dbInfo.name} sync completed`);
-      } catch (dbError) {
-        console.error(`[Sync] Database ${dbInfo.name} sync failed:`, dbError);
-      }
-    }
-
-    await (prisma as PrismaClient).dataSource.update({
-      where: { id: dataSourceId },
-      data: {
-        lastSyncAt: new Date(),
-        status: 'active',
-      },
+    // 使用 MetadataOrchestrator 同步元数据
+    const orchestrator = getMetadataOrchestrator();
+    const result = await orchestrator.syncDataSource({
+      dataSourceId,
+      databases,
+      inferRelationships,
+      minConfidence,
+      trackChanges,
     });
 
     const duration = Date.now() - startTime;
-    console.log(`[Sync] Data source ${dataSourceId} sync completed in ${duration}ms`);
-    console.log(`[Sync] Stats:`, syncStats);
+
+    console.log(`[POST /api/datasources/${id}/sync] Sync completed in ${duration}ms`);
+    console.log(`[POST /api/datasources/${id}/sync] Synced ${result.databaseCount} databases, ${result.tableCount} tables, ${result.columnCount} columns`);
 
     return NextResponse.json({
       status: 'success',
-      message: 'Metadata synchronized successfully',
+      message: `Successfully synced ${result.databaseCount} databases with ${result.tableCount} tables`,
       data: {
-        ...syncStats,
-        databasesTotal: targetDatabases.length,
+        ...result,
         duration,
       },
     });
   } catch (error) {
-    console.error('[Sync] Sync failed:', error);
-    return NextResponse.json(
+    return safeServerErrorResponse(
+      error instanceof Error ? error : new Error('Failed to synchronize metadata'),
       {
-        status: 'error',
-        message: 'Failed to synchronize metadata',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
+        context: 'datasource-sync',
+        metadata: { operation: 'sync_metadata' },
+      }
     );
   }
 }

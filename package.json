@@ -70,7 +70,15 @@
     "test:di:performance": "jest lib/di/__tests__/performance.test.ts",
     "test:di:unit": "npm run test:di:database && npm run test:di:cache && npm run test:di:prisma-factory && npm run test:di:redis-factory",
     "test:di:all": "npm run test:di:unit && npm run test:di:container && npm run test:di:performance",
-    "test:di": "npm run test:di:all"
+    "test:di": "npm run test:di:all",
+    "test:api:datasources": "jest __tests__/api/datasources.test.ts --runInBand",
+    "test:api:metadata": "jest __tests__/api/metadata.test.ts --runInBand",
+    "test:api:relationships": "jest __tests__/api/relationships.test.ts --runInBand",
+    "test:api:query-audit": "jest __tests__/api/query-audit.test.ts --runInBand",
+    "test:api:all": "tsx __tests__/run-all-tests.ts",
+    "test:api": "npm run test:api:all",
+    "test:coverage": "jest --coverage --runInBand",
+    "test:coverage:api": "jest __tests__/api --coverage --runInBand"
   },
   "dependencies": {
     "@prisma/client": "^6.17.1",

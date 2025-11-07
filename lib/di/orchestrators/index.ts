@@ -7,6 +7,9 @@
 export { MetadataOrchestrator } from './metadata.orchestrator';
 export { QueryOrchestrator } from './query.orchestrator';
 export { AuditOrchestrator } from './audit.orchestrator';
+export { DataSourceOrchestrator } from './datasource.orchestrator';
+export { CacheOrchestrator } from './cache.orchestrator';
+export { RelationshipOrchestrator } from './relationship.orchestrator';
 
 export type {
   MetadataSyncOptions,
@@ -25,3 +28,28 @@ export type {
   ErrorAuditEntry,
   AnomalyPattern,
 } from './audit.orchestrator';
+
+export type {
+  DataSourceCreateOptions,
+  DataSourceUpdateOptions,
+  DataSourceResult,
+  DataSourceListItem,
+} from './datasource.orchestrator';
+
+export type {
+  CacheWarmupOptions,
+  CacheInvalidationOptions,
+  CacheStatisticsResult,
+  CacheCleanupResult,
+  CacheHealthResult,
+} from './cache.orchestrator';
+
+export type {
+  RelationshipInferOptions,
+  RelationshipVerifyOptions,
+  RelationshipInferResult,
+  RelationshipStatistics,
+  RelationshipGraph,
+  RelationshipGraphNode,
+  RelationshipGraphEdge,
+} from './relationship.orchestrator';
