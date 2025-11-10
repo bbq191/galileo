@@ -1,12 +1,22 @@
 /**
- * 元数据仓储
- * 负责元数据的 CRUD 操作
+ * 元数据仓储（聚合类）
+ * 负责组合所有元数据子仓储，提供统一的访问接口
+ *
+ * 此文件已重构为聚合模式，将原来的大文件（994行）拆分为 5 个职责单一的子仓储：
+ * - DatabaseMetadataRepository: 数据库元数据 CRUD
+ * - TableMetadataRepository: 表元数据 CRUD
+ * - ColumnMetadataRepository: 字段元数据 CRUD
+ * - RelationshipRepository: 关系管理
+ * - MetadataSearchRepository: 搜索和变更历史
  */
 
 import { injectable, inject } from 'tsyringe';
-import { PrismaClient } from '@prisma/client';
 import { DI_TOKENS } from '@/lib/di/tokens';
-import { changeTracker } from './change-tracker';
+import { DatabaseMetadataRepository } from './database-metadata.repository';
+import { TableMetadataRepository } from './table-metadata.repository';
+import { ColumnMetadataRepository } from './column-metadata.repository';
+import { RelationshipRepository } from './relationship.repository';
+import { MetadataSearchRepository } from './metadata-search.repository';
 import type {
   CreateDatabaseMetaInput,
   UpdateDatabaseMetaInput,
@@ -32,770 +42,210 @@ import type {
 } from '@/app/generated/prisma';
 
 /**
- * 元数据仓储类
+ * 元数据仓储聚合类
+ * 组合所有子仓储，提供统一的访问接口，保持向后兼容
  */
 @injectable()
 export class MetadataRepository {
   constructor(
-    @inject(DI_TOKENS.PrismaClient) private prisma: PrismaClient
+    @inject(DI_TOKENS.DatabaseMetadataRepository)
+    private databaseRepo: DatabaseMetadataRepository,
+
+    @inject(DI_TOKENS.TableMetadataRepository)
+    private tableRepo: TableMetadataRepository,
+
+    @inject(DI_TOKENS.ColumnMetadataRepository)
+    private columnRepo: ColumnMetadataRepository,
+
+    @inject(DI_TOKENS.RelationshipRepository)
+    private relationshipRepo: RelationshipRepository,
+
+    @inject(DI_TOKENS.MetadataSearchRepository)
+    private searchRepo: MetadataSearchRepository
   ) {}
 
-  // ==================== 数据库元数据 ====================
+  // ==================== 数据库元数据（委托给 DatabaseMetadataRepository）====================
 
-  /**
-   * 创建数据库元数据
-   */
   async createDatabase(input: CreateDatabaseMetaInput): Promise<DatabaseMeta> {
-    return await this.prisma.databaseMeta.create({
-      data: {
-        sourceId: input.sourceId,
-        databaseName: input.databaseName,
-        domainId: input.domainId,
-        semanticDescription: input.semanticDescription,
-        lastSyncedAt: new Date(),
-      },
-    });
+    return this.databaseRepo.createDatabase(input);
   }
 
-  /**
-   * 获取数据库元数据
-   */
   async getDatabaseById(id: number): Promise<DatabaseMeta | null> {
-    return await this.prisma.databaseMeta.findUnique({
-      where: { id },
-    });
+    return this.databaseRepo.getDatabaseById(id);
   }
 
-  /**
-   * 通过数据源和数据库名获取数据库元数据
-   */
-  async getDatabaseByName(
-    sourceId: number,
-    databaseName: string
-  ): Promise<DatabaseMeta | null> {
-    return await this.prisma.databaseMeta.findUnique({
-      where: {
-        sourceId_databaseName: {
-          sourceId,
-          databaseName,
-        },
-      },
-    });
+  async getDatabaseByName(sourceId: number, databaseName: string): Promise<DatabaseMeta | null> {
+    return this.databaseRepo.getDatabaseByName(sourceId, databaseName);
   }
 
-  /**
-   * 获取数据源的所有数据库
-   */
   async getDatabasesBySource(sourceId: number): Promise<DatabaseMeta[]> {
-    return await this.prisma.databaseMeta.findMany({
-      where: { sourceId },
-      orderBy: { databaseName: 'asc' },
-    });
+    return this.databaseRepo.getDatabasesBySource(sourceId);
   }
 
-  /**
-   * 更新数据库元数据
-   */
   async updateDatabase(id: number, input: UpdateDatabaseMetaInput): Promise<DatabaseMeta> {
-    return await this.prisma.databaseMeta.update({
-      where: { id },
-      data: input,
-    });
+    return this.databaseRepo.updateDatabase(id, input);
   }
 
-  /**
-   * 删除数据库元数据
-   */
   async deleteDatabase(id: number): Promise<DatabaseMeta> {
-    return await this.prisma.databaseMeta.delete({
-      where: { id },
-    });
+    return this.databaseRepo.deleteDatabase(id);
   }
 
-  /**
-   * 创建或更新数据库元数据
-   */
   async upsertDatabase(input: CreateDatabaseMetaInput): Promise<DatabaseMeta> {
-    // 查询是否已存在
-    const existing = await this.getDatabaseByName(input.sourceId, input.databaseName);
-
-    const result = await this.prisma.databaseMeta.upsert({
-      where: {
-        sourceId_databaseName: {
-          sourceId: input.sourceId,
-          databaseName: input.databaseName,
-        },
-      },
-      create: {
-        sourceId: input.sourceId,
-        databaseName: input.databaseName,
-        domainId: input.domainId,
-        semanticDescription: input.semanticDescription,
-        lastSyncedAt: new Date(),
-      },
-      update: {
-        domainId: input.domainId,
-        semanticDescription: input.semanticDescription,
-        lastSyncedAt: new Date(),
-      },
-    });
-
-    // 记录变更
-    try {
-      if (!existing) {
-        await changeTracker.trackDatabaseChange('database_added', result);
-      }
-    } catch (error) {
-      console.error('记录数据库变更失败:', error);
-      // 不影响主流程
-    }
-
-    return result;
+    return this.databaseRepo.upsertDatabase(input);
   }
 
-  // ==================== 表元数据 ====================
+  // ==================== 表元数据（委托给 TableMetadataRepository）====================
 
-  /**
-   * 创建表元数据
-   */
   async createTable(input: CreateTableMetaInput): Promise<TableMeta> {
-    return await this.prisma.tableMeta.create({
-      data: {
-        databaseId: input.databaseId,
-        tableName: input.tableName,
-        tableComment: input.tableComment,
-        semanticDescription: input.semanticDescription,
-        semanticPriority: input.semanticPriority ?? 3,
-        rowCount: input.rowCount ?? BigInt(0),
-        structureHash: input.structureHash,
-        createdTime: input.createdTime,
-        updatedTime: input.updatedTime,
-        lastSyncedAt: new Date(),
-      },
-    });
+    return this.tableRepo.createTable(input);
   }
 
-  /**
-   * 获取表元数据
-   */
   async getTableById(id: number): Promise<TableMeta | null> {
-    return await this.prisma.tableMeta.findUnique({
-      where: { id },
-    });
+    return this.tableRepo.getTableById(id);
   }
 
-  /**
-   * 通过数据库和表名获取表元数据
-   */
   async getTableByName(databaseId: number, tableName: string): Promise<TableMeta | null> {
-    return await this.prisma.tableMeta.findUnique({
-      where: {
-        databaseId_tableName: {
-          databaseId,
-          tableName,
-        },
-      },
-    });
+    return this.tableRepo.getTableByName(databaseId, tableName);
   }
 
-  /**
-   * 获取数据库的所有表
-   */
   async getTablesByDatabase(databaseId: number): Promise<TableMeta[]> {
-    return await this.prisma.tableMeta.findMany({
-      where: { databaseId },
-      orderBy: { tableName: 'asc' },
-    });
+    return this.tableRepo.getTablesByDatabase(databaseId);
   }
 
-  /**
-   * 分页查询表元数据
-   */
   async getTablesPaginated(
     databaseId: number,
     options: QueryOptions = {}
   ): Promise<PaginatedResult<TableMeta>> {
-    const page = options.page ?? 1;
-    const limit = options.limit ?? 20;
-    const skip = (page - 1) * limit;
-
-    const where: any = { databaseId };
-
-    if (options.search) {
-      where.OR = [
-        { tableName: { contains: options.search } },
-        { tableComment: { contains: options.search } },
-        { semanticDescription: { contains: options.search } },
-      ];
-    }
-
-    const [data, total] = await Promise.all([
-      this.prisma.tableMeta.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: options.orderBy
-          ? { [options.orderBy]: options.orderDirection ?? 'asc' }
-          : { tableName: 'asc' },
-      }),
-      this.prisma.tableMeta.count({ where }),
-    ]);
-
-    const totalPages = Math.ceil(total / limit);
-
-    return {
-      data,
-      total,
-      page,
-      limit,
-      totalPages,
-      hasNext: page < totalPages,
-      hasPrev: page > 1,
-    };
+    return this.tableRepo.getTablesPaginated(databaseId, options);
   }
 
-  /**
-   * 更新表元数据
-   */
   async updateTable(id: number, input: UpdateTableMetaInput): Promise<TableMeta> {
-    return await this.prisma.tableMeta.update({
-      where: { id },
-      data: input,
-    });
+    return this.tableRepo.updateTable(id, input);
   }
 
-  /**
-   * 删除表元数据
-   */
   async deleteTable(id: number): Promise<TableMeta> {
-    return await this.prisma.tableMeta.delete({
-      where: { id },
-    });
+    return this.tableRepo.deleteTable(id);
   }
 
-  /**
-   * 创建或更新表元数据
-   */
   async upsertTable(input: CreateTableMetaInput): Promise<TableMeta> {
-    // 查询是否已存在
-    const existing = await this.getTableByName(input.databaseId, input.tableName);
-
-    const result = await this.prisma.tableMeta.upsert({
-      where: {
-        databaseId_tableName: {
-          databaseId: input.databaseId,
-          tableName: input.tableName,
-        },
-      },
-      create: {
-        databaseId: input.databaseId,
-        tableName: input.tableName,
-        tableComment: input.tableComment,
-        semanticDescription: input.semanticDescription,
-        semanticPriority: input.semanticPriority ?? 3,
-        rowCount: input.rowCount ?? BigInt(0),
-        structureHash: input.structureHash,
-        createdTime: input.createdTime,
-        updatedTime: input.updatedTime,
-        lastSyncedAt: new Date(),
-      },
-      update: {
-        tableComment: input.tableComment,
-        semanticDescription: input.semanticDescription,
-        semanticPriority: input.semanticPriority,
-        rowCount: input.rowCount,
-        structureHash: input.structureHash,
-        createdTime: input.createdTime,
-        updatedTime: input.updatedTime,
-        lastSyncedAt: new Date(),
-      },
-    });
-
-    // 记录变更
-    try {
-      if (!existing) {
-        await changeTracker.trackTableChange('table_added', result);
-      } else {
-        await changeTracker.detectTableChanges(existing, result);
-      }
-    } catch (error) {
-      console.error('记录表变更失败:', error);
-      // 不影响主流程
-    }
-
-    return result;
+    return this.tableRepo.upsertTable(input);
   }
 
-  // ==================== 字段元数据 ====================
+  // ==================== 字段元数据（委托给 ColumnMetadataRepository）====================
 
-  /**
-   * 创建字段元数据
-   */
   async createColumn(input: CreateColumnMetaInput): Promise<ColumnMeta> {
-    return await this.prisma.columnMeta.create({
-      data: {
-        tableId: input.tableId,
-        columnName: input.columnName,
-        dataType: input.dataType,
-        columnType: input.columnType,
-        columnComment: input.columnComment,
-        semanticDescription: input.semanticDescription,
-        semanticSource: input.semanticSource ?? 'rule',
-        isNullable: input.isNullable ?? true,
-        isPrimaryKey: input.isPrimaryKey ?? false,
-        isUnique: input.isUnique ?? false,
-        defaultValue: input.defaultValue,
-        ordinalPosition: input.ordinalPosition,
-      },
-    });
+    return this.columnRepo.createColumn(input);
   }
 
-  /**
-   * 获取字段元数据
-   */
   async getColumnById(id: number): Promise<ColumnMeta | null> {
-    return await this.prisma.columnMeta.findUnique({
-      where: { id },
-    });
+    return this.columnRepo.getColumnById(id);
   }
 
-  /**
-   * 通过表和字段名获取字段元数据
-   */
   async getColumnByName(tableId: number, columnName: string): Promise<ColumnMeta | null> {
-    return await this.prisma.columnMeta.findUnique({
-      where: {
-        tableId_columnName: {
-          tableId,
-          columnName,
-        },
-      },
-    });
+    return this.columnRepo.getColumnByName(tableId, columnName);
   }
 
-  /**
-   * 获取表的所有字段
-   */
   async getColumnsByTable(tableId: number): Promise<ColumnMeta[]> {
-    return await this.prisma.columnMeta.findMany({
-      where: { tableId },
-      orderBy: { ordinalPosition: 'asc' },
-    });
+    return this.columnRepo.getColumnsByTable(tableId);
   }
 
-  /**
-   * 更新字段元数据
-   */
   async updateColumn(id: number, input: UpdateColumnMetaInput): Promise<ColumnMeta> {
-    return await this.prisma.columnMeta.update({
-      where: { id },
-      data: input,
-    });
+    return this.columnRepo.updateColumn(id, input);
   }
 
-  /**
-   * 删除字段元数据
-   */
   async deleteColumn(id: number): Promise<ColumnMeta> {
-    return await this.prisma.columnMeta.delete({
-      where: { id },
-    });
+    return this.columnRepo.deleteColumn(id);
   }
 
-  /**
-   * 创建或更新字段元数据
-   */
   async upsertColumn(input: CreateColumnMetaInput): Promise<ColumnMeta> {
-    // 查询是否已存在
-    const existing = await this.getColumnByName(input.tableId, input.columnName);
-
-    const result = await this.prisma.columnMeta.upsert({
-      where: {
-        tableId_columnName: {
-          tableId: input.tableId,
-          columnName: input.columnName,
-        },
-      },
-      create: {
-        tableId: input.tableId,
-        columnName: input.columnName,
-        dataType: input.dataType,
-        columnType: input.columnType,
-        columnComment: input.columnComment,
-        semanticDescription: input.semanticDescription,
-        semanticSource: input.semanticSource ?? 'rule',
-        isNullable: input.isNullable ?? true,
-        isPrimaryKey: input.isPrimaryKey ?? false,
-        isUnique: input.isUnique ?? false,
-        defaultValue: input.defaultValue,
-        ordinalPosition: input.ordinalPosition,
-      },
-      update: {
-        dataType: input.dataType,
-        columnType: input.columnType,
-        columnComment: input.columnComment,
-        semanticDescription: input.semanticDescription,
-        semanticSource: input.semanticSource,
-        isNullable: input.isNullable,
-        isPrimaryKey: input.isPrimaryKey,
-        isUnique: input.isUnique,
-        defaultValue: input.defaultValue,
-        ordinalPosition: input.ordinalPosition,
-      },
-    });
-
-    // 记录变更
-    try {
-      if (!existing) {
-        await changeTracker.trackColumnChange('column_added', result);
-      } else {
-        await changeTracker.detectColumnChanges(existing, result);
-      }
-    } catch (error) {
-      console.error('记录字段变更失败:', error);
-      // 不影响主流程
-    }
-
-    return result;
+    return this.columnRepo.upsertColumn(input);
   }
 
-  /**
-   * 批量创建或更新字段
-   */
   async batchUpsertColumns(inputs: CreateColumnMetaInput[]): Promise<BatchSaveResult> {
-    const startTime = Date.now();
-    let successCount = 0;
-    let failureCount = 0;
-    let skippedCount = 0;
-    const errors: Array<{ entity: string; error: string }> = [];
-
-    for (const input of inputs) {
-      try {
-        await this.upsertColumn(input);
-        successCount++;
-      } catch (error) {
-        failureCount++;
-        errors.push({
-          entity: `${input.tableId}.${input.columnName}`,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-
-    const duration = Date.now() - startTime;
-
-    return {
-      successCount,
-      failureCount,
-      skippedCount,
-      errors,
-      duration,
-    };
+    return this.columnRepo.batchUpsertColumns(inputs);
   }
 
-  // ==================== 显式关系 ====================
+  // ==================== 关系（委托给 RelationshipRepository）====================
 
-  /**
-   * 创建显式关系
-   */
   async createExplicitRelationship(
     input: CreateExplicitRelationshipInput
   ): Promise<ExplicitRelationship> {
-    return await this.prisma.explicitRelationship.create({
-      data: {
-        sourceTableId: input.sourceTableId,
-        sourceColumnId: input.sourceColumnId,
-        targetTableId: input.targetTableId,
-        targetColumnId: input.targetColumnId,
-        constraintName: input.constraintName,
-        relationshipType: input.relationshipType ?? 'ONE_TO_MANY',
-      },
-    });
+    return this.relationshipRepo.createExplicitRelationship(input);
   }
 
-  /**
-   * 获取表的所有显式关系（作为源表）
-   */
-  async getExplicitRelationshipsBySourceTable(
-    tableId: number
-  ): Promise<ExplicitRelationship[]> {
-    return await this.prisma.explicitRelationship.findMany({
-      where: { sourceTableId: tableId },
-      include: {
-        sourceTable: true,
-        targetTable: true,
-        sourceColumn: true,
-        targetColumn: true,
-      },
-    });
+  async getExplicitRelationshipsBySourceTable(tableId: number): Promise<ExplicitRelationship[]> {
+    return this.relationshipRepo.getExplicitRelationshipsBySourceTable(tableId);
   }
 
-  /**
-   * 获取表的所有显式关系（作为目标表）
-   */
-  async getExplicitRelationshipsByTargetTable(
-    tableId: number
-  ): Promise<ExplicitRelationship[]> {
-    return await this.prisma.explicitRelationship.findMany({
-      where: { targetTableId: tableId },
-      include: {
-        sourceTable: true,
-        targetTable: true,
-        sourceColumn: true,
-        targetColumn: true,
-      },
-    });
+  async getExplicitRelationshipsByTargetTable(tableId: number): Promise<ExplicitRelationship[]> {
+    return this.relationshipRepo.getExplicitRelationshipsByTargetTable(tableId);
   }
 
-  /**
-   * 删除显式关系
-   */
   async deleteExplicitRelationship(id: number): Promise<ExplicitRelationship> {
-    return await this.prisma.explicitRelationship.delete({
-      where: { id },
-    });
+    return this.relationshipRepo.deleteExplicitRelationship(id);
   }
 
-  /**
-   * 创建或更新显式关系
-   */
   async upsertExplicitRelationship(
     input: CreateExplicitRelationshipInput
   ): Promise<ExplicitRelationship> {
-    return await this.prisma.explicitRelationship.upsert({
-      where: {
-        sourceTableId_sourceColumnId_targetTableId_targetColumnId: {
-          sourceTableId: input.sourceTableId,
-          sourceColumnId: input.sourceColumnId,
-          targetTableId: input.targetTableId,
-          targetColumnId: input.targetColumnId,
-        },
-      },
-      create: {
-        sourceTableId: input.sourceTableId,
-        sourceColumnId: input.sourceColumnId,
-        targetTableId: input.targetTableId,
-        targetColumnId: input.targetColumnId,
-        constraintName: input.constraintName,
-        relationshipType: input.relationshipType ?? 'ONE_TO_MANY',
-      },
-      update: {
-        constraintName: input.constraintName,
-        relationshipType: input.relationshipType,
-      },
-    });
+    return this.relationshipRepo.upsertExplicitRelationship(input);
   }
 
-  // ==================== 推断关系 ====================
-
-  /**
-   * 创建推断关系
-   */
   async createInferredRelationship(
     input: CreateInferredRelationshipInput
   ): Promise<InferredRelationship> {
-    return await this.prisma.inferredRelationship.create({
-      data: {
-        sourceTableId: input.sourceTableId,
-        sourceColumnId: input.sourceColumnId,
-        targetTableId: input.targetTableId,
-        targetColumnId: input.targetColumnId,
-        confidenceScore: input.confidenceScore,
-        relationshipType: input.relationshipType ?? 'ONE_TO_MANY',
-        inferenceMethod: input.inferenceMethod ?? 'rule',
-        reasoning: input.reasoning,
-        isVerified: input.isVerified ?? false,
-        verifiedBy: input.verifiedBy,
-        verifiedAt: input.verifiedAt,
-      },
-    });
+    return this.relationshipRepo.createInferredRelationship(input);
   }
 
-  /**
-   * 获取表的所有推断关系（作为源表）
-   */
-  async getInferredRelationshipsBySourceTable(
-    tableId: number
-  ): Promise<InferredRelationship[]> {
-    return await this.prisma.inferredRelationship.findMany({
-      where: { sourceTableId: tableId },
-      include: {
-        sourceTable: true,
-        targetTable: true,
-        sourceColumn: true,
-        targetColumn: true,
-      },
-    });
+  async getInferredRelationshipsBySourceTable(tableId: number): Promise<InferredRelationship[]> {
+    return this.relationshipRepo.getInferredRelationshipsBySourceTable(tableId);
   }
 
-  /**
-   * 获取未验证的推断关系
-   */
   async getUnverifiedInferredRelationships(): Promise<InferredRelationship[]> {
-    return await this.prisma.inferredRelationship.findMany({
-      where: { isVerified: false },
-      orderBy: { confidenceScore: 'desc' },
-      include: {
-        sourceTable: true,
-        targetTable: true,
-        sourceColumn: true,
-        targetColumn: true,
-      },
-    });
+    return this.relationshipRepo.getUnverifiedInferredRelationships();
   }
 
-  /**
-   * 验证推断关系
-   */
   async verifyInferredRelationship(
     id: number,
     input: VerifyInferredRelationshipInput
   ): Promise<InferredRelationship> {
-    return await this.prisma.inferredRelationship.update({
-      where: { id },
-      data: {
-        isVerified: input.isVerified,
-        verifiedBy: input.verifiedBy,
-        verifiedAt: input.verifiedAt ?? new Date(),
-      },
-    });
+    return this.relationshipRepo.verifyInferredRelationship(id, input);
   }
 
-  /**
-   * 删除推断关系
-   */
   async deleteInferredRelationship(id: number): Promise<InferredRelationship> {
-    return await this.prisma.inferredRelationship.delete({
-      where: { id },
-    });
+    return this.relationshipRepo.deleteInferredRelationship(id);
   }
 
-  /**
-   * 创建或更新推断关系
-   */
   async upsertInferredRelationship(
     input: CreateInferredRelationshipInput
   ): Promise<InferredRelationship> {
-    return await this.prisma.inferredRelationship.upsert({
-      where: {
-        sourceTableId_sourceColumnId_targetTableId_targetColumnId: {
-          sourceTableId: input.sourceTableId,
-          sourceColumnId: input.sourceColumnId,
-          targetTableId: input.targetTableId,
-          targetColumnId: input.targetColumnId,
-        },
-      },
-      create: {
-        sourceTableId: input.sourceTableId,
-        sourceColumnId: input.sourceColumnId,
-        targetTableId: input.targetTableId,
-        targetColumnId: input.targetColumnId,
-        confidenceScore: input.confidenceScore,
-        relationshipType: input.relationshipType ?? 'ONE_TO_MANY',
-        inferenceMethod: input.inferenceMethod ?? 'rule',
-        reasoning: input.reasoning,
-        isVerified: input.isVerified ?? false,
-        verifiedBy: input.verifiedBy,
-        verifiedAt: input.verifiedAt,
-      },
-      update: {
-        confidenceScore: input.confidenceScore,
-        relationshipType: input.relationshipType,
-        inferenceMethod: input.inferenceMethod,
-        reasoning: input.reasoning,
-      },
-    });
+    return this.relationshipRepo.upsertInferredRelationship(input);
   }
 
-  /**
-   * 批量保存推断关系
-   */
   async batchSaveInferredRelationships(
     inputs: CreateInferredRelationshipInput[]
   ): Promise<BatchSaveResult> {
-    const startTime = Date.now();
-    let successCount = 0;
-    let failureCount = 0;
-    const errors: Array<{ entity: string; error: string }> = [];
-
-    console.log(`开始批量保存 ${inputs.length} 个推断关系...`);
-
-    for (const input of inputs) {
-      try {
-        await this.upsertInferredRelationship(input);
-        successCount++;
-      } catch (error) {
-        failureCount++;
-        const entity = `${input.sourceTableId}.${input.sourceColumnId} -> ${input.targetTableId}.${input.targetColumnId}`;
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        errors.push({ entity, error: errorMessage });
-        console.error(`保存推断关系失败 [${entity}]:`, errorMessage);
-      }
-    }
-
-    const duration = Date.now() - startTime;
-
-    console.log(`批量保存完成: 成功 ${successCount}, 失败 ${failureCount}, 耗时 ${duration}ms`);
-
-    return {
-      successCount,
-      failureCount,
-      skippedCount: 0,
-      errors,
-      duration,
-    };
+    return this.relationshipRepo.batchSaveInferredRelationships(inputs);
   }
 
-  // ==================== 元数据变更记录 ====================
+  // ==================== 搜索和变更历史（委托给 MetadataSearchRepository）====================
 
-  /**
-   * 创建元数据变更记录
-   */
   async createMetadataChange(input: CreateMetadataChangeInput): Promise<MetadataChange> {
-    return await this.prisma.metadataChange.create({
-      data: {
-        changeType: input.changeType,
-        entityType: input.entityType,
-        entityId: input.entityId,
-        oldValue: input.oldValue as any,
-        newValue: input.newValue as any,
-      },
-    });
+    return this.searchRepo.createMetadataChange(input);
   }
 
-  /**
-   * 获取实体的变更历史
-   */
   async getMetadataChanges(
     entityType: 'database' | 'table' | 'column',
     entityId: number,
     limit: number = 50
   ): Promise<MetadataChange[]> {
-    return await this.prisma.metadataChange.findMany({
-      where: {
-        entityType,
-        entityId,
-      },
-      orderBy: { changedAt: 'desc' },
-      take: limit,
-    });
+    return this.searchRepo.getMetadataChanges(entityType, entityId, limit);
   }
 
-  /**
-   * 获取最近的变更记录
-   */
   async getRecentChanges(limit: number = 100): Promise<MetadataChange[]> {
-    return await this.prisma.metadataChange.findMany({
-      orderBy: { changedAt: 'desc' },
-      take: limit,
-    });
+    return this.searchRepo.getRecentChanges(limit);
   }
 
-  // ==================== 搜索方法 ====================
-
-  /**
-   * 搜索数据库
-   */
   async searchDatabases(
     query: string,
     options: {
@@ -804,45 +254,9 @@ export class MetadataRepository {
       skip?: number;
     } = {}
   ): Promise<any[]> {
-    const { sourceId, limit = 10, skip = 0 } = options;
-
-    const where: any = {
-      OR: [
-        { databaseName: { contains: query } },
-        { semanticDescription: { contains: query } },
-      ],
-    };
-
-    if (sourceId) {
-      where.sourceId = sourceId;
-    }
-
-    return await this.prisma.databaseMeta.findMany({
-      where,
-      take: limit,
-      skip,
-      select: {
-        id: true,
-        databaseName: true,
-        semanticDescription: true,
-        sourceId: true,
-        source: {
-          select: {
-            name: true,
-            type: true,
-          },
-        },
-        _count: {
-          select: { tables: true },
-        },
-      },
-      orderBy: { databaseName: 'asc' },
-    });
+    return this.searchRepo.searchDatabases(query, options);
   }
 
-  /**
-   * 搜索表
-   */
   async searchTables(
     query: string,
     options: {
@@ -852,56 +266,9 @@ export class MetadataRepository {
       skip?: number;
     } = {}
   ): Promise<any[]> {
-    const { sourceId, databaseId, limit = 10, skip = 0 } = options;
-
-    const where: any = {
-      OR: [
-        { tableName: { contains: query } },
-        { tableComment: { contains: query } },
-        { semanticDescription: { contains: query } },
-      ],
-    };
-
-    if (databaseId) {
-      where.databaseId = databaseId;
-    } else if (sourceId) {
-      where.database = {
-        sourceId,
-      };
-    }
-
-    return await this.prisma.tableMeta.findMany({
-      where,
-      take: limit,
-      skip,
-      select: {
-        id: true,
-        tableName: true,
-        tableComment: true,
-        semanticDescription: true,
-        rowCount: true,
-        databaseId: true,
-        database: {
-          select: {
-            databaseName: true,
-            source: {
-              select: {
-                name: true,
-              },
-            },
-          },
-        },
-        _count: {
-          select: { columns: true },
-        },
-      },
-      orderBy: { tableName: 'asc' },
-    });
+    return this.searchRepo.searchTables(query, options);
   }
 
-  /**
-   * 搜索列
-   */
   async searchColumns(
     query: string,
     options: {
@@ -911,60 +278,7 @@ export class MetadataRepository {
       skip?: number;
     } = {}
   ): Promise<any[]> {
-    const { sourceId, databaseId, limit = 10, skip = 0 } = options;
-
-    const where: any = {
-      OR: [
-        { columnName: { contains: query } },
-        { columnComment: { contains: query } },
-        { semanticDescription: { contains: query } },
-      ],
-    };
-
-    if (databaseId) {
-      where.table = {
-        databaseId,
-      };
-    } else if (sourceId) {
-      where.table = {
-        database: {
-          sourceId,
-        },
-      };
-    }
-
-    return await this.prisma.columnMeta.findMany({
-      where,
-      take: limit,
-      skip,
-      select: {
-        id: true,
-        columnName: true,
-        dataType: true,
-        columnComment: true,
-        semanticDescription: true,
-        isPrimaryKey: true,
-        isUnique: true,
-        tableId: true,
-        table: {
-          select: {
-            tableName: true,
-            databaseId: true,
-            database: {
-              select: {
-                databaseName: true,
-                source: {
-                  select: {
-                    name: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-      orderBy: { columnName: 'asc' },
-    });
+    return this.searchRepo.searchColumns(query, options);
   }
 }
 

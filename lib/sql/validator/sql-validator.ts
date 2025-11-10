@@ -81,15 +81,13 @@ export class SQLValidator {
     }
 
     // 4. 语义验证（表、字段是否存在）
-    // 暂时禁用语义验证，因为它对跨表JOIN和别名的处理有问题
-    // 让数据库在执行时进行验证
-    // const semanticErrors = await this.validateSemantics(sql, context);
-    // result.errors.push(...semanticErrors);
+    const semanticErrors = await this.validateSemantics(sql, context);
+    result.errors.push(...semanticErrors);
 
-    // if (semanticErrors.length > 0) {
-    //   result.isValid = false;
-    //   return result;
-    // }
+    if (semanticErrors.length > 0) {
+      result.isValid = false;
+      return result;
+    }
 
     // 5. 性能分析
     const performanceAnalysis = await this.performanceAnalyzer.analyze(sql, context);
@@ -220,6 +218,17 @@ export class SQLValidator {
         const usedTables = this.extractTables(statement);
         const usedColumns = this.extractColumns(statement);
 
+        // 构建别名到真实表名的映射
+        const aliasMap = new Map<string, TableReference>();
+        for (const table of usedTables) {
+          // 真实表名可以通过表名本身访问
+          aliasMap.set(table.name, table);
+          // 如果有别名，也可以通过别名访问
+          if (table.alias) {
+            aliasMap.set(table.alias, table);
+          }
+        }
+
         // 检查表是否存在
         for (const table of usedTables) {
           const exists = context.tables.some(t =>
@@ -237,20 +246,48 @@ export class SQLValidator {
 
         // 检查字段是否存在
         for (const column of usedColumns) {
-          // 找到对应的表
-          let table = context.tables.find(t => t.tableName === column.table);
-
-          // 如果没有指定表名，尝试在所有表中查找
-          if (!table && !column.table && usedTables.length === 1) {
-            table = context.tables.find(t => t.tableName === usedTables[0].name);
+          // 跳过 * 通配符
+          if (column.name === '*') {
+            continue;
           }
 
-          if (table) {
-            const columnExists = table.columns.some(c => c.columnName === column.name);
-            if (!columnExists && column.name !== '*') {
+          let tableRef: TableReference | undefined;
+          let metadataTable;
+
+          if (column.table) {
+            // 字段指定了表名或别名，通过别名映射找到真实表
+            tableRef = aliasMap.get(column.table);
+            if (tableRef) {
+              metadataTable = context.tables.find(t =>
+                t.tableName === tableRef!.name &&
+                (!tableRef!.database || t.databaseName === tableRef!.database)
+              );
+            }
+          } else if (usedTables.length === 1) {
+            // 如果只有一个表，且字段没有指定表名，则使用该表
+            tableRef = usedTables[0];
+            metadataTable = context.tables.find(t =>
+              t.tableName === tableRef!.name &&
+              (!tableRef!.database || t.databaseName === tableRef!.database)
+            );
+          }
+
+          // 如果找到了表，检查字段是否存在
+          if (metadataTable) {
+            const columnExists = metadataTable.columns.some(c => c.columnName === column.name);
+            if (!columnExists) {
               errors.push({
                 type: 'semantic',
-                message: `字段 ${column.table ? column.table + '.' : ''}${column.name} 在表中不存在`
+                message: `字段 ${column.table ? column.table + '.' : ''}${column.name} 在表 ${metadataTable.tableName} 中不存在`
+              });
+            }
+          } else if (column.table) {
+            // 如果指定了表但找不到，可能是表不存在（已经在表验证中报告）或别名错误
+            // 这里只在表名/别名在查询中不存在时报告
+            if (!aliasMap.has(column.table)) {
+              errors.push({
+                type: 'semantic',
+                message: `引用了未知的表或别名: ${column.table}`
               });
             }
           }
@@ -307,6 +344,7 @@ export class SQLValidator {
           const column = col.expr.column;
           if (typeof column === 'string') {
             columns.push({
+              table: col.expr.table,
               name: column,
               alias: col.as
             });

@@ -30,6 +30,11 @@ export const DI_TOKENS = {
 
   // 元数据管理
   MetadataRepository: Symbol.for('MetadataRepository'),
+  DatabaseMetadataRepository: Symbol.for('DatabaseMetadataRepository'),
+  TableMetadataRepository: Symbol.for('TableMetadataRepository'),
+  ColumnMetadataRepository: Symbol.for('ColumnMetadataRepository'),
+  RelationshipRepository: Symbol.for('RelationshipRepository'),
+  MetadataSearchRepository: Symbol.for('MetadataSearchRepository'),
   CachedMetadataRepository: Symbol.for('CachedMetadataRepository'),
   MetadataSyncService: Symbol.for('MetadataSyncService'),
   MetadataRetriever: Symbol.for('MetadataRetriever'),
@@ -68,6 +73,18 @@ export const DI_TOKENS = {
   DataSourceOrchestrator: Symbol.for('DataSourceOrchestrator'),
   CacheOrchestrator: Symbol.for('CacheOrchestrator'),
   RelationshipOrchestrator: Symbol.for('RelationshipOrchestrator'),
+
+  // 关系管理子服务
+  RelationshipInferenceService: Symbol.for('RelationshipInferenceService'),
+  RelationshipVerificationService: Symbol.for('RelationshipVerificationService'),
+  RelationshipGraphService: Symbol.for('RelationshipGraphService'),
+  RelationshipStatisticsService: Symbol.for('RelationshipStatisticsService'),
+
+  // 数据源管理子服务
+  DataSourceLifecycleService: Symbol.for('DataSourceLifecycleService'),
+  DataSourceConnectionService: Symbol.for('DataSourceConnectionService'),
+  DataSourceSyncService: Symbol.for('DataSourceSyncService'),
+  DataSourceQueryService: Symbol.for('DataSourceQueryService'),
 } as const;
 
 export type DIToken = (typeof DI_TOKENS)[keyof typeof DI_TOKENS];

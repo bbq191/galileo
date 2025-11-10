@@ -78,7 +78,20 @@ export function setupDependencyInjection(): void {
   const { SemanticAnnotator } = require('@/lib/ai/semantic-annotator');
   registerSingleton(DI_TOKENS.SemanticAnnotator, SemanticAnnotator);
 
-  // 注册 MetadataRepository
+  // 注册元数据仓储（拆分后的子仓储）
+  const { DatabaseMetadataRepository } = require('@/lib/metadata/storage/database-metadata.repository');
+  const { TableMetadataRepository } = require('@/lib/metadata/storage/table-metadata.repository');
+  const { ColumnMetadataRepository } = require('@/lib/metadata/storage/column-metadata.repository');
+  const { RelationshipRepository } = require('@/lib/metadata/storage/relationship.repository');
+  const { MetadataSearchRepository } = require('@/lib/metadata/storage/metadata-search.repository');
+
+  registerSingleton(DI_TOKENS.DatabaseMetadataRepository, DatabaseMetadataRepository);
+  registerSingleton(DI_TOKENS.TableMetadataRepository, TableMetadataRepository);
+  registerSingleton(DI_TOKENS.ColumnMetadataRepository, ColumnMetadataRepository);
+  registerSingleton(DI_TOKENS.RelationshipRepository, RelationshipRepository);
+  registerSingleton(DI_TOKENS.MetadataSearchRepository, MetadataSearchRepository);
+
+  // 注册 MetadataRepository（聚合类，依赖上述子仓储）
   const { MetadataRepository } = require('@/lib/metadata/storage/metadata-repository');
   registerSingleton(DI_TOKENS.MetadataRepository, MetadataRepository);
 
@@ -134,7 +147,18 @@ export function setupDependencyInjection(): void {
   const { AuditOrchestrator } = require('./orchestrators/audit.orchestrator');
   registerSingleton(DI_TOKENS.AuditOrchestrator, AuditOrchestrator);
 
-  // 注册 DataSourceOrchestrator
+  // 注册数据源管理子服务
+  const { DataSourceLifecycleService } = require('./orchestrators/datasource/datasource-lifecycle.service');
+  const { DataSourceConnectionService } = require('./orchestrators/datasource/datasource-connection.service');
+  const { DataSourceSyncService } = require('./orchestrators/datasource/datasource-sync.service');
+  const { DataSourceQueryService } = require('./orchestrators/datasource/datasource-query.service');
+
+  registerSingleton(DI_TOKENS.DataSourceLifecycleService, DataSourceLifecycleService);
+  registerSingleton(DI_TOKENS.DataSourceConnectionService, DataSourceConnectionService);
+  registerSingleton(DI_TOKENS.DataSourceSyncService, DataSourceSyncService);
+  registerSingleton(DI_TOKENS.DataSourceQueryService, DataSourceQueryService);
+
+  // 注册 DataSourceOrchestrator（聚合类，依赖上述子服务）
   const { DataSourceOrchestrator } = require('./orchestrators/datasource.orchestrator');
   registerSingleton(DI_TOKENS.DataSourceOrchestrator, DataSourceOrchestrator);
 
@@ -146,7 +170,18 @@ export function setupDependencyInjection(): void {
   const { CacheOrchestrator } = require('./orchestrators/cache.orchestrator');
   registerSingleton(DI_TOKENS.CacheOrchestrator, CacheOrchestrator);
 
-  // 注册 RelationshipOrchestrator
+  // 注册关系管理子服务
+  const { RelationshipInferenceService } = require('./orchestrators/relationship/relationship-inference.service');
+  const { RelationshipVerificationService } = require('./orchestrators/relationship/relationship-verification.service');
+  const { RelationshipGraphService } = require('./orchestrators/relationship/relationship-graph.service');
+  const { RelationshipStatisticsService } = require('./orchestrators/relationship/relationship-statistics.service');
+
+  registerSingleton(DI_TOKENS.RelationshipInferenceService, RelationshipInferenceService);
+  registerSingleton(DI_TOKENS.RelationshipVerificationService, RelationshipVerificationService);
+  registerSingleton(DI_TOKENS.RelationshipGraphService, RelationshipGraphService);
+  registerSingleton(DI_TOKENS.RelationshipStatisticsService, RelationshipStatisticsService);
+
+  // 注册 RelationshipOrchestrator（聚合类，依赖上述子服务）
   const { RelationshipOrchestrator } = require('./orchestrators/relationship.orchestrator');
   registerSingleton(DI_TOKENS.RelationshipOrchestrator, RelationshipOrchestrator);
 
@@ -154,7 +189,9 @@ export function setupDependencyInjection(): void {
   console.log('[DI] Phase 2.1 services registered: ConnectionPoolFactory, MultiLevelCache, ConnectionManager, QueryCacheManager, CacheInvalidationService');
   console.log('[DI] Phase 2.2 services registered: DeepseekClient, BatchProcessor, RuleBasedAnnotator, SemanticAnnotator, MetadataRepository, MetadataRetriever, MetadataSyncService');
   console.log('[DI] Phase 2.3 services registered: ResultFormatter, TimeParser, EntityResolver, CrossDatabaseHandler, IntentRecognizer, SQLGenerator, QueryExecutor');
-  console.log('[DI] Phase 3 orchestrators registered: MetadataOrchestrator, QueryOrchestrator, AuditOrchestrator, DataSourceOrchestrator, CacheOrchestrator, RelationshipOrchestrator');
+  console.log('[DI] Phase 3 orchestrators registered: MetadataOrchestrator, QueryOrchestrator, AuditOrchestrator, DataSourceOrchestrator, CacheOrchestrator');
+  console.log('[DI] Relationship services registered: RelationshipInferenceService, RelationshipVerificationService, RelationshipGraphService, RelationshipStatisticsService, RelationshipOrchestrator');
+  console.log('[DI] DataSource services registered: DataSourceLifecycleService, DataSourceConnectionService, DataSourceSyncService, DataSourceQueryService, DataSourceOrchestrator');
 }
 
 /**
