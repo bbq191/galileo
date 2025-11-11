@@ -57,8 +57,16 @@ export async function GET(request: NextRequest) {
         l1Size: stats.l1Size,
         l1MaxSize: stats.l1MaxSize,
         hitRate: stats.hitRate,
+        breakthroughGuard: stats.breakthroughGuard,
         message: `Cache operational, hit rate: ${(stats.hitRate * 100).toFixed(2)}%`
       };
+
+      // 如果防击穿守卫启用，添加额外信息
+      if (stats.breakthroughGuard) {
+        const guard = stats.breakthroughGuard;
+        checks.multiLevelCache.guardMessage =
+          `Breakthrough guard active: ${guard.singleFlightHits + guard.lockWaited} requests protected`;
+      }
     } catch (error: any) {
       checks.multiLevelCache = { status: 'error', message: error.message };
       overallStatus = 'degraded';

@@ -165,14 +165,14 @@ export class ContextBuilder {
   }
 
   /**
-   * 构建关系上下文
+   * 构建关系上下文（懒加载优化：使用批量查询和 select）
    */
   async buildRelationshipContexts(
     tableIds: number[]
   ): Promise<RelationshipContext[]> {
     const relationships: RelationshipContext[] = [];
 
-    // 1. 获取显式关系（外键）
+    // 1. 获取显式关系（外键）- 懒加载优化：使用 select 而不是 include
     const explicitRels = await this.prisma.explicitRelationship.findMany({
       where: {
         OR: [
@@ -180,26 +180,16 @@ export class ContextBuilder {
           { targetTableId: { in: tableIds } },
         ],
       },
-      include: {
-        sourceTable: true,
-        targetTable: true,
-        sourceColumn: true,
-        targetColumn: true,
+      select: {
+        id: true,
+        sourceTableId: true,
+        targetTableId: true,
+        sourceColumnId: true,
+        targetColumnId: true,
       },
     });
 
-    for (const rel of explicitRels) {
-      relationships.push({
-        id: rel.id,
-        sourceTable: (rel.sourceTable as any).tableName,
-        sourceColumn: (rel.sourceColumn as any).columnName,
-        targetTable: (rel.targetTable as any).tableName,
-        targetColumn: (rel.targetColumn as any).columnName,
-        type: 'explicit',
-      });
-    }
-
-    // 2. 获取高置信度的推断关系
+    // 2. 获取高置信度的推断关系 - 懒加载优化：使用 select 而不是 include
     const inferredRels = await this.prisma.inferredRelationship.findMany({
       where: {
         OR: [
@@ -209,21 +199,63 @@ export class ContextBuilder {
         confidenceScore: { gte: 0.75 }, // 置信度阈值
         isVerified: true, // 优先使用已验证的关系
       },
-      include: {
-        sourceTable: true,
-        targetTable: true,
-        sourceColumn: true,
-        targetColumn: true,
+      select: {
+        id: true,
+        sourceTableId: true,
+        targetTableId: true,
+        sourceColumnId: true,
+        targetColumnId: true,
+        confidenceScore: true,
       },
     });
 
+    // 3. 批量获取需要的表和列信息
+    const allTableIds = new Set<number>();
+    const allColumnIds = new Set<number>();
+
+    for (const rel of [...explicitRels, ...inferredRels]) {
+      allTableIds.add(rel.sourceTableId);
+      allTableIds.add(rel.targetTableId);
+      allColumnIds.add(rel.sourceColumnId);
+      allColumnIds.add(rel.targetColumnId);
+    }
+
+    // 批量查询表信息
+    const tables = await this.prisma.tableMeta.findMany({
+      where: { id: { in: Array.from(allTableIds) } },
+      select: { id: true, tableName: true },
+    });
+
+    // 批量查询列信息
+    const columns = await this.prisma.columnMeta.findMany({
+      where: { id: { in: Array.from(allColumnIds) } },
+      select: { id: true, columnName: true },
+    });
+
+    // 构建映射以便快速查找
+    const tableMap = new Map(tables.map((t: any) => [t.id, t.tableName]));
+    const columnMap = new Map(columns.map((c: any) => [c.id, c.columnName]));
+
+    // 4. 构建显式关系上下文
+    for (const rel of explicitRels) {
+      relationships.push({
+        id: rel.id,
+        sourceTable: tableMap.get(rel.sourceTableId) || '',
+        sourceColumn: columnMap.get(rel.sourceColumnId) || '',
+        targetTable: tableMap.get(rel.targetTableId) || '',
+        targetColumn: columnMap.get(rel.targetColumnId) || '',
+        type: 'explicit',
+      });
+    }
+
+    // 5. 构建推断关系上下文
     for (const rel of inferredRels) {
       relationships.push({
         id: rel.id,
-        sourceTable: (rel.sourceTable as any).tableName,
-        sourceColumn: (rel.sourceColumn as any).columnName,
-        targetTable: (rel.targetTable as any).tableName,
-        targetColumn: (rel.targetColumn as any).columnName,
+        sourceTable: tableMap.get(rel.sourceTableId) || '',
+        sourceColumn: columnMap.get(rel.sourceColumnId) || '',
+        targetTable: tableMap.get(rel.targetTableId) || '',
+        targetColumn: columnMap.get(rel.targetColumnId) || '',
         type: 'inferred',
         confidence: Number(rel.confidenceScore),
       });

@@ -11,6 +11,7 @@ import { getRedisClient } from './redis-client';
 import { CACHE_CONFIGS, generateCacheKey, cacheStats } from './cache-config';
 import type { CacheConfig } from './cache-config';
 import { DI_TOKENS } from '@/lib/di/tokens';
+import { CacheBreakthroughGuard } from './cache-breakthrough-guard';
 
 /**
  * 自定义 JSON 序列化，支持 BigInt
@@ -60,13 +61,23 @@ export class MultiLevelCache {
   // Redis 客户端
   private redis: Redis | null = null;
 
+  // 防击穿守卫
+  private guard: CacheBreakthroughGuard | null = null;
+
   // 清理定时器
   private cleanupInterval?: NodeJS.Timeout;
 
-  constructor(@inject(DI_TOKENS.RedisClient) redis?: Redis) {
+  constructor(
+    @inject(DI_TOKENS.RedisClient) redis?: Redis,
+    @inject(DI_TOKENS.CacheBreakthroughGuard) guard?: CacheBreakthroughGuard
+  ) {
     // 如果通过 DI 注入了 Redis，使用注入的实例
     if (redis) {
       this.redis = redis;
+    }
+    // 如果通过 DI 注入了防击穿守卫，使用注入的实例
+    if (guard) {
+      this.guard = guard;
     }
     // 否则使用全局函数（向后兼容）
   }
@@ -146,14 +157,24 @@ export class MultiLevelCache {
       }
     }
 
-    // 3. 缓存未命中，调用获取函数
+    // 3. 缓存未命中，使用防击穿保护获取数据
     cacheStats.recordMiss();
-    const data = await fetchFn();
 
-    // 4. 写入缓存
-    await this.set(configKey, params, data);
-
-    return data;
+    if (this.guard) {
+      // 使用防击穿守卫
+      return await this.guard.getWithGuard(
+        cacheKey,
+        fetchFn,
+        async (data: T) => {
+          await this.set(configKey, params, data);
+        }
+      );
+    } else {
+      // 向后兼容：直接调用获取函数（无防护）
+      const data = await fetchFn();
+      await this.set(configKey, params, data);
+      return data;
+    }
   }
 
   /**
@@ -416,12 +437,22 @@ export class MultiLevelCache {
    * 获取缓存统计信息
    */
   getStats() {
-    return {
+    const stats = {
       l1Size: this.l1Cache.size,
       l1MaxSize: this.L1_MAX_ENTRIES,
       metrics: cacheStats.getMetrics(),
       hitRate: cacheStats.getHitRate(),
+      breakthroughGuard: this.guard ? this.guard.getMetrics() : null,
     };
+
+    return stats;
+  }
+
+  /**
+   * 获取防击穿守卫实例（用于监控和管理）
+   */
+  getBreakthroughGuard(): CacheBreakthroughGuard | null {
+    return this.guard;
   }
 }
 

@@ -36,6 +36,10 @@ export function setupDependencyInjection(): void {
   const { ConnectionPoolFactory } = require('./factories/connection-pool.factory');
   registerSingleton(DI_TOKENS.ConnectionPoolFactory, ConnectionPoolFactory);
 
+  // 注册 CacheBreakthroughGuard（必须在 MultiLevelCache 之前）
+  const { CacheBreakthroughGuard } = require('@/lib/cache/cache-breakthrough-guard');
+  registerSingleton(DI_TOKENS.CacheBreakthroughGuard, CacheBreakthroughGuard);
+
   // 注册 MultiLevelCache
   const { MultiLevelCache } = require('@/lib/cache/multi-level-cache');
   registerSingleton(DI_TOKENS.MultiLevelCache, MultiLevelCache);
@@ -91,6 +95,24 @@ export function setupDependencyInjection(): void {
   // 注册 DeepseekClient
   const { createDeepseekClient } = require('./factories/deepseek.factory');
   registerSingleton(DI_TOKENS.DeepseekClient, undefined, () => createDeepseekClient());
+
+  // 注册 PromptCacheManager
+  const { PromptCacheManager } = require('@/lib/ai/prompt-cache-manager');
+  registerSingleton(DI_TOKENS.PromptCacheManager, PromptCacheManager);
+
+  // 初始化 PromptCacheManager
+  const promptCacheManager = container.resolve<any>(DI_TOKENS.PromptCacheManager);
+  promptCacheManager.initialize().catch((error: any) => {
+    console.error('[DI] PromptCacheManager initialization failed:', error);
+  });
+
+  // 注册 AICostTracker
+  const { AICostTracker } = require('@/lib/ai/ai-cost-tracker');
+  registerSingleton(DI_TOKENS.AICostTracker, AICostTracker);
+
+  // 注册 SmartBatchProcessor
+  const { SmartBatchProcessor } = require('@/lib/ai/smart-batch-processor');
+  registerSingleton(DI_TOKENS.SmartBatchProcessor, SmartBatchProcessor);
 
   // 注册 BatchProcessor
   const { BatchProcessor } = require('@/lib/ai/batch-processor');
@@ -212,7 +234,7 @@ export function setupDependencyInjection(): void {
   registerSingleton(DI_TOKENS.RelationshipOrchestrator, RelationshipOrchestrator);
 
   console.log('[DI] Dependency injection setup completed');
-  console.log('[DI] Phase 2.1 services registered: ConnectionPoolFactory, MultiLevelCache, ConnectionManager, QueryCacheManager, CacheInvalidationService, SemanticCacheManager, SemanticCacheStats');
+  console.log('[DI] Phase 2.1 services registered: ConnectionPoolFactory, CacheBreakthroughGuard, MultiLevelCache, ConnectionManager, QueryCacheManager, CacheInvalidationService, SemanticCacheManager, SemanticCacheStats');
   console.log('[DI] Phase 2.2 services registered: DeepseekClient, BatchProcessor, RuleBasedAnnotator, SemanticAnnotator, MetadataRepository, MetadataRetriever, MetadataSyncService');
   console.log('[DI] Phase 2.3 services registered: ResultFormatter, TimeParser, EntityResolver, CrossDatabaseHandler, IntentRecognizer, SQLGenerator, QueryExecutor');
   console.log('[DI] Phase 3 orchestrators registered: MetadataOrchestrator, QueryOrchestrator, AuditOrchestrator, DataSourceOrchestrator, CacheOrchestrator');

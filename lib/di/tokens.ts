@@ -23,6 +23,7 @@ export const DI_TOKENS = {
   WarmupMonitor: Symbol.for('WarmupMonitor'),
   SemanticCacheManager: Symbol.for('SemanticCacheManager'),
   SemanticCacheStats: Symbol.for('SemanticCacheStats'),
+  CacheBreakthroughGuard: Symbol.for('CacheBreakthroughGuard'),
 
   // AI 服务
   DeepseekClient: Symbol.for('DeepseekClient'),
@@ -31,6 +32,9 @@ export const DI_TOKENS = {
   PriorityProcessor: Symbol.for('PriorityProcessor'),
   RuleBasedAnnotator: Symbol.for('RuleBasedAnnotator'),
   ErrorLogger: Symbol.for('ErrorLogger'),
+  PromptCacheManager: Symbol.for('PromptCacheManager'),
+  AICostTracker: Symbol.for('AICostTracker'),
+  SmartBatchProcessor: Symbol.for('SmartBatchProcessor'),
 
   // 元数据管理
   MetadataRepository: Symbol.for('MetadataRepository'),

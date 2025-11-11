@@ -272,26 +272,105 @@ export class MetadataOrchestrator {
   }
 
   /**
-   * 预热元数据缓存
+   * 预热元数据缓存（懒加载优化：增强版）
    *
    * 为常用的数据库和表预加载元数据到缓存
    *
    * @param dataSourceId - 数据源 ID
    * @param databases - 要预热的数据库列表
+   * @param commonTableNames - 常用表名列表（用于预热搜索缓存）
    */
-  async warmupCache(dataSourceId: number, databases?: string[]): Promise<void> {
+  async warmupCache(
+    dataSourceId: number,
+    databases?: string[],
+    commonTableNames?: string[]
+  ): Promise<void> {
     try {
       console.log(`[MetadataOrchestrator] Warming up metadata cache for data source ${dataSourceId}`);
 
-      // 获取元数据并加载到缓存
+      // 1. 预热基础元数据
       const metadata = await this.repository.getMetadata(dataSourceId, databases);
+      console.log(`[MetadataOrchestrator] Base cache warmed up with ${metadata.length} items`);
 
-      console.log(`[MetadataOrchestrator] Cache warmed up with ${metadata.length} items`);
+      // 2. 预热常用表的搜索缓存
+      if (commonTableNames && commonTableNames.length > 0) {
+        console.log(`[MetadataOrchestrator] Warming up search cache for ${commonTableNames.length} common tables`);
+
+        for (const tableName of commonTableNames) {
+          try {
+            // 触发搜索以填充缓存
+            await this.retriever.searchColumns(tableName, undefined, { limit: 5 });
+          } catch (error) {
+            // 忽略单个表的预热失败
+            console.warn(`[MetadataOrchestrator] Failed to warmup table: ${tableName}`);
+          }
+        }
+      }
+
+      // 3. 预热最常用的表（基于查询频率）
+      try {
+        const topTables = await this.repository.getTopQueriedTables(dataSourceId, 20);
+        if (topTables && topTables.length > 0) {
+          console.log(`[MetadataOrchestrator] Warming up ${topTables.length} frequently queried tables`);
+
+          for (const table of topTables) {
+            try {
+              await this.retriever.getTableDetails(table.id);
+            } catch (error) {
+              console.warn(`[MetadataOrchestrator] Failed to warmup table: ${table.tableName}`);
+            }
+          }
+        }
+      } catch (error) {
+        // getTopQueriedTables 可能未实现，忽略错误
+        console.warn(`[MetadataOrchestrator] Top queried tables not available`);
+      }
+
+      console.log(`[MetadataOrchestrator] Cache warmup completed successfully`);
 
     } catch (error) {
       console.error(`[MetadataOrchestrator] Cache warmup failed:`, error);
       // 不抛出错误，预热失败不应影响正常流程
     }
+  }
+
+  /**
+   * 设置定时缓存预热任务（懒加载优化：新增）
+   *
+   * 定期预热元数据缓存以保持热数据的高命中率
+   *
+   * @param dataSourceId - 数据源 ID
+   * @param intervalMinutes - 预热间隔（分钟），默认60分钟
+   * @returns 清理函数（用于停止定时任务）
+   */
+  setupCacheWarmupSchedule(
+    dataSourceId: number,
+    intervalMinutes: number = 60
+  ): () => void {
+    console.log(
+      `[MetadataOrchestrator] Setting up cache warmup schedule for data source ${dataSourceId} ` +
+      `(interval: ${intervalMinutes} minutes)`
+    );
+
+    const intervalMs = intervalMinutes * 60 * 1000;
+
+    // 立即执行一次预热
+    this.warmupCache(dataSourceId).catch(error => {
+      console.error(`[MetadataOrchestrator] Initial cache warmup failed:`, error);
+    });
+
+    // 设置定时任务
+    const timer = setInterval(() => {
+      this.warmupCache(dataSourceId).catch(error => {
+        console.error(`[MetadataOrchestrator] Scheduled cache warmup failed:`, error);
+      });
+    }, intervalMs);
+
+    // 返回清理函数
+    return () => {
+      console.log(`[MetadataOrchestrator] Stopping cache warmup schedule for data source ${dataSourceId}`);
+      clearInterval(timer);
+    };
   }
 
   /**

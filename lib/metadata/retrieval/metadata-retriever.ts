@@ -56,8 +56,9 @@ export class MetadataRetriever {
     const context = await this.contextBuilder.buildMetadataContext(
       tables.map(r => r.table),
       {
-        includeSampleData: options.includeSampleData,
-        includeIndexes: options.includeIndexes,
+        // 默认禁用示例数据加载以减少数据库查询（懒加载优化）
+        includeSampleData: options.includeSampleData ?? false,
+        includeIndexes: options.includeIndexes ?? false,
       }
     );
 
@@ -80,23 +81,43 @@ export class MetadataRetriever {
     const searchResults = [];
     let hasExactMatch = false;
 
-    // 1. 基于表名提示搜索
+    // 1. 基于表名提示搜索（懒加载优化：使用批量搜索）
     if (intent.entities.tables && intent.entities.tables.length > 0) {
-      for (const tableHint of intent.entities.tables) {
+      // 如果有多个表提示，使用批量搜索以减少数据库查询次数
+      if (intent.entities.tables.length > 1) {
+        const batchResults = await this.semanticSearch.searchTablesInBatch(
+          intent.entities.tables,
+          {
+            limit: 5,
+            threshold: 0.3,
+          }
+        );
+
+        // 处理批量搜索结果
+        for (const [tableHint, results] of batchResults) {
+          const exactMatches = results.filter(r => r.score >= 0.95);
+          if (exactMatches.length > 0) {
+            hasExactMatch = true;
+            console.log(`找到精确匹配的表: ${exactMatches.map(r => r.table.tableName).join(', ')}`);
+            searchResults.push(...exactMatches);
+          } else {
+            searchResults.push(...results);
+          }
+        }
+      } else {
+        // 单个表提示，使用常规搜索（可以利用缓存）
+        const tableHint = intent.entities.tables[0];
         const results = await this.semanticSearch.searchTables(tableHint, {
           limit: 5,
           threshold: 0.3,
         });
 
-        // 检查是否有精确匹配（分数接近1.0）
         const exactMatches = results.filter(r => r.score >= 0.95);
         if (exactMatches.length > 0) {
           hasExactMatch = true;
           console.log(`找到精确匹配的表: ${exactMatches.map(r => r.table.tableName).join(', ')}`);
-          // 只使用精确匹配的表，忽略其他相似的表
           searchResults.push(...exactMatches);
         } else {
-          // 没有精确匹配，使用所有搜索结果
           searchResults.push(...results);
         }
       }
