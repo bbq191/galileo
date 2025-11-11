@@ -351,6 +351,273 @@ export class AuditLogger {
   }
 
   /**
+   * 获取热门查询（用于缓存预热）
+   */
+  async getHotQueries(
+    topN: number = 20,
+    options: {
+      startDate?: Date;
+      endDate?: Date;
+      minCount?: number;
+    } = {}
+  ): Promise<import('./types').PopularQuery[]> {
+    const where: any = {
+      executionSuccess: true, // 只统计成功的查询
+    };
+
+    if (options.startDate || options.endDate) {
+      where.timestamp = {};
+      if (options.startDate) {
+        where.timestamp.gte = options.startDate;
+      }
+      if (options.endDate) {
+        where.timestamp.lte = options.endDate;
+      }
+    }
+
+    // 按自然语言查询分组，统计频率
+    const grouped = await this.prisma.queryAuditLog.groupBy({
+      by: ['naturalLanguageQuery'],
+      where,
+      _count: {
+        naturalLanguageQuery: true,
+      },
+      _avg: {
+        executionTime: true,
+      },
+      _max: {
+        timestamp: true,
+      },
+      orderBy: {
+        _count: {
+          naturalLanguageQuery: 'desc',
+        },
+      },
+      take: topN,
+    });
+
+    // 过滤掉低频查询
+    const minCount = options.minCount || 2;
+    const filtered = grouped.filter((item) => item._count.naturalLanguageQuery >= minCount);
+
+    // 计算成功率
+    const results: import('./types').PopularQuery[] = [];
+    for (const item of filtered) {
+      const totalCount = await this.prisma.queryAuditLog.count({
+        where: {
+          naturalLanguageQuery: item.naturalLanguageQuery,
+        },
+      });
+
+      const successCount = item._count.naturalLanguageQuery;
+
+      results.push({
+        naturalLanguageQuery: item.naturalLanguageQuery,
+        count: totalCount,
+        avgExecutionTime: item._avg.executionTime || 0,
+        successRate: totalCount > 0 ? successCount / totalCount : 0,
+        lastUsed: item._max.timestamp || new Date(),
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * 获取热表统计（用于缓存预热）
+   */
+  async getHotTables(
+    topN: number = 50,
+    options: {
+      startDate?: Date;
+      endDate?: Date;
+      minCount?: number;
+    } = {}
+  ): Promise<import('./types').TableUsageStats[]> {
+    const where: any = {
+      executionSuccess: true,
+    };
+
+    if (options.startDate || options.endDate) {
+      where.timestamp = {};
+      if (options.startDate) {
+        where.timestamp.gte = options.startDate;
+      }
+      if (options.endDate) {
+        where.timestamp.lte = options.endDate;
+      }
+    }
+
+    // 获取所有成功的查询日志
+    const logs = await this.prisma.queryAuditLog.findMany({
+      where,
+      select: {
+        usedTables: true,
+        executionTime: true,
+      },
+    });
+
+    // 统计每张表的访问次数
+    const tableStats = new Map<string, { count: number; totalTime: number; successCount: number }>();
+
+    for (const log of logs) {
+      try {
+        const tables = JSON.parse(log.usedTables) as string[];
+        for (const tableName of tables) {
+          if (!tableName) continue;
+
+          const stats = tableStats.get(tableName) || { count: 0, totalTime: 0, successCount: 0 };
+          stats.count++;
+          stats.totalTime += log.executionTime;
+          stats.successCount++;
+          tableStats.set(tableName, stats);
+        }
+      } catch (error) {
+        // 忽略解析错误
+      }
+    }
+
+    // 转换为结果数组并排序
+    const results: import('./types').TableUsageStats[] = [];
+    for (const [tableName, stats] of Array.from(tableStats.entries())) {
+      if (stats.count < (options.minCount || 2)) continue;
+
+      // 解析表名（格式：database.table 或 table）
+      const parts = tableName.split('.');
+      const databaseName = parts.length > 1 ? parts[0] : '';
+      const tableNameOnly = parts.length > 1 ? parts[1] : parts[0];
+
+      results.push({
+        tableName: tableNameOnly,
+        databaseName: databaseName,
+        queryCount: stats.count,
+        avgExecutionTime: stats.totalTime / stats.count,
+        successRate: 1.0, // 已经只统计成功的查询
+      });
+    }
+
+    // 按访问次数排序并取 topN
+    results.sort((a, b) => b.queryCount - a.queryCount);
+    return results.slice(0, topN);
+  }
+
+  /**
+   * 获取表访问统计（带数据库名）
+   */
+  async getTableAccessStats(
+    options: {
+      startDate?: Date;
+      endDate?: Date;
+      databaseName?: string;
+    } = {}
+  ): Promise<
+    Array<{
+      tableName: string;
+      databaseName: string;
+      accessCount: number;
+      avgExecutionTime: number;
+      lastAccessTime: Date;
+    }>
+  > {
+    const where: any = {
+      executionSuccess: true,
+    };
+
+    if (options.startDate || options.endDate) {
+      where.timestamp = {};
+      if (options.startDate) {
+        where.timestamp.gte = options.startDate;
+      }
+      if (options.endDate) {
+        where.timestamp.lte = options.endDate;
+      }
+    }
+
+    const logs = await this.prisma.queryAuditLog.findMany({
+      where,
+      select: {
+        usedTables: true,
+        usedDatabases: true,
+        executionTime: true,
+        timestamp: true,
+      },
+      orderBy: { timestamp: 'desc' },
+    });
+
+    // 统计表访问信息
+    const tableAccessMap = new Map<
+      string,
+      {
+        accessCount: number;
+        totalTime: number;
+        lastAccessTime: Date;
+        databaseName: string;
+      }
+    >();
+
+    for (const log of logs) {
+      try {
+        const tables = JSON.parse(log.usedTables) as string[];
+        const databases = JSON.parse(log.usedDatabases) as string[];
+        const dbName = databases[0] || '';
+
+        // 如果指定了数据库名，过滤
+        if (options.databaseName && dbName !== options.databaseName) {
+          continue;
+        }
+
+        for (const tableName of tables) {
+          if (!tableName) continue;
+
+          const key = `${dbName}.${tableName}`;
+          const stats = tableAccessMap.get(key) || {
+            accessCount: 0,
+            totalTime: 0,
+            lastAccessTime: log.timestamp,
+            databaseName: dbName,
+          };
+
+          stats.accessCount++;
+          stats.totalTime += log.executionTime;
+          if (log.timestamp > stats.lastAccessTime) {
+            stats.lastAccessTime = log.timestamp;
+          }
+
+          tableAccessMap.set(key, stats);
+        }
+      } catch (error) {
+        // 忽略解析错误
+      }
+    }
+
+    // 转换为结果数组
+    const results: Array<{
+      tableName: string;
+      databaseName: string;
+      accessCount: number;
+      avgExecutionTime: number;
+      lastAccessTime: Date;
+    }> = [];
+
+    for (const [key, stats] of Array.from(tableAccessMap.entries())) {
+      const parts = key.split('.');
+      const tableName = parts[1] || parts[0];
+
+      results.push({
+        tableName,
+        databaseName: stats.databaseName,
+        accessCount: stats.accessCount,
+        avgExecutionTime: stats.totalTime / stats.accessCount,
+        lastAccessTime: stats.lastAccessTime,
+      });
+    }
+
+    // 按访问次数排序
+    results.sort((a, b) => b.accessCount - a.accessCount);
+    return results;
+  }
+
+  /**
    * 关闭数据库连接
    */
   async disconnect(): Promise<void> {

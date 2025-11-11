@@ -109,6 +109,14 @@ export const CACHE_CONFIGS: Record<string, CacheConfig> = {
     invalidateOn: ['metadata_synced', 'manual_sync'],
   },
 
+  // 语义缓存：基于向量相似度的查询意图缓存（2小时）
+  semantic_query_cache: {
+    key: 'semantic_cache:query:{id}',
+    L1: { enabled: false, ttl: 0 }, // 不用 L1（向量太占内存）
+    L2: { enabled: true, ttl: 7200 }, // 2小时 Redis
+    invalidateOn: ['metadata_synced', 'manual_sync'],
+  },
+
   // SQL 缓存：相同意图缓存生成的 SQL（1小时）
   query_sql: {
     key: 'query:sql:{intent_hash}',

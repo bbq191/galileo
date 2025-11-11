@@ -19,6 +19,10 @@ export const DI_TOKENS = {
   CacheInvalidationService: Symbol.for('CacheInvalidationService'),
   CacheWarmer: Symbol.for('CacheWarmer'),
   CacheStats: Symbol.for('CacheStats'),
+  WarmupAnalyzer: Symbol.for('WarmupAnalyzer'),
+  WarmupMonitor: Symbol.for('WarmupMonitor'),
+  SemanticCacheManager: Symbol.for('SemanticCacheManager'),
+  SemanticCacheStats: Symbol.for('SemanticCacheStats'),
 
   // AI 服务
   DeepseekClient: Symbol.for('DeepseekClient'),

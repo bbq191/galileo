@@ -12,6 +12,8 @@ import { INTENT_SYSTEM_PROMPT, buildIntentPrompt, buildDisambiguationPrompt } fr
 import { EntityResolver } from './entity-resolver';
 import { TimeParser } from './time-parser';
 import type { QueryCacheManager } from '@/lib/cache/query-cache-manager';
+import type { SemanticCacheManager } from '@/lib/cache/semantic-cache-manager';
+import type { SemanticCacheStats } from '@/lib/cache/semantic-cache-stats';
 import { DI_TOKENS } from '@/lib/di/tokens';
 
 /**
@@ -24,7 +26,9 @@ export class IntentRecognizer {
     @inject(DI_TOKENS.EntityResolver) private readonly entityResolver: EntityResolver,
     @inject(DI_TOKENS.TimeParser) private readonly timeParser: TimeParser,
     @inject(DI_TOKENS.PrismaClient) private readonly prisma: PrismaClient,
-    @inject(DI_TOKENS.QueryCacheManager) private readonly queryCacheManager: QueryCacheManager
+    @inject(DI_TOKENS.QueryCacheManager) private readonly queryCacheManager: QueryCacheManager,
+    @inject(DI_TOKENS.SemanticCacheManager) private readonly semanticCacheManager: SemanticCacheManager,
+    @inject(DI_TOKENS.SemanticCacheStats) private readonly semanticCacheStats: SemanticCacheStats
   ) {}
 
   /**
@@ -32,36 +36,71 @@ export class IntentRecognizer {
    */
   async recognize(
     naturalLanguageQuery: string,
-    options: { useCache?: boolean } = {}
+    options: { useCache?: boolean; useSemanticCache?: boolean } = {}
   ): Promise<QueryIntent> {
-    const { useCache = true } = options;
+    const { useCache = true, useSemanticCache = true } = options;
 
     console.log('开始识别用户意图:', naturalLanguageQuery);
 
-    // 1. 尝试从缓存获取意图
+    // 1. 尝试从精确缓存获取意图
     if (useCache) {
       const cachedIntent = await this.queryCacheManager.getIntent(naturalLanguageQuery);
       if (cachedIntent) {
-        console.log('意图缓存命中，直接返回');
+        console.log('✓ 精确缓存命中，直接返回');
+        this.semanticCacheStats.recordExactHit(naturalLanguageQuery);
         return cachedIntent;
       }
     }
 
-    // 2. 缓存未命中，使用 AI 进行意图识别
+    // 2. 尝试从语义缓存获取相似查询的意图
+    if (useSemanticCache) {
+      const similarResult = await this.semanticCacheManager.findSimilar(naturalLanguageQuery, {
+        threshold: 0.85, // 相似度阈值
+        limit: 1,
+      });
+
+      if (similarResult) {
+        console.log(`✓ 语义缓存命中！`);
+        console.log(`  原始查询: "${similarResult.entry.originalQuery}"`);
+        console.log(`  相似度: ${(similarResult.score * 100).toFixed(2)}%`);
+
+        // 记录语义缓存命中统计
+        this.semanticCacheStats.recordSemanticHit(
+          naturalLanguageQuery,
+          similarResult.score,
+          similarResult.entry.originalQuery
+        );
+
+        // 返回缓存的意图
+        return similarResult.entry.intent;
+      }
+    }
+
+    // 3. 所有缓存都未命中，记录统计
+    this.semanticCacheStats.recordMiss(naturalLanguageQuery);
+    console.log('✗ 缓存未命中，使用 AI 进行意图识别');
+
+    // 4. 使用 AI 进行意图识别
     const rawIntent = await this.recognizeWithAI(naturalLanguageQuery);
 
-    // 3. 实体消歧（处理多义性）
+    // 5. 实体消歧（处理多义性）
     const resolvedIntent = await this.resolveAmbiguity(rawIntent);
 
-    // 4. 解析时间表达式
+    // 6. 解析时间表达式
     const intentWithTime = await this.parseTimeExpressions(resolvedIntent);
 
-    // 5. 验证意图完整性
+    // 7. 验证意图完整性
     const validatedIntent = await this.validateIntent(intentWithTime);
 
-    // 6. 将意图写入缓存
+    // 8. 将意图写入精确缓存
     if (useCache) {
       await this.queryCacheManager.setIntent(naturalLanguageQuery, validatedIntent);
+    }
+
+    // 9. 将意图写入语义缓存
+    if (useSemanticCache) {
+      await this.semanticCacheManager.addQuery(naturalLanguageQuery, validatedIntent);
+      console.log('✓ 已将查询添加到语义缓存');
     }
 
     console.log('意图识别完成:', JSON.stringify(validatedIntent, null, 2));
@@ -122,7 +161,7 @@ export class IntentRecognizer {
 
       return tables.map(table => ({
         name: table.tableName,
-        description: table.tableSemanticDescription || table.tableComment || '',
+        description: table.semanticDescription || table.tableComment || '',
         database: table.database.databaseName,
       }));
     } catch (error) {

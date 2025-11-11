@@ -60,6 +60,32 @@ export function setupDependencyInjection(): void {
   const { CacheInvalidationService } = require('@/lib/cache/cache-invalidation');
   registerSingleton(DI_TOKENS.CacheInvalidationService, CacheInvalidationService);
 
+  // 注册 SemanticCacheStats
+  const { SemanticCacheStats } = require('@/lib/cache/semantic-cache-stats');
+  registerSingleton(DI_TOKENS.SemanticCacheStats, SemanticCacheStats);
+
+  // 注册 EmbeddingGenerator
+  const { EmbeddingGenerator } = require('@/lib/vector/embedding-generator');
+  registerSingleton(DI_TOKENS.EmbeddingGenerator, EmbeddingGenerator);
+
+  // 注册 SemanticCacheManager
+  const { SemanticCacheManager } = require('@/lib/cache/semantic-cache-manager');
+  registerSingleton(DI_TOKENS.SemanticCacheManager, SemanticCacheManager);
+
+  // 初始化 SemanticCacheManager
+  const semanticCacheManager = container.resolve<any>(DI_TOKENS.SemanticCacheManager);
+  semanticCacheManager.initialize().catch((error: any) => {
+    console.error('[DI] SemanticCacheManager initialization failed:', error);
+  });
+
+  // 注册 AuditLogger
+  const { AuditLogger } = require('@/lib/audit/audit-logger');
+  registerSingleton(DI_TOKENS.AuditLogger, AuditLogger);
+
+  // 注册 WarmupAnalyzer（依赖 AuditLogger 和 PrismaClient）
+  const { WarmupAnalyzer } = require('@/lib/cache/warmup/warmup-analyzer');
+  registerSingleton(DI_TOKENS.WarmupAnalyzer, WarmupAnalyzer);
+
   // ==================== Phase 2.2: AI 和元数据服务 ====================
 
   // 注册 DeepseekClient
@@ -186,7 +212,7 @@ export function setupDependencyInjection(): void {
   registerSingleton(DI_TOKENS.RelationshipOrchestrator, RelationshipOrchestrator);
 
   console.log('[DI] Dependency injection setup completed');
-  console.log('[DI] Phase 2.1 services registered: ConnectionPoolFactory, MultiLevelCache, ConnectionManager, QueryCacheManager, CacheInvalidationService');
+  console.log('[DI] Phase 2.1 services registered: ConnectionPoolFactory, MultiLevelCache, ConnectionManager, QueryCacheManager, CacheInvalidationService, SemanticCacheManager, SemanticCacheStats');
   console.log('[DI] Phase 2.2 services registered: DeepseekClient, BatchProcessor, RuleBasedAnnotator, SemanticAnnotator, MetadataRepository, MetadataRetriever, MetadataSyncService');
   console.log('[DI] Phase 2.3 services registered: ResultFormatter, TimeParser, EntityResolver, CrossDatabaseHandler, IntentRecognizer, SQLGenerator, QueryExecutor');
   console.log('[DI] Phase 3 orchestrators registered: MetadataOrchestrator, QueryOrchestrator, AuditOrchestrator, DataSourceOrchestrator, CacheOrchestrator');
@@ -347,6 +373,20 @@ export function getIntentRecognizer() {
  */
 export function getSQLGenerator() {
   return getService(DI_TOKENS.SQLGenerator);
+}
+
+/**
+ * 便捷方法：获取 SemanticCacheManager
+ */
+export function getSemanticCacheManager() {
+  return getService(DI_TOKENS.SemanticCacheManager);
+}
+
+/**
+ * 便捷方法：获取 SemanticCacheStats
+ */
+export function getSemanticCacheStats() {
+  return getService(DI_TOKENS.SemanticCacheStats);
 }
 
 // 自动初始化（仅在服务器端）
