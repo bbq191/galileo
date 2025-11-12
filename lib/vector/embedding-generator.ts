@@ -4,6 +4,7 @@
  */
 
 import { Vector, EmbeddingOptions, EmbeddingResult } from './types';
+import type { DeepseekClient } from '../ai/deepseek-client';
 
 /**
  * 向量嵌入生成器
@@ -12,10 +13,12 @@ import { Vector, EmbeddingOptions, EmbeddingResult } from './types';
 export class EmbeddingGenerator {
   private dimension: number;
   private model: string;
+  private deepseekClient?: DeepseekClient;
 
-  constructor(options: EmbeddingOptions = {}) {
+  constructor(options: EmbeddingOptions = {}, deepseekClient?: DeepseekClient) {
     this.dimension = 384; // 默认维度（与常见的 sentence-transformers 模型一致）
     this.model = options.model || 'simple-hash';
+    this.deepseekClient = deepseekClient;
   }
 
   /**
@@ -55,9 +58,8 @@ export class EmbeddingGenerator {
         return this.simpleHashEmbedding(cleanText);
 
       case 'ai-model':
-        // TODO: 集成 AI 模型
-        // return await this.aiModelEmbedding(cleanText);
-        return this.simpleHashEmbedding(cleanText);
+        // 使用 AI 模型生成向量
+        return await this.aiModelEmbedding(cleanText);
 
       default:
         return this.simpleHashEmbedding(cleanText);
@@ -142,31 +144,46 @@ export class EmbeddingGenerator {
   }
 
   /**
-   * AI 模型向量化（预留接口）
+   * AI 模型向量化
    *
-   * 可集成：
+   * 支持：
    * - Deepseek Embedding API
-   * - OpenAI Embeddings
-   * - 本地 sentence-transformers 模型
+   * - OpenAI Embeddings（兼容）
+   * - 其他兼容 OpenAI API 的服务
+   *
+   * @param text - 输入文本
+   * @returns 向量
    */
   private async aiModelEmbedding(text: string): Promise<Vector> {
-    // TODO: 实现 AI 模型调用
-    // 示例代码：
-    // const response = await fetch('https://api.deepseek.com/v1/embeddings', {
-    //   method: 'POST',
-    //   headers: {
-    //     'Content-Type': 'application/json',
-    //     'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
-    //   },
-    //   body: JSON.stringify({
-    //     model: 'deepseek-embedding-v1',
-    //     input: text
-    //   })
-    // });
-    // const data = await response.json();
-    // return data.data[0].embedding;
+    if (!this.deepseekClient) {
+      throw new Error(
+        'AI 模型向量化需要配置 DeepseekClient。请在创建 EmbeddingGenerator 时传入 deepseekClient 参数。'
+      );
+    }
 
-    throw new Error('AI model embedding not implemented yet');
+    try {
+      // 调用 Deepseek Embedding API
+      const response = await this.deepseekClient.embeddings(text);
+
+      // 提取第一个结果的向量
+      if (response.data.length === 0) {
+        throw new Error('Embedding API 返回空结果');
+      }
+
+      const embedding = response.data[0].embedding;
+
+      // 更新维度（首次调用时）
+      if (this.dimension !== embedding.length) {
+        console.log(`向量维度已更新：${this.dimension} → ${embedding.length}`);
+        this.dimension = embedding.length;
+      }
+
+      return embedding;
+    } catch (error) {
+      // 如果 AI 模型调用失败，降级为简单哈希
+      console.warn('AI 模型向量化失败，降级使用简单哈希算法:', error);
+      return this.simpleHashEmbedding(text);
+    }
   }
 
   /**

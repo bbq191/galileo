@@ -22,6 +22,7 @@ import type {
 } from './types';
 import { ExecutorError as ExecutorErrorClass } from './types';
 import { DI_TOKENS } from '@/lib/di/tokens';
+import type { QueryStatisticsTracker } from './query-statistics-tracker';
 
 /**
  * 查询执行器类
@@ -40,7 +41,9 @@ export class QueryExecutor {
   constructor(
     @inject(DI_TOKENS.ConnectionManager) private readonly connectionManager: ConnectionManager,
     @inject(DI_TOKENS.QueryCacheManager) private readonly queryCacheManager: QueryCacheManager,
-    @inject(DI_TOKENS.ResultFormatter) private readonly resultFormatter: ResultFormatter
+    @inject(DI_TOKENS.ResultFormatter) private readonly resultFormatter: ResultFormatter,
+    @inject(DI_TOKENS.QueryStatisticsTracker)
+    private readonly statisticsTracker: QueryStatisticsTracker
   ) {}
 
   /**
@@ -57,6 +60,11 @@ export class QueryExecutor {
     // 生成查询统计 ID
     const queryId = this.generateQueryId(sql);
 
+    // 开始跟踪查询统计
+    const databases = context.tables.map((t) => t.databaseName);
+    const tables = context.tables.map((t) => t.tableName);
+    this.statisticsTracker.startTracking(queryId, sql, databases, tables);
+
     try {
       // 1. 检查缓存
       if (mergedOptions.enableCache) {
@@ -64,6 +72,9 @@ export class QueryExecutor {
 
         if (cached) {
           console.log(`[QueryExecutor] 缓存命中: ${queryId}`);
+          // 标记为缓存命中
+          this.statisticsTracker.markCacheHit(queryId);
+          this.statisticsTracker.completeTracking(queryId, cached.rowCount);
           return {
             ...cached,
             executionTime: Date.now() - startTime,
@@ -136,6 +147,9 @@ export class QueryExecutor {
         `[QueryExecutor] 查询成功: ${queryId}, 返回 ${result.rowCount} 行, 耗时 ${result.executionTime}ms`
       );
 
+      // 完成查询统计跟踪（成功）
+      this.statisticsTracker.completeTracking(queryId, result.rowCount);
+
       return result;
     } catch (error: any) {
       const executionTime = Date.now() - startTime;
@@ -145,6 +159,10 @@ export class QueryExecutor {
         `[QueryExecutor] 查询失败: ${queryId}, 耗时 ${executionTime}ms`,
         normalizedError
       );
+
+      // 完成查询统计跟踪（失败）
+      const isTimeout = error.message?.includes('超时') || error.code === 'ETIMEDOUT';
+      this.statisticsTracker.failTracking(queryId, normalizedError, isTimeout);
 
       return {
         success: false,
@@ -402,8 +420,28 @@ export class QueryExecutor {
    * 获取查询统计信息
    */
   getStatistics(queryId: string): QueryStatistics | null {
-    // TODO: 实现查询统计跟踪
-    return null;
+    return this.statisticsTracker.getStatistics(queryId);
+  }
+
+  /**
+   * 获取聚合统计
+   */
+  getAggregatedStatistics() {
+    return this.statisticsTracker.getAggregatedStats();
+  }
+
+  /**
+   * 获取最慢的查询
+   */
+  getSlowestQueries(limit: number = 10) {
+    return this.statisticsTracker.getSlowestQueries(limit);
+  }
+
+  /**
+   * 获取失败的查询
+   */
+  getFailedQueries(limit: number = 10) {
+    return this.statisticsTracker.getFailedQueries(limit);
   }
 }
 

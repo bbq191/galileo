@@ -75,3 +75,42 @@ export interface DeepseekConfig {
   maxRetries?: number;
   retryDelay?: number;
 }
+
+/**
+ * Embedding 请求
+ */
+export interface EmbeddingRequest {
+  /** 模型名称 */
+  model: string;
+  /** 输入文本（单个或数组） */
+  input: string | string[];
+  /** 编码格式（可选） */
+  encoding_format?: 'float' | 'base64';
+}
+
+/**
+ * Embedding 响应
+ */
+export interface EmbeddingResponse {
+  object: 'list';
+  data: Array<{
+    object: 'embedding';
+    index: number;
+    embedding: number[];
+  }>;
+  model: string;
+  usage: {
+    prompt_tokens: number;
+    total_tokens: number;
+  };
+}
+
+/**
+ * Embedding 生成选项
+ */
+export interface EmbeddingOptions {
+  /** 模型名称（可选，默认使用配置中的 embeddingModel） */
+  model?: string;
+  /** 批处理大小 */
+  batchSize?: number;
+}

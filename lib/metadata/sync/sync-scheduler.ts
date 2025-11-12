@@ -418,10 +418,10 @@ export class SyncScheduler {
    * 解密密码
    */
   private decryptPassword(encryptedPassword: string): string {
-    // TODO: 实现密码解密逻辑
-    // 这里需要与数据源创建时的加密方法对应
-    // 暂时返回原始值（假设未加密）
-    return encryptedPassword;
+    // 使用加密工具解密密码
+    // 如果密码未加密（旧数据），会自动返回原值
+    const { decryptPassword } = require('@/lib/security/encryption');
+    return decryptPassword(encryptedPassword);
   }
 
   /**

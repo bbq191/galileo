@@ -68,11 +68,7 @@ export function setupDependencyInjection(): void {
   const { SemanticCacheStats } = require('@/lib/cache/semantic-cache-stats');
   registerSingleton(DI_TOKENS.SemanticCacheStats, SemanticCacheStats);
 
-  // 注册 EmbeddingGenerator
-  const { EmbeddingGenerator } = require('@/lib/vector/embedding-generator');
-  registerSingleton(DI_TOKENS.EmbeddingGenerator, EmbeddingGenerator);
-
-  // 注册 SemanticCacheManager
+  // 注册 SemanticCacheManager（暂不注册 EmbeddingGenerator，移到 DeepseekClient 之后）
   const { SemanticCacheManager } = require('@/lib/cache/semantic-cache-manager');
   registerSingleton(DI_TOKENS.SemanticCacheManager, SemanticCacheManager);
 
@@ -90,11 +86,63 @@ export function setupDependencyInjection(): void {
   const { WarmupAnalyzer } = require('@/lib/cache/warmup/warmup-analyzer');
   registerSingleton(DI_TOKENS.WarmupAnalyzer, WarmupAnalyzer);
 
+  // ==================== Phase 4: 统计服务 ====================
+
+  // 注册 StatisticsPersistenceService
+  const { StatisticsPersistenceService } = require('@/lib/statistics/statistics-persistence.service');
+  registerSingleton(DI_TOKENS.StatisticsPersistenceService, StatisticsPersistenceService);
+
+  // 启动持久化服务
+  const statisticsPersistence = container.resolve<any>(DI_TOKENS.StatisticsPersistenceService);
+  statisticsPersistence.start();
+
+  // 注册 StatisticsAggregationService
+  const { StatisticsAggregationService } = require('@/lib/statistics/statistics-aggregation.service');
+  registerSingleton(DI_TOKENS.StatisticsAggregationService, StatisticsAggregationService);
+
   // ==================== Phase 2.2: AI 和元数据服务 ====================
 
   // 注册 DeepseekClient
   const { createDeepseekClient } = require('./factories/deepseek.factory');
   registerSingleton(DI_TOKENS.DeepseekClient, undefined, () => createDeepseekClient());
+
+  // 注册 EmbeddingGenerator（依赖 DeepseekClient）
+  const { EmbeddingGenerator } = require('@/lib/vector/embedding-generator');
+  const { embeddingConfig } = require('@/lib/ai/config');
+  registerSingleton(DI_TOKENS.EmbeddingGenerator, undefined, () => {
+    const deepseekClient = container.resolve<any>(DI_TOKENS.DeepseekClient);
+    return new EmbeddingGenerator(
+      {
+        model: embeddingConfig.modelType,
+        batchSize: embeddingConfig.batchSize,
+      },
+      deepseekClient
+    );
+  });
+
+  // 注册 VectorSearchService（依赖 EmbeddingGenerator 和 Redis）
+  const { VectorSearchService } = require('@/lib/vector/vector-search-service');
+  registerSingleton(DI_TOKENS.VectorSearchService, undefined, () => {
+    const redis = container.resolve<any>(DI_TOKENS.RedisClient);
+    return new VectorSearchService({
+      enableRedis: !!redis,
+      redisConfig: redis
+        ? {
+            host: process.env.REDIS_HOST || 'localhost',
+            port: parseInt(process.env.REDIS_PORT || '6379'),
+            password: process.env.REDIS_PASSWORD,
+            db: parseInt(process.env.REDIS_DB || '0'),
+          }
+        : undefined,
+      dimension: embeddingConfig.dimension,
+    });
+  });
+
+  // 初始化 VectorSearchService
+  const vectorSearchService = container.resolve<any>(DI_TOKENS.VectorSearchService);
+  vectorSearchService.initialize().catch((error: any) => {
+    console.error('[DI] VectorSearchService initialization failed:', error);
+  });
 
   // 注册 PromptCacheManager
   const { PromptCacheManager } = require('@/lib/ai/prompt-cache-manager');
@@ -177,9 +225,42 @@ export function setupDependencyInjection(): void {
   const { SQLGenerator } = require('@/lib/sql/generator/sql-generator');
   registerSingleton(DI_TOKENS.SQLGenerator, SQLGenerator);
 
+  // 注册 QueryStatisticsTracker
+  const { QueryStatisticsTracker } = require('@/lib/sql/executor/query-statistics-tracker');
+  registerSingleton(DI_TOKENS.QueryStatisticsTracker, QueryStatisticsTracker);
+
   // 注册 QueryExecutor
   const { QueryExecutor } = require('@/lib/sql/executor/query-executor');
   registerSingleton(DI_TOKENS.QueryExecutor, QueryExecutor);
+
+  // 注册 SQLValidator
+  const { SQLValidator } = require('@/lib/sql/validator/sql-validator');
+  registerSingleton(DI_TOKENS.SQLValidator, SQLValidator);
+
+  // 注册 SQLAutoFixer
+  const { SQLAutoFixer } = require('@/lib/sql/quality/sql-auto-fixer');
+  registerSingleton(DI_TOKENS.SQLAutoFixer, SQLAutoFixer);
+
+  // ==================== Phase 2.4: SQL 生成管道 ====================
+
+  // 注册管道阶段
+  const { TemplateMatcher } = require('@/lib/sql/generator/pipeline/stages/template-matcher-stage');
+  const { PromptCacheChecker } = require('@/lib/sql/generator/pipeline/stages/prompt-cache-checker-stage');
+  const { SQLCacheChecker } = require('@/lib/sql/generator/pipeline/stages/sql-cache-checker-stage');
+  const { AIGenerator } = require('@/lib/sql/generator/pipeline/stages/ai-generator-stage');
+  const { QualityEnhancer } = require('@/lib/sql/generator/pipeline/stages/quality-enhancer-stage');
+  const { Validator } = require('@/lib/sql/generator/pipeline/stages/validator-stage');
+
+  registerSingleton(DI_TOKENS.TemplateMatcher, TemplateMatcher);
+  registerSingleton(DI_TOKENS.PromptCacheChecker, PromptCacheChecker);
+  registerSingleton(DI_TOKENS.SQLCacheChecker, SQLCacheChecker);
+  registerSingleton(DI_TOKENS.AIGenerator, AIGenerator);
+  registerSingleton(DI_TOKENS.QualityEnhancer, QualityEnhancer);
+  registerSingleton(DI_TOKENS.Validator, Validator);
+
+  // 注册主管道编排器（依赖所有阶段）
+  const { SQLGenerationPipeline } = require('@/lib/sql/generator/pipeline/sql-generation-pipeline');
+  registerSingleton(DI_TOKENS.SQLGenerationPipeline, SQLGenerationPipeline);
 
   // ==================== Phase 3: 服务编排层 ====================
 

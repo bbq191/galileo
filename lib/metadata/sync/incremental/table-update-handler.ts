@@ -17,6 +17,9 @@ import type { Connection } from 'mysql2/promise';
 import type { NewTable, DeletedTable } from '../table-diff-detector';
 import type { ChangedTable } from '../hash-based-detector';
 import { ColumnDiffAnalyzer } from './column-diff-analyzer';
+import { getService } from '@/lib/di/setup';
+import { DI_TOKENS } from '@/lib/di/tokens';
+import { semanticConfig, embeddingConfig } from '@/lib/ai/config';
 
 function getPrismaClient() {
   return prisma;
@@ -159,9 +162,23 @@ export class TableUpdateHandler {
           result.tablesAdded++;
 
           // 4. 触发 AI 标注（如果启用）
-          if (triggerAIAnnotation) {
-            // TODO: 集成语义标注器
-            // await semanticAnnotator.annotateTable(tableMeta.id);
+          if (triggerAIAnnotation && semanticConfig.enabled) {
+            try {
+              const semanticAnnotator = getService<any>(DI_TOKENS.SemanticAnnotator);
+              await semanticAnnotator.annotateTable(tableMeta.id);
+
+              // 5. 更新向量索引（如果启用）
+              if (embeddingConfig.autoUpdateIndex) {
+                const vectorSearch = getService<any>(DI_TOKENS.VectorSearchService);
+                if (vectorSearch) {
+                  await vectorSearch.upsertTableVector(tableMeta.id);
+                  console.log(`✓ 更新表 ${table.tableName} 的向量索引`);
+                }
+              }
+            } catch (error: any) {
+              console.error(`表 ${table.tableName} 语义标注失败:`, error.message);
+              // 语义标注失败不应阻止同步流程，仅记录错误
+            }
           }
         } catch (error: any) {
           console.error(`处理新增表 ${table.tableName} 失败:`, error);
@@ -328,10 +345,25 @@ export class TableUpdateHandler {
           // 8. 触发 AI 标注（如果启用，且有新增或修改的字段）
           if (
             triggerAIAnnotation &&
+            semanticConfig.enabled &&
             (columnDiff.added.length > 0 || columnDiff.modified.length > 0)
           ) {
-            // TODO: 集成语义标注器
-            // await semanticAnnotator.annotateColumns(table.tableId);
+            try {
+              const semanticAnnotator = getService<any>(DI_TOKENS.SemanticAnnotator);
+              await semanticAnnotator.annotateColumns(table.tableId);
+
+              // 9. 更新向量索引（如果启用）
+              if (embeddingConfig.autoUpdateIndex) {
+                const vectorSearch = getService<any>(DI_TOKENS.VectorSearchService);
+                if (vectorSearch) {
+                  await vectorSearch.upsertTableVector(table.tableId);
+                  console.log(`✓ 更新表 ${table.tableName} 的向量索引`);
+                }
+              }
+            } catch (error: any) {
+              console.error(`表 ${table.tableName} 字段语义标注失败:`, error.message);
+              // 语义标注失败不应阻止同步流程，仅记录错误
+            }
           }
         } catch (error: any) {
           console.error(`处理变更表 ${table.tableName} 失败:`, error);

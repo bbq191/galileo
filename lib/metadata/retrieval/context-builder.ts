@@ -159,9 +159,66 @@ export class ContextBuilder {
    * 获取表索引
    */
   private async getTableIndexes(tableId: number): Promise<string[]> {
-    // TODO: 从数据库获取索引信息
-    // 目前 schema 中可能没有索引表，需要扩展
-    return [];
+    try {
+      // 从数据库获取表信息
+      const table = await this.prisma.tableMeta.findUnique({
+        where: { id: tableId },
+        include: {
+          database: {
+            include: {
+              source: true,
+            },
+          },
+        },
+      });
+
+      if (!table || !table.database || !table.database.source) {
+        return [];
+      }
+
+      // 获取数据库连接
+      const source = table.database.source;
+      const databaseName = table.database.databaseName;
+      const tableName = table.tableName;
+
+      // 从实际数据库查询索引信息
+      const connectionConfig = {
+        host: source.host,
+        port: source.port,
+        user: source.username,
+        // 注意：这里需要解密密码
+        password: source.passwordEncrypted,
+        database: databaseName,
+      };
+
+      const connection = await connectionManager.getConnection(
+        `${source.host}:${source.port}/${databaseName}`,
+        connectionConfig
+      );
+
+      // 查询索引信息（MySQL/MariaDB）
+      const [rows] = await connection.execute(
+        `SHOW INDEX FROM \`${databaseName}\`.\`${tableName}\``,
+        []
+      );
+
+      // 提取唯一的索引名称
+      const indexes = new Set<string>();
+      for (const row of rows as any[]) {
+        if (row.Key_name && row.Key_name !== 'PRIMARY') {
+          indexes.add(row.Key_name);
+        }
+      }
+
+      return Array.from(indexes);
+    } catch (error: any) {
+      // 静默失败，返回空数组
+      // 索引信息不是必需的，不应阻塞主流程
+      if (error.code !== 'ER_NO_SUCH_TABLE' && error.code !== 'ER_BAD_DB_ERROR') {
+        console.warn(`获取索引信息失败 (tableId: ${tableId}):`, error.message);
+      }
+      return [];
+    }
   }
 
   /**

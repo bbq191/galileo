@@ -16,6 +16,26 @@ import type { QueryOrchestrator } from '@/lib/di/orchestrators/query.orchestrato
 import { schemas } from '@/lib/validation/schemas';
 import { validateOrRespond } from '@/lib/validation/validator';
 import { sanitizeError, ErrorCategory } from '@/lib/security/error-sanitizer';
+import { extractColumnsFromSQL } from '@/lib/sql/parser/column-extractor';
+
+/**
+ * 从 SQL 提取使用的列名
+ */
+async function extractUsedColumns(sql: string): Promise<string[]> {
+  try {
+    const columns = extractColumnsFromSQL(sql);
+    return columns.map(c => {
+      const parts = [];
+      if (c.database) parts.push(c.database);
+      if (c.table) parts.push(c.table);
+      parts.push(c.column);
+      return parts.join('.');
+    });
+  } catch (error) {
+    console.warn('[extractUsedColumns] 提取失败:', error);
+    return [];
+  }
+}
 
 export interface ExecuteQueryRequest {
   query: string;  // 自然语言查询
@@ -107,12 +127,12 @@ export async function POST(request: NextRequest) {
         metadata: {
           usedDatabases: result.metadata.usedDatabases || [],
           usedTables: result.metadata.usedTables || [],
-          usedColumns: [], // TODO: Extract from SQL or metadata
+          usedColumns: result.metadata.usedColumns || (await extractUsedColumns(result.metadata.generatedSQL)),
         },
         performance: {
           intentRecognitionTime: result.performance.intentRecognitionTime,
           sqlGenerationTime: result.performance.sqlGenerationTime,
-          validationTime: 0, // TODO: Add validation timing if available
+          validationTime: result.performance.validationTime || 0,
           executionTime: result.performance.queryExecutionTime,
           totalTime: result.performance.totalTime,
         },

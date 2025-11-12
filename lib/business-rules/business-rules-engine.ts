@@ -4,7 +4,9 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { Redis } from 'ioredis';
 import prisma from '@/lib/prisma/client';
+import { getRedisClient } from '@/lib/cache/redis-client';
 import { QueryIntent } from '@/lib/nlp/types';
 import { MetadataContext } from '@/lib/metadata/retrieval/types';
 
@@ -13,12 +15,14 @@ import { MetadataContext } from '@/lib/metadata/retrieval/types';
  */
 export interface BusinessTermMatch {
   term: string;
+  category: string;
   targetType: string;
   targetTable?: string;
   targetColumn?: string;
   targetValue?: any;
   confidence: number;
   priority: number;
+  semanticDescription?: string;
 }
 
 /**
@@ -30,6 +34,7 @@ export interface ShardingPatternMatch {
   tableList: string[];
   mergeStrategy: string;
   shardKeyColumn?: string;
+  shardAlgorithm?: string;
   semanticDescription?: string;
 }
 
@@ -38,11 +43,38 @@ export interface ShardingPatternMatch {
  */
 export interface QueryTemplateMatch {
   name: string;
-  naturalLanguage: string;
-  expectedSQL: string;
   category: string;
+  naturalLanguagePattern: string;
+  sqlTemplate: string;
+  parameters: any;
   similarity: number;
-  businessContext?: string;
+  semanticDescription?: string;
+  examples?: string[];
+}
+
+/**
+ * 过滤规则结果
+ */
+export interface FilterRule {
+  name: string;
+  targetTable: string;
+  filterCondition: string;
+  autoApply: boolean;
+  priority: number;
+  semanticKeywords?: string[];
+}
+
+/**
+ * 聚合规则结果
+ */
+export interface AggregationRuleResult {
+  name: string;
+  metricName: string;
+  sourceTable: string;
+  sourceColumn: string;
+  aggregationFunction: string;
+  unit?: string;
+  semanticDescription?: string;
 }
 
 /**
@@ -50,92 +82,131 @@ export interface QueryTemplateMatch {
  */
 export class BusinessRulesEngine {
   private prisma: PrismaClient;
+  private redis: Redis;
 
   constructor() {
     this.prisma = prisma;
+    this.redis = getRedisClient();
   }
 
   /**
    * 匹配业务术语
    * 从自然语言查询中识别业务术语并映射到数据库实体
+   *
+   * 实现说明：
+   * 1. 使用 Redis 缓存提高性能
+   * 2. 从数据库读取真实数据
+   * 3. 按优先级和置信度排序
+   * 4. 更新使用统计
+   * 5. 错误降级策略
    */
   async matchBusinessTerms(naturalLanguageQuery: string): Promise<BusinessTermMatch[]> {
     console.log('[BusinessRulesEngine] 匹配业务术语:', naturalLanguageQuery);
 
-    // TODO: 需要在主schema中添加这些表后才能使用
-    // 暂时返回空数组
-    const matches: BusinessTermMatch[] = [];
-
     try {
-      // 查询所有启用的业务术语
-      // const terms = await this.prisma.businessTermMapping.findMany({
-      //   where: { isEnabled: true },
-      //   orderBy: [
-      //     { priority: 'asc' },
-      //     { confidence: 'desc' }
-      //   ]
-      // });
+      // Level 1: 检查 Redis 缓存
+      const cacheKey = `business_term:${naturalLanguageQuery}`;
+      const cached = await this.redis.get(cacheKey);
 
-      // 模拟数据（实际应该从数据库读取）
-      const mockTerms = [
-        {
-          term: '寿险',
-          category: 'domain',
-          targetType: 'condition',
-          targetTable: 'tb_live_all_room',
-          targetValue: {
-            type: 'subquery',
-            condition: "orgId IN (SELECT dept_id FROM openser.live_temporary_dept WHERE top_name = '中国人民人寿保险股份有限公司')"
-          },
-          priority: 1,
-          confidence: 0.95
+      if (cached) {
+        console.log('[BusinessRulesEngine] 业务术语匹配 - Redis 缓存命中');
+        return JSON.parse(cached);
+      }
+
+      // Level 2: 从数据库查询所有启用的业务术语
+      const allTerms = await this.prisma.businessTermMapping.findMany({
+        where: {
+          isEnabled: true
         },
-        {
-          term: '观看时长',
-          category: 'metric',
-          targetType: 'column',
-          targetTable: 'tb_live_watch_detail',
-          targetColumn: 'watch_time',
-          priority: 2,
-          confidence: 0.90
-        }
-      ];
+        orderBy: [
+          { priority: 'asc' },
+          { confidence: 'desc' }
+        ]
+      });
 
-      // 检查查询中是否包含这些术语
-      for (const term of mockTerms) {
+      // Level 3: 匹配逻辑
+      const matches: BusinessTermMatch[] = [];
+
+      for (const term of allTerms) {
+        // 精确匹配或模糊匹配
         if (naturalLanguageQuery.includes(term.term)) {
+          // 解析 targetValue（JSON 字符串）
+          let targetValue: any = {};
+          try {
+            targetValue = term.targetValue ? JSON.parse(term.targetValue) : {};
+          } catch (e) {
+            console.error(`[BusinessRulesEngine] 解析 targetValue 失败:`, e);
+          }
+
           matches.push({
             term: term.term,
+            category: term.category,
             targetType: term.targetType,
-            targetTable: term.targetTable,
-            targetColumn: term.targetColumn,
-            targetValue: term.targetValue,
-            confidence: term.confidence,
-            priority: term.priority
+            targetTable: term.targetTable || undefined,
+            targetColumn: term.targetColumn || undefined,
+            targetValue,
+            priority: term.priority,
+            confidence: term.confidence.toNumber(), // Prisma Decimal 转 number
+            semanticDescription: term.semanticDescription || undefined
           });
 
-          console.log(`[BusinessRulesEngine] 匹配到业务术语: ${term.term}`);
+          console.log(`[BusinessRulesEngine] 匹配到业务术语: ${term.term} (${term.category})`);
 
-          // 更新使用统计（实际实现时）
-          // await this.prisma.businessTermMapping.update({
-          //   where: { id: term.id },
-          //   data: {
-          //     usageCount: { increment: 1 },
-          //     lastUsedAt: new Date()
-          //   }
-          // });
+          // 更新使用统计（异步，不阻塞主流程）
+          this.updateTermUsage(term.id).catch(err => {
+            console.error('[BusinessRulesEngine] 更新使用统计失败:', err);
+          });
         }
       }
+
+      // 按优先级和置信度排序
+      matches.sort((a, b) => {
+        if (a.priority !== b.priority) {
+          return a.priority - b.priority;
+        }
+        return b.confidence - a.confidence;
+      });
+
+      // 写入 Redis 缓存（TTL: 1 小时）
+      await this.redis.set(cacheKey, JSON.stringify(matches), 'EX', 3600);
+
+      console.log(`[BusinessRulesEngine] 业务术语匹配完成，找到 ${matches.length} 个匹配项`);
+      return matches;
+
     } catch (error) {
       console.error('[BusinessRulesEngine] 业务术语匹配失败:', error);
+      // 降级：返回空数组，不阻塞 SQL 生成流程
+      return [];
     }
+  }
 
-    return matches;
+  /**
+   * 更新术语使用统计
+   * @param termId 术语 ID
+   */
+  private async updateTermUsage(termId: number): Promise<void> {
+    try {
+      await this.prisma.businessTermMapping.update({
+        where: { id: termId },
+        data: {
+          usageCount: { increment: 1 },
+          lastUsedAt: new Date()
+        }
+      });
+    } catch (error) {
+      console.error(`[BusinessRulesEngine] 更新术语使用统计失败 (ID: ${termId}):`, error);
+    }
   }
 
   /**
    * 识别分表模式
    * 检测查询是否涉及分表，并返回分表信息
+   *
+   * 实现说明：
+   * 1. 从数据库读取分表模式
+   * 2. 使用 Redis 缓存
+   * 3. 匹配意图和上下文中的表
+   * 4. 更新使用统计
    */
   async detectShardingPatterns(
     intent: QueryIntent,
@@ -146,32 +217,18 @@ export class BusinessRulesEngine {
     const matches: ShardingPatternMatch[] = [];
 
     try {
-      // 模拟数据（实际应该从数据库读取）
-      const mockPatterns = [
-        {
-          patternName: 'live_watch_detail_sharding',
-          baseTableName: 'tb_live_watch_detail',
-          suffixPattern: '_{shard:hex:2}',
-          shardCount: 256,
-          tableList: this.generateHexShardList('tb_live_watch_detail', 256),
-          mergeStrategy: 'UNION_ALL',
-          shardKeyColumn: 'live_id',
-          semanticDescription: '观看时长明细数据按照live_id进行哈希分表，共256个分表'
+      // 从数据库查询所有启用的分表模式
+      const allPatterns = await this.prisma.shardingPattern.findMany({
+        where: {
+          isEnabled: true
         },
-        {
-          patternName: 'live_stat_total_sharding',
-          baseTableName: 'tb_live_stat_total',
-          suffixPattern: '_{shard:hex:1}',
-          shardCount: 16,
-          tableList: this.generateHexShardList('tb_live_stat_total', 16),
-          mergeStrategy: 'UNION_ALL',
-          shardKeyColumn: 'live_id',
-          semanticDescription: '直播统计总表按照live_id进行哈希分表，共16个分表'
+        orderBy: {
+          usageCount: 'desc'
         }
-      ];
+      });
 
       // 检查意图中的表是否匹配分表模式
-      for (const pattern of mockPatterns) {
+      for (const pattern of allPatterns) {
         // 检查是否有表名匹配基表名
         const hasMatch = intent.entities.tables?.some(tableName =>
           tableName === pattern.baseTableName ||
@@ -185,28 +242,70 @@ export class BusinessRulesEngine {
         );
 
         if (hasMatch || hasContextMatch) {
+          // 解析 tableList（JSON 数组）
+          let tableList: string[] = [];
+          try {
+            tableList = pattern.tableList ? JSON.parse(pattern.tableList) : [];
+          } catch (e) {
+            console.error(`[BusinessRulesEngine] 解析 tableList 失败:`, e);
+          }
+
           matches.push({
             patternName: pattern.patternName,
             baseTableName: pattern.baseTableName,
-            tableList: pattern.tableList,
+            tableList,
             mergeStrategy: pattern.mergeStrategy,
-            shardKeyColumn: pattern.shardKeyColumn,
-            semanticDescription: pattern.semanticDescription
+            shardKeyColumn: pattern.shardKeyColumn || undefined,
+            shardAlgorithm: pattern.shardAlgorithm || undefined,
+            semanticDescription: pattern.semanticDescription || undefined
           });
 
-          console.log(`[BusinessRulesEngine] 检测到分表模式: ${pattern.patternName}`);
+          console.log(`[BusinessRulesEngine] 检测到分表模式: ${pattern.patternName} (${pattern.shardCount} 个分表)`);
+
+          // 更新使用统计（异步，不阻塞主流程）
+          this.updatePatternUsage(pattern.id).catch(err => {
+            console.error('[BusinessRulesEngine] 更新分表模式使用统计失败:', err);
+          });
         }
       }
+
+      console.log(`[BusinessRulesEngine] 分表模式检测完成，找到 ${matches.length} 个匹配项`);
+      return matches;
+
     } catch (error) {
       console.error('[BusinessRulesEngine] 分表模式检测失败:', error);
+      // 降级：返回空数组，不阻塞 SQL 生成流程
+      return [];
     }
+  }
 
-    return matches;
+  /**
+   * 更新分表模式使用统计
+   * @param patternId 模式 ID
+   */
+  private async updatePatternUsage(patternId: number): Promise<void> {
+    try {
+      await this.prisma.shardingPattern.update({
+        where: { id: patternId },
+        data: {
+          usageCount: { increment: 1 },
+          lastUsedAt: new Date()
+        }
+      });
+    } catch (error) {
+      console.error(`[BusinessRulesEngine] 更新分表模式使用统计失败 (ID: ${patternId}):`, error);
+    }
   }
 
   /**
    * 匹配相似查询模板
    * 使用 Few-shot 学习提供查询示例
+   *
+   * 实现说明：
+   * 1. 从数据库读取查询模板
+   * 2. 计算相似度（简单的关键词匹配）
+   * 3. 返回 Top K 结果
+   * 4. 更新使用统计
    */
   async matchQueryTemplates(
     naturalLanguageQuery: string,
@@ -215,72 +314,54 @@ export class BusinessRulesEngine {
   ): Promise<QueryTemplateMatch[]> {
     console.log('[BusinessRulesEngine] 匹配查询模板...');
 
-    const matches: QueryTemplateMatch[] = [];
-
     try {
-      // 模拟数据（实际应该从数据库读取并计算相似度）
-      const mockTemplates = [
-        {
-          name: 'life_insurance_watch_time_top10',
-          naturalLanguage: '寿险观看时长top10',
-          expectedSQL: `
-SELECT
-  live.userName AS 用户,
-  live.title AS 会议名称,
-  watchtime.watch_time AS 观看时长,
-  stat.viewerNum AS 观看人数
-FROM
-  (SELECT live_id, title, userName
-   FROM \`db_live\`.\`tb_live_all_room\`
-   WHERE opentime >= UNIX_TIMESTAMP('2025-05-01 00:00:00')
-     AND opentime < UNIX_TIMESTAMP('2025-06-01 00:00:00')
-     AND live_status = 0
-     AND uid NOT IN ('1463694780738129920', '1608799111031640064', ...)
-     AND orgId IN (SELECT dept_id FROM \`openser\`.\`live_temporary_dept\`
-                   WHERE top_name = '中国人民人寿保险股份有限公司')
-  ) live
-LEFT JOIN
-  (SELECT live_id, viewerNum FROM \`db_stat\`.\`tb_live_stat_total_0\`
-   UNION SELECT live_id, viewerNum FROM \`db_stat\`.\`tb_live_stat_total_1\`
-   -- ... 省略其他分表 ...
-   UNION SELECT live_id, viewerNum FROM \`db_stat\`.\`tb_live_stat_total_f\`
-  ) stat ON live.live_id = stat.live_id
-LEFT JOIN
-  (SELECT live_id, SUM(watch_time) as watch_time
-   FROM \`db_stat\`.\`tb_live_watch_detail_00\` GROUP BY live_id
-   UNION ALL
-   SELECT live_id, SUM(watch_time) as watch_time
-   FROM \`db_stat\`.\`tb_live_watch_detail_01\` GROUP BY live_id
-   -- ... 省略其他256个分表 ...
-  ) watchtime ON live.live_id = watchtime.live_id
-ORDER BY watch_time DESC
-LIMIT 10
-`.trim(),
-          category: 'top_n',
-          tags: ['分表', 'TOP10', '跨库', 'UNION_ALL', '寿险'],
-          businessContext: '统计寿险业务的观看时长排名，涉及多个分表的聚合和跨表JOIN',
-          similarity: 0
+      // 从数据库查询所有启用的查询模板
+      const allTemplates = await this.prisma.queryTemplate.findMany({
+        where: {
+          isEnabled: true
+        },
+        orderBy: {
+          usageCount: 'desc'
         }
-      ];
+      });
+
+      const matches: QueryTemplateMatch[] = [];
 
       // 计算相似度（简单的关键词匹配，实际应使用向量相似度）
-      for (const template of mockTemplates) {
+      for (const template of allTemplates) {
         const similarity = this.calculateSimilarity(
           naturalLanguageQuery,
-          template.naturalLanguage
+          template.naturalLanguagePattern
         );
 
-        if (similarity > 0.5) { // 相似度阈值
+        if (similarity > 0.3) { // 相似度阈值
+          // 解析 parameters 和 examples（JSON 字符串）
+          let parameters: any = {};
+          let examples: string[] = [];
+          try {
+            parameters = template.parameters ? JSON.parse(template.parameters) : {};
+            examples = template.examples ? JSON.parse(template.examples) : [];
+          } catch (e) {
+            console.error(`[BusinessRulesEngine] 解析模板数据失败:`, e);
+          }
+
           matches.push({
             name: template.name,
-            naturalLanguage: template.naturalLanguage,
-            expectedSQL: template.expectedSQL,
             category: template.category,
+            naturalLanguagePattern: template.naturalLanguagePattern,
+            sqlTemplate: template.sqlTemplate,
+            parameters,
             similarity,
-            businessContext: template.businessContext
+            semanticDescription: template.semanticDescription || undefined,
+            examples
           });
 
           console.log(`[BusinessRulesEngine] 匹配到查询模板: ${template.name} (相似度: ${similarity.toFixed(2)})`);
+
+          // 更新使用统计（异步，不阻塞主流程）
+          this.updateTemplateUsage(template.id).catch(err => {
+            console.error('[BusinessRulesEngine] 更新模板使用统计失败:', err);
+          });
         }
       }
 
@@ -288,126 +369,237 @@ LIMIT 10
       matches.sort((a, b) => b.similarity - a.similarity);
 
       // 返回 Top K
-      return matches.slice(0, topK);
+      const topMatches = matches.slice(0, topK);
+      console.log(`[BusinessRulesEngine] 查询模板匹配完成，返回 ${topMatches.length} 个结果`);
+
+      return topMatches;
 
     } catch (error) {
       console.error('[BusinessRulesEngine] 查询模板匹配失败:', error);
+      // 降级：返回空数组，不阻塞 SQL 生成流程
       return [];
     }
   }
 
   /**
-   * 获取适用的常用过滤规则
+   * 更新查询模板使用统计
+   * @param templateId 模板 ID
    */
-  async getApplicableFilters(
-    tables: string[]
-  ): Promise<Array<{ name: string; condition: string; autoApply: boolean }>> {
+  private async updateTemplateUsage(templateId: number): Promise<void> {
+    try {
+      await this.prisma.queryTemplate.update({
+        where: { id: templateId },
+        data: {
+          usageCount: { increment: 1 },
+          lastUsedAt: new Date()
+        }
+      });
+    } catch (error) {
+      console.error(`[BusinessRulesEngine] 更新模板使用统计失败 (ID: ${templateId}):`, error);
+    }
+  }
+
+  /**
+   * 获取适用的常用过滤规则
+   *
+   * 实现说明：
+   * 1. 从数据库读取过滤规则
+   * 2. 按优先级排序
+   * 3. 匹配目标表
+   * 4. 更新使用统计
+   */
+  async getApplicableFilters(tables: string[]): Promise<FilterRule[]> {
     console.log('[BusinessRulesEngine] 获取常用过滤规则...');
 
-    const filters: Array<{ name: string; condition: string; autoApply: boolean }> = [];
+    const filters: FilterRule[] = [];
 
     try {
-      // 模拟数据
-      const mockFilters = [
-        {
-          name: 'exclude_system_users',
-          applicableTables: ['tb_live_all_room'],
-          filterCondition: "uid NOT IN ('1463694780738129920', '1608799111031640064', '1375288699939278848', '1529446145732988928', '1584151697880076288')",
-          autoApply: true
+      // 从数据库查询所有启用的过滤规则
+      const allFilters = await this.prisma.commonFilter.findMany({
+        where: {
+          isEnabled: true
         },
-        {
-          name: 'default_time_range',
-          applicableTables: ['tb_live_all_room'],
-          filterCondition: "opentime >= UNIX_TIMESTAMP(CONCAT('{month_start}', ' 00:00:00')) AND opentime < UNIX_TIMESTAMP(CONCAT('{month_end}', ' 00:00:00'))",
-          autoApply: false
+        orderBy: {
+          priority: 'asc'
         }
-      ];
+      });
 
-      for (const filter of mockFilters) {
-        // 检查是否有表匹配
-        const applicable = filter.applicableTables.some(tableName =>
-          tables.includes(tableName)
-        );
+      for (const filter of allFilters) {
+        // 检查是否有表匹配（* 表示所有表）
+        const applicable = filter.targetTable === '*' || tables.includes(filter.targetTable);
 
         if (applicable) {
+          // 解析 semanticKeywords（JSON 数组）
+          let semanticKeywords: string[] = [];
+          try {
+            semanticKeywords = filter.semanticKeywords ? JSON.parse(filter.semanticKeywords) : [];
+          } catch (e) {
+            console.error(`[BusinessRulesEngine] 解析 semanticKeywords 失败:`, e);
+          }
+
           filters.push({
             name: filter.name,
-            condition: filter.filterCondition,
-            autoApply: filter.autoApply
+            targetTable: filter.targetTable,
+            filterCondition: filter.filterCondition,
+            autoApply: filter.autoApply,
+            priority: filter.priority,
+            semanticKeywords
           });
 
-          console.log(`[BusinessRulesEngine] 找到适用的过滤规则: ${filter.name}`);
+          console.log(`[BusinessRulesEngine] 找到适用的过滤规则: ${filter.name} (优先级: ${filter.priority}, 自动应用: ${filter.autoApply})`);
+
+          // 更新使用统计（异步，不阻塞主流程）
+          this.updateFilterUsage(filter.id).catch(err => {
+            console.error('[BusinessRulesEngine] 更新过滤规则使用统计失败:', err);
+          });
         }
       }
+
+      console.log(`[BusinessRulesEngine] 过滤规则获取完成，找到 ${filters.length} 个适用规则`);
+      return filters;
+
     } catch (error) {
       console.error('[BusinessRulesEngine] 获取过滤规则失败:', error);
+      // 降级：返回空数组，不阻塞 SQL 生成流程
+      return [];
     }
+  }
 
-    return filters;
+  /**
+   * 更新过滤规则使用统计
+   * @param filterId 过滤规则 ID
+   */
+  private async updateFilterUsage(filterId: number): Promise<void> {
+    try {
+      await this.prisma.commonFilter.update({
+        where: { id: filterId },
+        data: {
+          usageCount: { increment: 1 },
+          lastUsedAt: new Date()
+        }
+      });
+    } catch (error) {
+      console.error(`[BusinessRulesEngine] 更新过滤规则使用统计失败 (ID: ${filterId}):`, error);
+    }
   }
 
   /**
    * 获取聚合计算规则
+   *
+   * 实现说明：
+   * 1. 从数据库读取聚合规则
+   * 2. 使用 Redis 缓存
+   * 3. 按指标名称匹配
+   * 4. 更新使用统计
    */
-  async getAggregationRule(metricName: string): Promise<any> {
+  async getAggregationRule(metricName: string): Promise<AggregationRuleResult | null> {
     console.log('[BusinessRulesEngine] 获取聚合规则:', metricName);
 
     try {
-      // 模拟数据
-      const mockRules: Record<string, any> = {
-        '观看时长': {
-          sourceTable: 'tb_live_watch_detail',
-          sourceColumn: 'watch_time',
-          aggregateFunc: 'SUM',
-          unit: '秒',
-          groupByColumns: ['live_id']
-        },
-        '观看人数': {
-          sourceTable: 'tb_live_stat_total',
-          sourceColumn: 'viewerNum',
-          aggregateFunc: 'MAX',
-          unit: '人'
+      // Level 1: 检查 Redis 缓存
+      const cacheKey = `aggregation_rule:${metricName}`;
+      const cached = await this.redis.get(cacheKey);
+
+      if (cached) {
+        console.log('[BusinessRulesEngine] 聚合规则 - Redis 缓存命中');
+        return JSON.parse(cached);
+      }
+
+      // Level 2: 从数据库查询
+      const rule = await this.prisma.aggregationRule.findFirst({
+        where: {
+          metricName,
+          isEnabled: true
         }
+      });
+
+      if (!rule) {
+        console.log(`[BusinessRulesEngine] 未找到聚合规则: ${metricName}`);
+        return null;
+      }
+
+      const result: AggregationRuleResult = {
+        name: rule.name,
+        metricName: rule.metricName,
+        sourceTable: rule.sourceTable,
+        sourceColumn: rule.sourceColumn,
+        aggregationFunction: rule.aggregationFunction,
+        unit: rule.unit || undefined,
+        semanticDescription: rule.semanticDescription || undefined
       };
 
-      return mockRules[metricName] || null;
+      // 写入 Redis 缓存（TTL: 1 小时）
+      await this.redis.set(cacheKey, JSON.stringify(result), 'EX', 3600);
+
+      console.log(`[BusinessRulesEngine] 找到聚合规则: ${rule.name} (${rule.aggregationFunction})`);
+
+      // 更新使用统计（异步，不阻塞主流程）
+      this.updateAggregationUsage(rule.id).catch(err => {
+        console.error('[BusinessRulesEngine] 更新聚合规则使用统计失败:', err);
+      });
+
+      return result;
+
     } catch (error) {
       console.error('[BusinessRulesEngine] 获取聚合规则失败:', error);
+      // 降级：返回 null，不阻塞 SQL 生成流程
       return null;
     }
   }
 
   /**
-   * 生成十六进制分表列表
+   * 更新聚合规则使用统计
+   * @param ruleId 聚合规则 ID
    */
-  private generateHexShardList(baseTableName: string, count: number): string[] {
-    const list: string[] = [];
-    for (let i = 0; i < count; i++) {
-      const suffix = i.toString(16).padStart(2, '0');
-      list.push(`${baseTableName}_${suffix}`);
+  private async updateAggregationUsage(ruleId: number): Promise<void> {
+    try {
+      await this.prisma.aggregationRule.update({
+        where: { id: ruleId },
+        data: {
+          usageCount: { increment: 1 },
+          lastUsedAt: new Date()
+        }
+      });
+    } catch (error) {
+      console.error(`[BusinessRulesEngine] 更新聚合规则使用统计失败 (ID: ${ruleId}):`, error);
     }
-    return list;
   }
 
   /**
    * 计算相似度（简单实现）
    * 实际应使用向量嵌入 + 余弦相似度
+   *
+   * @param query1 查询文本 1
+   * @param query2 查询文本 2
+   * @returns 相似度分数 (0-1)
    */
   private calculateSimilarity(query1: string, query2: string): number {
     // 简单的 Jaccard 相似度
-    const words1 = new Set(query1.split(/\s+/));
-    const words2 = new Set(query2.split(/\s+/));
+    const words1 = new Set(query1.split(/[\s,，。！？、]+/));
+    const words2 = new Set(query2.split(/[\s,，。！？、]+/));
 
-    const intersection = new Set([...words1].filter(x => words2.has(x)));
-    const union = new Set([...words1, ...words2]);
+    // 计算交集
+    const words1Array = Array.from(words1);
+    const intersection = new Set(words1Array.filter(x => words2.has(x)));
+
+    // 计算并集
+    const union = new Set([...words1Array, ...Array.from(words2)]);
 
     return intersection.size / union.size;
   }
 
   /**
    * 清理资源
+   * 断开数据库连接
    */
   async cleanup(): Promise<void> {
-    await this.prisma.$disconnect();
+    console.log('[BusinessRulesEngine] 清理资源...');
+    try {
+      await this.prisma.$disconnect();
+      // Redis 客户端由全局单例管理，不在此处断开
+      console.log('[BusinessRulesEngine] 资源清理完成');
+    } catch (error) {
+      console.error('[BusinessRulesEngine] 资源清理失败:', error);
+    }
   }
 }

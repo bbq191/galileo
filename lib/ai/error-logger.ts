@@ -419,14 +419,201 @@ export class ErrorLogger {
    * 触发告警（严重错误）
    */
   private async triggerAlert(log: ErrorLog): Promise<void> {
-    // TODO: 实现告警逻辑
-    // - 发送邮件
-    // - 发送钉钉/企业微信通知
-    // - 写入告警系统
+    // 1. 控制台输出（开发环境）
     console.error('🚨🚨🚨 严重错误告警 🚨🚨🚨');
     console.error(`消息: ${log.message}`);
     console.error(`分类: ${log.category}`);
+    console.error(`级别: ${log.level}`);
     console.error(`时间: ${log.createdAt.toISOString()}`);
+    if (log.taskId) {
+      console.error(`任务ID: ${log.taskId}`);
+    }
+    if (log.context) {
+      console.error('上下文:', JSON.stringify(log.context, null, 2));
+    }
+
+    try {
+      // 2. 发送到告警系统（如果配置）
+      await this.sendToAlertSystem(log);
+
+      // 3. 发送钉钉/企业微信通知（如果配置）
+      await this.sendDingTalkNotification(log);
+
+      // 4. 发送邮件告警（如果配置）
+      await this.sendEmailAlert(log);
+
+      // 5. 记录到数据库（持久化告警记录）
+      await this.persistAlert(log);
+    } catch (alertError) {
+      // 告警系统本身失败不应该阻塞主流程
+      console.error('告警发送失败:', alertError);
+    }
+  }
+
+  /**
+   * 发送到告警系统
+   */
+  private async sendToAlertSystem(log: ErrorLog): Promise<void> {
+    // 集成第三方告警系统（如 PagerDuty, Sentry, 等）
+    const alertSystemUrl = process.env.ALERT_SYSTEM_URL;
+    if (!alertSystemUrl) {
+      return;
+    }
+
+    try {
+      await fetch(alertSystemUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          severity: log.level,
+          category: log.category,
+          message: log.message,
+          timestamp: log.createdAt.toISOString(),
+          context: log.context,
+          taskId: log.taskId,
+        }),
+      });
+    } catch (error) {
+      console.warn('发送到告警系统失败:', error);
+    }
+  }
+
+  /**
+   * 发送钉钉通知
+   */
+  private async sendDingTalkNotification(log: ErrorLog): Promise<void> {
+    const webhook = process.env.DINGTALK_WEBHOOK_URL;
+    if (!webhook) {
+      return;
+    }
+
+    try {
+      const levelEmoji = {
+        info: 'ℹ️',
+        warning: '⚠️',
+        error: '❌',
+        critical: '🚨',
+      };
+
+      const message = {
+        msgtype: 'markdown',
+        markdown: {
+          title: `${levelEmoji[log.level]} Galileo 系统告警`,
+          text: `### ${levelEmoji[log.level]} Galileo 系统告警\n\n` +
+            `**级别**: ${log.level.toUpperCase()}\n\n` +
+            `**分类**: ${log.category}\n\n` +
+            `**消息**: ${log.message}\n\n` +
+            `**时间**: ${log.createdAt.toLocaleString('zh-CN')}\n\n` +
+            (log.taskId ? `**任务ID**: ${log.taskId}\n\n` : '') +
+            (log.context ? `**上下文**: \`\`\`json\n${JSON.stringify(log.context, null, 2)}\n\`\`\`\n\n` : '') +
+            `> 请及时处理`,
+        },
+      };
+
+      await fetch(webhook, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(message),
+      });
+    } catch (error) {
+      console.warn('发送钉钉通知失败:', error);
+    }
+  }
+
+  /**
+   * 发送邮件告警
+   */
+  private async sendEmailAlert(log: ErrorLog): Promise<void> {
+    const emailService = process.env.EMAIL_SERVICE_URL;
+    const alertEmail = process.env.ALERT_EMAIL;
+
+    if (!emailService || !alertEmail) {
+      return;
+    }
+
+    try {
+      await fetch(emailService, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: alertEmail,
+          subject: `[${log.level.toUpperCase()}] Galileo 系统告警 - ${log.category}`,
+          html: this.generateEmailHTML(log),
+        }),
+      });
+    } catch (error) {
+      console.warn('发送邮件告警失败:', error);
+    }
+  }
+
+  /**
+   * 生成邮件 HTML 内容
+   */
+  private generateEmailHTML(log: ErrorLog): string {
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; }
+          .alert-box {
+            border: 2px solid #dc3545;
+            border-radius: 5px;
+            padding: 20px;
+            margin: 20px 0;
+            background-color: #f8d7da;
+          }
+          .label { font-weight: bold; }
+          .code {
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 3px;
+            overflow-x: auto;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="alert-box">
+          <h2>🚨 Galileo 系统告警</h2>
+          <p><span class="label">级别:</span> ${log.level.toUpperCase()}</p>
+          <p><span class="label">分类:</span> ${log.category}</p>
+          <p><span class="label">消息:</span> ${log.message}</p>
+          <p><span class="label">时间:</span> ${log.createdAt.toLocaleString('zh-CN')}</p>
+          ${log.taskId ? `<p><span class="label">任务ID:</span> ${log.taskId}</p>` : ''}
+          ${log.stack ? `<div class="code"><pre>${log.stack}</pre></div>` : ''}
+          ${log.context ? `<div class="code"><pre>${JSON.stringify(log.context, null, 2)}</pre></div>` : ''}
+        </div>
+      </body>
+      </html>
+    `;
+  }
+
+  /**
+   * 持久化告警记录
+   */
+  private async persistAlert(log: ErrorLog): Promise<void> {
+    try {
+      const prisma = getPrismaClient();
+
+      // 记录到专门的告警表（如果存在）或审计日志
+      // 这里简化处理，记录到审计日志
+      await prisma.auditLog.create({
+        data: {
+          action: 'SYSTEM_ALERT',
+          resource: log.category,
+          details: {
+            level: log.level,
+            message: log.message,
+            taskId: log.taskId,
+            context: log.context,
+          },
+          status: 'ERROR',
+          timestamp: log.createdAt,
+        },
+      });
+    } catch (error) {
+      console.warn('持久化告警记录失败:', error);
+    }
   }
 
   /**

@@ -58,12 +58,27 @@ export const DI_TOKENS = {
   QueryExecutor: Symbol.for('QueryExecutor'),
   ResultFormatter: Symbol.for('ResultFormatter'),
   SQLParser: Symbol.for('SQLParser'),
+  SQLAutoFixer: Symbol.for('SQLAutoFixer'),
+  QueryStatisticsTracker: Symbol.for('QueryStatisticsTracker'),
+
+  // SQL 生成管道
+  SQLGenerationPipeline: Symbol.for('SQLGenerationPipeline'),
+  TemplateMatcher: Symbol.for('TemplateMatcher'),
+  PromptCacheChecker: Symbol.for('PromptCacheChecker'),
+  SQLCacheChecker: Symbol.for('SQLCacheChecker'),
+  AIGenerator: Symbol.for('AIGenerator'),
+  QualityEnhancer: Symbol.for('QualityEnhancer'),
+  Validator: Symbol.for('Validator'),
 
   // 审计和安全
   AuditLogger: Symbol.for('AuditLogger'),
   AuditAnalyzer: Symbol.for('AuditAnalyzer'),
   RateLimiter: Symbol.for('RateLimiter'),
   ErrorSanitizer: Symbol.for('ErrorSanitizer'),
+
+  // 统计服务
+  StatisticsPersistenceService: Symbol.for('StatisticsPersistenceService'),
+  StatisticsAggregationService: Symbol.for('StatisticsAggregationService'),
 
   // 向量搜索
   EmbeddingGenerator: Symbol.for('EmbeddingGenerator'),

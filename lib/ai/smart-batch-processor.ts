@@ -328,7 +328,7 @@ export class SmartBatchProcessor {
           response.response,
           item.promptType,
           response.tokens,
-          'deepseek-r1:1.5b', // TODO: 从 client 获取
+          this.client.getModelName(), // 动态获取模型名称
           item.temperature || 0.7
         );
       }
@@ -337,7 +337,7 @@ export class SmartBatchProcessor {
       if (this.costTracker && response.tokens) {
         await this.costTracker.track({
           type: item.type,
-          model: 'deepseek-r1:1.5b', // TODO: 从 client 获取
+          model: this.client.getModelName(), // 动态获取模型名称
           cached: false,
           tokens: response.tokens,
           latency: response.latency,
@@ -360,7 +360,7 @@ export class SmartBatchProcessor {
       if (this.costTracker) {
         await this.costTracker.track({
           type: item.type,
-          model: 'deepseek-r1:1.5b',
+          model: this.client.getModelName(), // 动态获取模型名称
           cached: false,
           tokens: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
           latency,

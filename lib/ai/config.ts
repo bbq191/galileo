@@ -93,6 +93,38 @@ export const inferenceConfig = {
 };
 
 /**
+ * 向量嵌入配置
+ */
+export const embeddingConfig = {
+  /** 向量模型类型 */
+  modelType: process.env.EMBEDDING_MODEL_TYPE || 'simple-hash', // simple-hash | ai-model
+
+  /** AI 嵌入模型名称（当 modelType 为 ai-model 时使用） */
+  aiModel: process.env.EMBEDDING_AI_MODEL || 'deepseek-embedding-v1',
+
+  /** 向量维度（根据模型自动调整） */
+  dimension: parseInt(process.env.EMBEDDING_DIMENSION || '384'),
+
+  /** 相似度阈值 */
+  similarityThreshold: parseFloat(process.env.EMBEDDING_SIMILARITY_THRESHOLD || '0.85'),
+
+  /** 批处理大小 */
+  batchSize: parseInt(process.env.EMBEDDING_BATCH_SIZE || '50'),
+
+  /** 是否自动更新向量索引 */
+  autoUpdateIndex: process.env.AUTO_UPDATE_VECTOR_INDEX !== 'false',
+
+  /** 向量索引重建 Cron 表达式 */
+  indexRebuildCron: process.env.VECTOR_INDEX_REBUILD_CRON || '0 2 * * *', // 每日凌晨2点
+
+  /** 是否启用向量缓存 */
+  cacheEnabled: process.env.VECTOR_CACHE_ENABLED !== 'false',
+
+  /** 向量缓存 TTL（秒） */
+  cacheTTL: parseInt(process.env.VECTOR_CACHE_TTL || '86400'), // 24小时
+};
+
+/**
  * 导出所有配置
  */
 export const aiConfig = {
@@ -100,4 +132,5 @@ export const aiConfig = {
   batch: batchConfig,
   semantic: semanticConfig,
   inference: inferenceConfig,
+  embedding: embeddingConfig,
 };

@@ -310,3 +310,139 @@ enum SnapshotType {
   table
   column
 }
+
+// ============================================================
+// 业务规则引擎 - 数据库模型定义
+// ============================================================
+
+/// 业务术语映射表
+/// 用于将自然语言中的业务术语映射到具体的数据库表、列或条件
+model BusinessTermMapping {
+  id                   Int       @id @default(autoincrement())
+  term                 String    @db.VarChar(100)              // 业务术语，如"寿险"、"观看时长"
+  description          String?   @db.Text                       // 术语描述
+  category             String    @db.VarChar(50)               // 类别：domain(领域), metric(指标), dimension(维度), time(时间)
+  targetType           String    @db.VarChar(20)               // 目标类型：table, column, condition
+  targetTable          String?   @db.VarChar(100)              // 目标表名
+  targetColumn         String?   @db.VarChar(100)              // 目标列名
+  targetValue          String?   @db.Text                       // JSON 格式，存储具体的映射值或条件
+  priority             Int       @default(5)                    // 优先级 1-10，数字越小优先级越高
+  confidence           Decimal   @default(0.95) @db.Decimal(3, 2) // 置信度 0.0-1.0
+  semanticDescription  String?   @db.Text                       // 语义描述，用于 AI 理解
+  examples             String?   @db.Text                       // JSON 数组，示例查询
+  usageCount           Int       @default(0)                    // 使用次数统计
+  lastUsedAt           DateTime?                                // 最后使用时间
+  isEnabled            Boolean   @default(true)                 // 是否启用
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([term])
+  @@index([category])
+  @@index([targetType])
+  @@index([priority, confidence])
+  @@index([usageCount])
+  @@fulltext([term, description])
+  @@map("business_term_mappings")
+}
+
+/// 分表模式定义表
+/// 用于处理分表查询，自动展开分表
+model ShardingPattern {
+  id                   Int       @id @default(autoincrement())
+  patternName          String    @db.VarChar(100) @unique      // 模式名称
+  description          String?   @db.Text                       // 模式描述
+  baseTableName        String    @db.VarChar(100)              // 基表名称，如 tb_live_watch_detail
+  suffixPattern        String    @db.VarChar(50)               // 后缀模式，如 _{shard:hex:2}, _YYYYMM
+  shardCount           Int                                      // 分表数量
+  tableList            String    @db.Text                       // JSON 数组，完整的分表列表
+  mergeStrategy        String    @db.VarChar(20)               // 合并策略：UNION_ALL, UNION, MERGE
+  shardKeyColumn       String?   @db.VarChar(100)              // 分表键列名
+  shardAlgorithm       String?   @db.VarChar(50)               // 分表算法：CRC32, MOD, RANGE
+  semanticDescription  String?   @db.Text                       // 语义描述
+  usageCount           Int       @default(0)
+  lastUsedAt           DateTime?
+  isEnabled            Boolean   @default(true)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([baseTableName])
+  @@index([usageCount])
+  @@index([isEnabled])
+  @@map("sharding_patterns")
+}
+
+/// 查询模板表
+/// 存储常见查询模式的模板，用于快速匹配和生成 SQL
+model QueryTemplate {
+  id                     Int       @id @default(autoincrement())
+  name                   String    @db.VarChar(100) @unique    // 模板名称
+  description            String?   @db.Text                     // 模板描述
+  category               String    @db.VarChar(50)             // 类别：time_series, ranking, group_by, comparison, detail
+  naturalLanguagePattern String    @db.Text                     // 自然语言模式，如 "查询{时间范围}的{指标}{聚合方式}"
+  sqlTemplate            String    @db.Text                     // SQL 模板，包含占位符
+  parameters             String    @db.Text                     // JSON 对象，定义所需参数
+  semanticDescription    String?   @db.Text                     // 语义描述
+  examples               String?   @db.Text                     // JSON 数组，示例查询
+  vectorEmbedding        String?   @db.Text                     // JSON 数组，向量嵌入（用于相似度匹配）
+  usageCount             Int       @default(0)
+  avgExecutionTime       Float?                                 // 平均执行时间（毫秒）
+  lastUsedAt             DateTime?
+  isEnabled              Boolean   @default(true)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@index([category])
+  @@index([usageCount])
+  @@index([isEnabled])
+  @@fulltext([name, naturalLanguagePattern, semanticDescription])
+  @@map("query_templates")
+}
+
+/// 常用过滤规则表
+/// 存储常用的过滤条件，如"只查询有效数据"、"最近30天"等
+model CommonFilter {
+  id                Int       @id @default(autoincrement())
+  name              String    @db.VarChar(100) @unique        // 规则名称
+  description       String?   @db.Text                         // 规则描述
+  targetTable       String    @db.VarChar(100)                // 目标表名，* 表示所有表
+  filterCondition   String    @db.Text                         // 过滤条件 SQL 片段
+  autoApply         Boolean   @default(false)                  // 是否自动应用
+  priority          Int       @default(5)                      // 优先级 1-10
+  semanticKeywords  String?   @db.Text                         // JSON 数组，语义关键词
+  usageCount        Int       @default(0)
+  lastUsedAt        DateTime?
+  isEnabled         Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([targetTable])
+  @@index([autoApply])
+  @@index([priority])
+  @@index([isEnabled])
+  @@map("common_filters")
+}
+
+/// 聚合规则表
+/// 定义指标的聚合计算规则，如"观看时长需要求和"
+model AggregationRule {
+  id                   Int       @id @default(autoincrement())
+  name                 String    @db.VarChar(100) @unique      // 规则名称
+  metricName           String    @db.VarChar(100)              // 指标名称
+  description          String?   @db.Text                       // 规则描述
+  sourceTable          String    @db.VarChar(100)              // 源表名
+  sourceColumn         String    @db.VarChar(100)              // 源列名
+  aggregationFunction  String    @db.VarChar(50)               // 聚合函数：SUM, AVG, COUNT, COUNT_DISTINCT, MAX, MIN
+  unit                 String?   @db.VarChar(20)               // 单位，如"秒"、"人"、"个"
+  semanticDescription  String?   @db.Text                       // 语义描述
+  usageCount           Int       @default(0)
+  lastUsedAt           DateTime?
+  isEnabled            Boolean   @default(true)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([metricName])
+  @@index([sourceTable])
+  @@index([usageCount])
+  @@index([isEnabled])
+  @@map("aggregation_rules")
+}
