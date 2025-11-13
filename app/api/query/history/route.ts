@@ -62,10 +62,10 @@ export async function GET(request: NextRequest) {
       id: log.id || 0,
       naturalLanguageQuery: log.naturalLanguageQuery,
       generatedSQL: log.generatedSQL,
-      executionSuccess: log.executionSuccess,
-      rowCount: log.rowCount,
-      executionTime: log.executionTime,
-      timestamp: log.timestamp,
+      executionSuccess: log.executionResult.success,
+      rowCount: log.executionResult.rowCount,
+      executionTime: log.performance.executionTime,
+      timestamp: log.timestamp.toISOString(),
     }));
 
     console.log(`[Query History] Retrieved ${formattedData.length} history entries`);

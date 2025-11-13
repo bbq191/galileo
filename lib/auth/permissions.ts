@@ -73,6 +73,8 @@ export function getUserFromRequest(request: NextRequest): {
   id?: string;
   role: UserRole;
   permissions: Permission[];
+  username?: string;
+  email?: string;
 } {
   // 从请求头获取用户信息
   const authHeader = request.headers.get('Authorization');
@@ -88,28 +90,27 @@ export function getUserFromRequest(request: NextRequest): {
     };
   }
 
-  // 简化实现：检查 Authorization header
+  // JWT Token 验证
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.substring(7);
 
-    // TODO: 实现真实的 JWT 验证
-    // const user = verifyJWT(token);
-    // return user;
+    // 使用 JWT 验证器验证 Token
+    const { verifyToken, getPermissionsByRole } = require('./jwt-verifier');
+    const verifyResult = verifyToken(token);
 
-    // 暂时根据 token 前缀判断角色
-    if (token.startsWith('admin_')) {
+    if (verifyResult.success && verifyResult.payload) {
+      const { userId, role, username, email } = verifyResult.payload;
       return {
-        id: 'admin',
-        role: UserRole.ADMIN,
-        permissions: ROLE_PERMISSIONS[UserRole.ADMIN],
-      };
-    } else if (token.startsWith('user_')) {
-      return {
-        id: token,
-        role: UserRole.USER,
-        permissions: ROLE_PERMISSIONS[UserRole.USER],
+        id: userId,
+        role,
+        permissions: getPermissionsByRole(role),
+        username,
+        email,
       };
     }
+
+    // Token 验证失败，记录日志
+    console.warn('[Auth] JWT 验证失败:', verifyResult.error);
   }
 
   // 默认为访客权限

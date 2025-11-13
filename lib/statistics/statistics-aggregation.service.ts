@@ -175,7 +175,7 @@ export class StatisticsAggregationService {
       audit: {
         totalQueriesLogged: auditStats.totalQueries,
         successRate: auditStats.successRate,
-        averageExecutionTime: auditStats.averageExecutionTime,
+        averageExecutionTime: auditStats.avgExecutionTime,
       },
       overall: {
         healthScore,
@@ -212,21 +212,13 @@ export class StatisticsAggregationService {
       tables: q.tables,
     }));
 
-    // 2. 获取热门查询（从审计日志）
-    const hotQueriesData = await this.auditOrchestrator.getHotQueries(10);
-    const hotQueries = hotQueriesData.map((q) => ({
-      query: q.query,
-      count: q.count,
-      avgDuration: q.avgExecutionTime,
-    }));
+    // 2. 获取热门查询（暂时使用空数组，待实现）
+    // TODO: 实现 AuditOrchestrator.getHotQueries 方法
+    const hotQueries: Array<{ query: string; count: number; avgDuration: number }> = [];
 
-    // 3. 获取热门表（从审计日志）
-    const hotTablesData = await this.auditOrchestrator.getHotTables(10);
-    const hotTables = hotTablesData.map((t) => ({
-      database: t.database,
-      table: t.table,
-      accessCount: t.accessCount,
-    }));
+    // 3. 获取热门表（暂时使用空数组，待实现）
+    // TODO: 实现 AuditOrchestrator.getHotTables 方法
+    const hotTables: Array<{ database: string; table: string; accessCount: number }> = [];
 
     return {
       hotQueries,
@@ -320,25 +312,120 @@ export class StatisticsAggregationService {
   }
 
   /**
-   * 获取性能趋势数据（需要配合持久化服务）
+   * 获取性能趋势数据（从审计日志聚合）
    */
   async getPerformanceTrend(
     startDate: Date,
     endDate: Date
   ): Promise<PerformanceTrend[]> {
-    // TODO: 从持久化存储中获取历史数据
-    // 这里暂时返回当前数据作为单个数据点
-    const currentStats = this.queryStatsTracker.getAggregatedStats();
-    const cacheStats = this.queryCacheManager.getStatistics();
+    try {
+      // 从审计日志中查询指定时间范围的数据
+      const logs = await this.auditOrchestrator.getQueryHistory({
+        startDate,
+        endDate,
+        page: 1,
+        limit: 10000, // 获取足够多的数据用于聚合
+      });
 
-    return [
-      {
-        timestamp: new Date(),
-        averageDuration: currentStats.averageDuration,
-        p95Duration: currentStats.p95Duration,
-        successRate: currentStats.successRate,
-        cacheHitRate: cacheStats.hitRate,
-      },
-    ];
+      // 按天分组聚合数据
+      const dailyStats = new Map<string, {
+        totalTime: number[];
+        successCount: number;
+        totalCount: number;
+      }>();
+
+      logs.data.forEach((log) => {
+        const dateKey = new Date(log.timestamp).toISOString().split('T')[0];
+
+        if (!dailyStats.has(dateKey)) {
+          dailyStats.set(dateKey, {
+            totalTime: [],
+            successCount: 0,
+            totalCount: 0,
+          });
+        }
+
+        const stats = dailyStats.get(dateKey)!;
+
+        // 收集执行时间
+        if (log.performance.totalTime !== null) {
+          stats.totalTime.push(log.performance.totalTime);
+        }
+
+        // 统计成功率
+        stats.totalCount++;
+        if (log.executionResult.success) {
+          stats.successCount++;
+        }
+      });
+
+      // 获取当前缓存统计（用于最近的数据）
+      const currentCacheStats = this.queryCacheManager.getStatistics();
+
+      // 转换为 PerformanceTrend 数组
+      const trends: PerformanceTrend[] = [];
+
+      dailyStats.forEach((stats, dateKey) => {
+        // 计算平均响应时间
+        const averageDuration = stats.totalTime.length > 0
+          ? stats.totalTime.reduce((a, b) => a + b, 0) / stats.totalTime.length
+          : 0;
+
+        // 计算 P95 响应时间
+        const sortedTimes = stats.totalTime.sort((a, b) => a - b);
+        const p95Index = Math.floor(sortedTimes.length * 0.95);
+        const p95Duration = sortedTimes.length > 0 ? sortedTimes[p95Index] || 0 : 0;
+
+        // 计算成功率
+        const successRate = stats.totalCount > 0
+          ? (stats.successCount / stats.totalCount) * 100
+          : 0;
+
+        trends.push({
+          timestamp: new Date(dateKey),
+          averageDuration,
+          p95Duration,
+          successRate,
+          // 使用当前缓存命中率作为近似值（理想情况应该存储历史缓存数据）
+          cacheHitRate: currentCacheStats.hitRate,
+        });
+      });
+
+      // 按时间排序
+      trends.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+      // 如果没有历史数据，返回当前数据点
+      if (trends.length === 0) {
+        const currentStats = this.queryStatsTracker.getAggregatedStats();
+
+        return [
+          {
+            timestamp: new Date(),
+            averageDuration: currentStats.averageDuration,
+            p95Duration: currentStats.p95Duration,
+            successRate: currentStats.successRate,
+            cacheHitRate: currentCacheStats.hitRate,
+          },
+        ];
+      }
+
+      return trends;
+    } catch (error) {
+      console.error('[Performance Trend] 获取性能趋势失败:', error);
+
+      // 失败时返回当前数据
+      const currentStats = this.queryStatsTracker.getAggregatedStats();
+      const cacheStats = this.queryCacheManager.getStatistics();
+
+      return [
+        {
+          timestamp: new Date(),
+          averageDuration: currentStats.averageDuration,
+          p95Duration: currentStats.p95Duration,
+          successRate: currentStats.successRate,
+          cacheHitRate: cacheStats.hitRate,
+        },
+      ];
+    }
   }
 }

@@ -110,19 +110,19 @@ export function isRegistered(token: symbol): boolean {
 export function registerSingleton<T>(
   token: symbol,
   useClass?: new (...args: any[]) => T,
-  useFactory?: () => T
+  factory?: () => T
 ): void {
   const container = getContainer();
 
-  if (useFactory) {
+  if (factory) {
     // 对于工厂函数，立即调用并缓存结果
     // 这样确保工厂只被调用一次（单例模式）
-    const instance = useFactory();
+    const instance = factory();
     container.register(token, { useValue: instance });
   } else if (useClass) {
     container.registerSingleton(token, useClass);
   } else {
-    throw new Error('Either useClass or useFactory must be provided');
+    throw new Error('Either useClass or factory must be provided');
   }
 }
 

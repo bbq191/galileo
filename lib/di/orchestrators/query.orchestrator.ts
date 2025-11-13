@@ -82,6 +82,9 @@ export interface QueryResult {
 
     /** 使用的表 */
     usedTables?: string[];
+
+    /** 使用的列 */
+    usedColumns?: string[];
   };
 
   /** 性能指标 */
@@ -94,6 +97,9 @@ export interface QueryResult {
 
     /** SQL 生成耗时 */
     sqlGenerationTime: number;
+
+    /** 验证耗时 */
+    validationTime?: number;
 
     /** 查询执行耗时 */
     queryExecutionTime: number;

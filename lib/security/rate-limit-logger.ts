@@ -36,27 +36,38 @@ export async function logRateLimitViolation(data: RateLimitViolation): Promise<v
       `| IP: ${data.ip}`
     );
 
-    // TODO: 集成到现有的审计日志系统
-    // 可以扩展 AuditLog 表，添加 violationType 字段
-    // 或者创建专门的 RateLimitLog 表
-
-    // 示例：记录到审计日志（如果已有审计系统）
-    // await prisma.auditLog.create({
-    //   data: {
-    //     userId: data.identifier.startsWith('user:') ? data.identifier.slice(5) : null,
-    //     action: 'RATE_LIMIT_VIOLATION',
-    //     resource: data.endpoint,
-    //     details: {
-    //       limiterType: data.limiterType,
-    //       ip: data.ip,
-    //       userAgent: data.userAgent,
-    //     },
-    //     ipAddress: data.ip,
-    //     userAgent: data.userAgent,
-    //     timestamp: new Date(),
-    //     status: 'BLOCKED',
-    //   },
-    // });
+    // 集成到审计日志系统
+    // 将速率限制违规记录为特殊的查询审计日志
+    await prisma.queryAuditLog.create({
+      data: {
+        userId: data.identifier.startsWith('user:') ? data.identifier.slice(5) : 'anonymous',
+        userName: data.identifier.startsWith('user:') ? data.identifier.slice(5) : 'Anonymous',
+        sessionId: `rate-limit-${Date.now()}`,
+        naturalLanguageQuery: `[RATE_LIMIT_VIOLATION] ${data.endpoint}`,
+        intent: JSON.stringify({
+          type: 'RATE_LIMIT_VIOLATION',
+          limiterType: data.limiterType,
+          endpoint: data.endpoint,
+        }),
+        generatedSql: null,
+        executionSuccess: false,
+        executionError: `Rate limit exceeded for ${data.limiterType}`,
+        rowCount: null,
+        usedDatabases: JSON.stringify([]),
+        usedTables: JSON.stringify([]),
+        intentRecognitionTime: null,
+        sqlGenerationTime: null,
+        validationTime: null,
+        executionTime: null,
+        totalTime: 0,
+        ipAddress: data.ip,
+        userAgent: data.userAgent,
+        timestamp: new Date(),
+      },
+    }).catch(err => {
+      // 如果数据库记录失败，不影响速率限制的执行
+      console.error('[Rate Limit Logger] 数据库记录失败:', err);
+    });
 
     // 检测潜在的滥用行为
     await detectAbuse(data);
@@ -95,10 +106,14 @@ async function detectAbuse(data: RateLimitViolation): Promise<void> {
       `| Action: Consider blocking this IP`
     );
 
-    // TODO: 集成告警系统
-    // - 发送 Slack/Email 通知
-    // - 自动添加到 IP 黑名单
-    // - 触发安全团队响应流程
+    // 集成告警系统
+    await triggerAbuseAlert({
+      ip: data.ip,
+      violationCount: count,
+      endpoint: data.endpoint,
+      limiterType: data.limiterType,
+      userAgent: data.userAgent,
+    });
   }
 
   // 清理旧数据（防止内存泄漏）
@@ -123,14 +138,58 @@ export async function getRateLimitStats(): Promise<{
   byEndpoint: Record<string, number>;
   byIp: Record<string, number>;
 }> {
-  // TODO: 从数据库查询实际统计数据
-  // 这里提供一个简单的接口定义
+  try {
+    // 从审计日志中查询速率限制违规记录
+    const violations = await prisma.queryAuditLog.findMany({
+      where: {
+        naturalLanguageQuery: {
+          startsWith: '[RATE_LIMIT_VIOLATION]',
+        },
+      },
+      select: {
+        ipAddress: true,
+        intent: true,
+      },
+    });
 
-  return {
-    totalViolations: 0,
-    byEndpoint: {},
-    byIp: {},
-  };
+    // 统计总违规数
+    const totalViolations = violations.length;
+
+    // 按端点统计
+    const byEndpoint: Record<string, number> = {};
+    // 按 IP 统计
+    const byIp: Record<string, number> = {};
+
+    violations.forEach((v) => {
+      // 统计 IP
+      if (v.ipAddress) {
+        byIp[v.ipAddress] = (byIp[v.ipAddress] || 0) + 1;
+      }
+
+      // 统计端点
+      try {
+        const intent = JSON.parse(v.intent as string);
+        if (intent.endpoint) {
+          byEndpoint[intent.endpoint] = (byEndpoint[intent.endpoint] || 0) + 1;
+        }
+      } catch {
+        // 忽略 JSON 解析错误
+      }
+    });
+
+    return {
+      totalViolations,
+      byEndpoint,
+      byIp,
+    };
+  } catch (error) {
+    console.error('[Rate Limit Stats] 查询统计失败:', error);
+    return {
+      totalViolations: 0,
+      byEndpoint: {},
+      byIp: {},
+    };
+  }
 }
 
 /**
@@ -143,18 +202,29 @@ export async function cleanupOldViolations(daysToKeep: number = 30): Promise<voi
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
 
-    // TODO: 实现数据库清理
-    // await prisma.rateLimitLog.deleteMany({
-    //   where: {
-    //     timestamp: {
-    //       lt: cutoffDate,
-    //     },
-    //   },
-    // });
+    // 从审计日志中删除旧的速率限制违规记录
+    const result = await prisma.queryAuditLog.deleteMany({
+      where: {
+        AND: [
+          {
+            naturalLanguageQuery: {
+              startsWith: '[RATE_LIMIT_VIOLATION]',
+            },
+          },
+          {
+            timestamp: {
+              lt: cutoffDate,
+            },
+          },
+        ],
+      },
+    });
 
-    console.log(`Cleaned up rate limit violations older than ${daysToKeep} days`);
+    console.log(
+      `[Rate Limit Cleanup] 已清理 ${result.count} 条超过 ${daysToKeep} 天的速率限制违规记录`
+    );
   } catch (error) {
-    console.error('Failed to cleanup old violations:', error);
+    console.error('[Rate Limit Cleanup] 清理失败:', error);
   }
 }
 
@@ -173,14 +243,192 @@ export async function generateRateLimitReport(
   topEndpoints: Array<{ endpoint: string; count: number }>;
   timeline: Array<{ date: Date; count: number }>;
 }> {
-  // TODO: 实现报告生成逻辑
-  return {
-    period: { start: startDate, end: endDate },
-    totalViolations: 0,
-    topOffenders: [],
-    topEndpoints: [],
-    timeline: [],
-  };
+  try {
+    // 查询指定时间范围内的速率限制违规记录
+    const violations = await prisma.queryAuditLog.findMany({
+      where: {
+        AND: [
+          {
+            naturalLanguageQuery: {
+              startsWith: '[RATE_LIMIT_VIOLATION]',
+            },
+          },
+          {
+            timestamp: {
+              gte: startDate,
+              lte: endDate,
+            },
+          },
+        ],
+      },
+      select: {
+        ipAddress: true,
+        intent: true,
+        timestamp: true,
+      },
+      orderBy: {
+        timestamp: 'asc',
+      },
+    });
+
+    const totalViolations = violations.length;
+
+    // 统计 Top 10 违规 IP
+    const ipCounts: Record<string, number> = {};
+    const endpointCounts: Record<string, number> = {};
+    const dailyCounts: Record<string, number> = {};
+
+    violations.forEach((v) => {
+      // 统计 IP
+      if (v.ipAddress) {
+        ipCounts[v.ipAddress] = (ipCounts[v.ipAddress] || 0) + 1;
+      }
+
+      // 统计端点
+      try {
+        const intent = JSON.parse(v.intent as string);
+        if (intent.endpoint) {
+          endpointCounts[intent.endpoint] = (endpointCounts[intent.endpoint] || 0) + 1;
+        }
+      } catch {
+        // 忽略 JSON 解析错误
+      }
+
+      // 统计按天的违规数
+      const dateKey = v.timestamp.toISOString().split('T')[0];
+      dailyCounts[dateKey] = (dailyCounts[dateKey] || 0) + 1;
+    });
+
+    // 生成 Top Offenders（按违规次数排序，取前 10）
+    const topOffenders = Object.entries(ipCounts)
+      .map(([ip, count]) => ({ ip, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    // 生成 Top Endpoints（按违规次数排序，取前 10）
+    const topEndpoints = Object.entries(endpointCounts)
+      .map(([endpoint, count]) => ({ endpoint, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    // 生成时间线数据
+    const timeline = Object.entries(dailyCounts)
+      .map(([date, count]) => ({
+        date: new Date(date),
+        count,
+      }))
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    return {
+      period: { start: startDate, end: endDate },
+      totalViolations,
+      topOffenders,
+      topEndpoints,
+      timeline,
+    };
+  } catch (error) {
+    console.error('[Rate Limit Report] 报告生成失败:', error);
+    return {
+      period: { start: startDate, end: endDate },
+      totalViolations: 0,
+      topOffenders: [],
+      topEndpoints: [],
+      timeline: [],
+    };
+  }
+}
+
+/**
+ * 触发滥用告警
+ *
+ * 当检测到潜在的滥用行为时，触发告警通知
+ */
+async function triggerAbuseAlert(data: {
+  ip: string;
+  violationCount: number;
+  endpoint: string;
+  limiterType: string;
+  userAgent: string;
+}): Promise<void> {
+  try {
+    // 记录到控制台（开发和调试）
+    console.error(
+      `[ABUSE ALERT] 检测到潜在滥用行为`,
+      `\n  IP: ${data.ip}`,
+      `\n  5分钟内违规次数: ${data.violationCount}`,
+      `\n  端点: ${data.endpoint}`,
+      `\n  限制器类型: ${data.limiterType}`,
+      `\n  User Agent: ${data.userAgent}`
+    );
+
+    // 集成告警系统（生产环境）
+    if (process.env.NODE_ENV === 'production') {
+      // 1. 发送 Slack 通知（如果配置了 Slack Webhook）
+      const slackWebhook = process.env.SLACK_WEBHOOK_URL;
+      if (slackWebhook) {
+        await fetch(slackWebhook, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: `🚨 速率限制滥用告警`,
+            attachments: [
+              {
+                color: 'danger',
+                fields: [
+                  { title: 'IP 地址', value: data.ip, short: true },
+                  { title: '违规次数', value: String(data.violationCount), short: true },
+                  { title: '端点', value: data.endpoint, short: false },
+                  { title: '限制器类型', value: data.limiterType, short: true },
+                ],
+              },
+            ],
+          }),
+        }).catch(err => console.error('[Abuse Alert] Slack 通知失败:', err));
+      }
+
+      // 2. 发送邮件通知（如果配置了邮件服务）
+      const emailRecipient = process.env.SECURITY_EMAIL;
+      if (emailRecipient) {
+        // 这里可以集成邮件服务（如 SendGrid, Mailgun 等）
+        console.log(`[Abuse Alert] 应向 ${emailRecipient} 发送邮件通知`);
+      }
+
+      // 3. 记录到数据库（用于持久化分析）
+      await prisma.queryAuditLog.create({
+        data: {
+          userId: 'system',
+          userName: 'System Alert',
+          sessionId: `abuse-alert-${Date.now()}`,
+          naturalLanguageQuery: `[ABUSE_ALERT] IP ${data.ip} exceeded ${data.violationCount} violations in 5 minutes`,
+          intent: JSON.stringify({
+            type: 'ABUSE_ALERT',
+            ip: data.ip,
+            violationCount: data.violationCount,
+            endpoint: data.endpoint,
+            limiterType: data.limiterType,
+          }),
+          generatedSql: null,
+          executionSuccess: false,
+          executionError: `Potential abuse detected from ${data.ip}`,
+          rowCount: null,
+          usedDatabases: JSON.stringify([]),
+          usedTables: JSON.stringify([]),
+          intentRecognitionTime: null,
+          sqlGenerationTime: null,
+          validationTime: null,
+          executionTime: null,
+          totalTime: 0,
+          ipAddress: data.ip,
+          userAgent: data.userAgent,
+          timestamp: new Date(),
+        },
+      }).catch(err => {
+        console.error('[Abuse Alert] 数据库记录失败:', err);
+      });
+    }
+  } catch (error) {
+    console.error('[Abuse Alert] 告警触发失败:', error);
+  }
 }
 
 // 全局类型声明（用于 TypeScript）

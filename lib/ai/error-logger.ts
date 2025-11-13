@@ -593,23 +593,14 @@ export class ErrorLogger {
    */
   private async persistAlert(log: ErrorLog): Promise<void> {
     try {
-      const prisma = getPrismaClient();
-
-      // 记录到专门的告警表（如果存在）或审计日志
-      // 这里简化处理，记录到审计日志
-      await prisma.auditLog.create({
-        data: {
-          action: 'SYSTEM_ALERT',
-          resource: log.category,
-          details: {
-            level: log.level,
-            message: log.message,
-            taskId: log.taskId,
-            context: log.context,
-          },
-          status: 'ERROR',
-          timestamp: log.createdAt,
-        },
+      // TODO: 实现告警持久化
+      // 当前 Prisma schema 中没有专门的 AuditLog 模型
+      // 需要在 schema 中添加告警表或使用其他方式存储告警记录
+      console.log('[ErrorLogger] Alert:', {
+        category: log.category,
+        level: log.level,
+        message: log.message,
+        taskId: log.taskId,
       });
     } catch (error) {
       console.warn('持久化告警记录失败:', error);

@@ -105,6 +105,20 @@ export interface DataSourceResult {
   /** 状态 */
   status?: 'active' | 'inactive' | 'error';
 
+  /** 操作消息 */
+  message?: string;
+
+  /** 数据源对象 */
+  dataSource?: {
+    id: number;
+    name: string;
+    type: string;
+    status: 'active' | 'inactive' | 'error';
+  };
+
+  /** 元数据 */
+  metadata?: Record<string, any>;
+
   /** 连接健康状态 */
   connectionHealth?: {
     healthy: boolean;

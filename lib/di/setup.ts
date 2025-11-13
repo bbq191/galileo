@@ -418,7 +418,7 @@ export function getMetadataSyncService() {
 /**
  * 便捷方法：获取 MetadataOrchestrator
  */
-export function getMetadataOrchestrator() {
+export function getMetadataOrchestrator(): import('./orchestrators/metadata.orchestrator').MetadataOrchestrator {
   return getService(DI_TOKENS.MetadataOrchestrator);
 }
 

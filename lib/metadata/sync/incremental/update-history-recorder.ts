@@ -73,30 +73,56 @@ export class UpdateHistoryRecorder {
     const client = getPrismaClient();
 
     try {
-      // TODO: 如果有专门的更新历史表，可以在这里创建记录
-      // 目前使用控制台日志记录
+      // 输出到控制台（用于开发和调试）
       this.logToConsole(record);
 
-      // 示例：如果有 UpdateHistory 表
-      // await client.updateHistory.create({
-      //   data: {
-      //     databaseId: record.databaseId,
-      //     databaseName: record.databaseName,
-      //     startedAt: record.startedAt,
-      //     completedAt: record.completedAt,
-      //     duration: record.duration,
-      //     tablesAdded: record.tablesAdded,
-      //     tablesDeleted: record.tablesDeleted,
-      //     tablesUpdated: record.tablesUpdated,
-      //     columnsAdded: record.columnsAdded,
-      //     columnsDeleted: record.columnsDeleted,
-      //     columnsUpdated: record.columnsUpdated,
-      //     totalChanges: record.totalChanges,
-      //     errors: JSON.stringify(record.errors),
-      //   },
-      // });
+      // 将更新历史记录到审计日志系统
+      // 使用特殊的查询格式来标识这是元数据更新记录
+      await client.queryAuditLog.create({
+        data: {
+          userId: 'system',
+          userName: 'System',
+          sessionId: `metadata-update-${record.databaseId}-${Date.now()}`,
+          naturalLanguageQuery: `[METADATA_UPDATE] Database: ${record.databaseName}`,
+          intent: JSON.stringify({
+            type: 'METADATA_UPDATE',
+            databaseId: record.databaseId,
+            databaseName: record.databaseName,
+            changes: {
+              tablesAdded: record.tablesAdded,
+              tablesDeleted: record.tablesDeleted,
+              tablesUpdated: record.tablesUpdated,
+              columnsAdded: record.columnsAdded,
+              columnsDeleted: record.columnsDeleted,
+              columnsUpdated: record.columnsUpdated,
+              totalChanges: record.totalChanges,
+            },
+            errors: record.errors,
+            startedAt: record.startedAt.toISOString(),
+            completedAt: record.completedAt.toISOString(),
+          }),
+          generatedSql: null,
+          executionSuccess: record.errors.length === 0,
+          executionError: record.errors.length > 0
+            ? `${record.errors.length} errors occurred during update`
+            : null,
+          rowCount: record.totalChanges,
+          usedDatabases: JSON.stringify([record.databaseName]),
+          usedTables: JSON.stringify([]),
+          intentRecognitionTime: null,
+          sqlGenerationTime: null,
+          validationTime: null,
+          executionTime: record.duration,
+          totalTime: record.duration,
+          ipAddress: null,
+          userAgent: 'System/MetadataSync',
+          timestamp: record.completedAt,
+        },
+      });
+
+      console.log(`[UpdateHistory] 已记录元数据更新历史: ${record.databaseName}`);
     } catch (error) {
-      console.error('记录更新历史失败:', error);
+      console.error('[UpdateHistory] 记录更新历史失败:', error);
     }
   }
 
@@ -148,37 +174,97 @@ export class UpdateHistoryRecorder {
   }
 
   /**
-   * 获取数据库的更新历史（示例方法）
+   * 获取数据库的更新历史
    */
   async getHistoryByDatabase(
     databaseId: number,
     limit: number = 10
   ): Promise<UpdateHistoryRecord[]> {
-    // TODO: 从数据库查询历史记录
-    // const client = getPrismaClient();
-    // const records = await client.updateHistory.findMany({
-    //   where: { databaseId },
-    //   orderBy: { completedAt: 'desc' },
-    //   take: limit,
-    // });
-    // return records.map(this.mapToRecord);
+    try {
+      const client = getPrismaClient();
 
-    return [];
+      // 从审计日志中查询元数据更新记录
+      const logs = await client.queryAuditLog.findMany({
+        where: {
+          naturalLanguageQuery: {
+            startsWith: '[METADATA_UPDATE]',
+          },
+          intent: {
+            contains: `"databaseId":${databaseId}`,
+          },
+        },
+        orderBy: {
+          timestamp: 'desc',
+        },
+        take: limit,
+      });
+
+      // 转换为 UpdateHistoryRecord 格式
+      return logs.map((log) => this.mapLogToRecord(log)).filter((r): r is UpdateHistoryRecord => r !== null);
+    } catch (error) {
+      console.error('[UpdateHistory] 查询数据库更新历史失败:', error);
+      return [];
+    }
   }
 
   /**
-   * 获取最近的更新历史（示例方法）
+   * 获取最近的更新历史
    */
   async getRecentHistory(limit: number = 20): Promise<UpdateHistoryRecord[]> {
-    // TODO: 从数据库查询最近的历史记录
-    // const client = getPrismaClient();
-    // const records = await client.updateHistory.findMany({
-    //   orderBy: { completedAt: 'desc' },
-    //   take: limit,
-    // });
-    // return records.map(this.mapToRecord);
+    try {
+      const client = getPrismaClient();
 
-    return [];
+      // 从审计日志中查询最近的元数据更新记录
+      const logs = await client.queryAuditLog.findMany({
+        where: {
+          naturalLanguageQuery: {
+            startsWith: '[METADATA_UPDATE]',
+          },
+        },
+        orderBy: {
+          timestamp: 'desc',
+        },
+        take: limit,
+      });
+
+      // 转换为 UpdateHistoryRecord 格式
+      return logs.map((log) => this.mapLogToRecord(log)).filter((r): r is UpdateHistoryRecord => r !== null);
+    } catch (error) {
+      console.error('[UpdateHistory] 查询最近更新历史失败:', error);
+      return [];
+    }
+  }
+
+  /**
+   * 将审计日志转换为 UpdateHistoryRecord
+   */
+  private mapLogToRecord(log: any): UpdateHistoryRecord | null {
+    try {
+      const intent = JSON.parse(log.intent as string);
+
+      if (intent.type !== 'METADATA_UPDATE') {
+        return null;
+      }
+
+      return {
+        databaseId: intent.databaseId,
+        databaseName: intent.databaseName,
+        startedAt: new Date(intent.startedAt),
+        completedAt: new Date(intent.completedAt || log.timestamp),
+        duration: log.executionTime || 0,
+        tablesAdded: intent.changes?.tablesAdded || 0,
+        tablesDeleted: intent.changes?.tablesDeleted || 0,
+        tablesUpdated: intent.changes?.tablesUpdated || 0,
+        columnsAdded: intent.changes?.columnsAdded || 0,
+        columnsDeleted: intent.changes?.columnsDeleted || 0,
+        columnsUpdated: intent.changes?.columnsUpdated || 0,
+        totalChanges: intent.changes?.totalChanges || 0,
+        errors: intent.errors || [],
+      };
+    } catch (error) {
+      console.error('[UpdateHistory] 转换日志记录失败:', error);
+      return null;
+    }
   }
 
   /**

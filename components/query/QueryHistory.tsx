@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 
 interface QueryHistoryItem {
@@ -49,7 +49,7 @@ export default function QueryHistory({
   const [filterSuccess, setFilterSuccess] = useState<boolean | null>(null);
 
   // 加载查询历史
-  const loadHistory = async (page: number = 1) => {
+  const loadHistory = useCallback(async (page: number = 1) => {
     setLoading(true);
     setError(null);
 
@@ -86,12 +86,12 @@ export default function QueryHistory({
     } finally {
       setLoading(false);
     }
-  };
+  }, [limit, userId, filterSuccess]);
 
   // 初始加载
   useEffect(() => {
     loadHistory(1);
-  }, [userId, filterSuccess]);
+  }, [loadHistory]);
 
   // 格式化时间
   const formatTime = (timestamp: string): string => {

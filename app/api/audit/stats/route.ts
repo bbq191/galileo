@@ -81,8 +81,8 @@ export async function GET(request: NextRequest) {
         type: a.type,
         severity: a.severity,
         description: a.description,
-        count: a.count,
-        details: a.details,
+        count: (a.data.totalQueries || a.data.queryCount || a.data.slowQueryCount || 0) as number,
+        details: a.data,
       }));
     }
 
