@@ -70,6 +70,12 @@ export interface TableInfo {
  * 字段信息
  */
 export interface ColumnInfo {
+  /** 字段 ID（可选，用于关系推断） */
+  id?: number;
+
+  /** 表 ID（可选，用于关系推断） */
+  tableId?: number;
+
   /** 字段名 */
   columnName: string;
 
@@ -83,7 +89,7 @@ export interface ColumnInfo {
   dataType: string;
 
   /** 完整列类型（如 varchar(255)） */
-  columnType: string;
+  columnType?: string;
 
   /** 字段注释 */
   columnComment?: string;
@@ -94,6 +100,18 @@ export interface ColumnInfo {
   /** 字段键类型（PRI, UNI, MUL） */
   columnKey?: 'PRI' | 'UNI' | 'MUL' | '';
 
+  /** 是否为主键（可选，用于关系推断） */
+  isPrimaryKey?: boolean;
+
+  /** 是否唯一（可选，用于关系推断） */
+  isUnique?: boolean;
+
+  /** 是否为外键（可选，用于关系推断） */
+  isForeignKey?: boolean;
+
+  /** 语义描述（可选，用于关系推断） */
+  semanticDescription?: string;
+
   /** 默认值 */
   defaultValue?: string | null;
 
@@ -101,7 +119,7 @@ export interface ColumnInfo {
   extra?: string;
 
   /** 字段位置（第几个字段） */
-  ordinalPosition: number;
+  ordinalPosition?: number;
 
   /** 字符集 */
   characterSet?: string;

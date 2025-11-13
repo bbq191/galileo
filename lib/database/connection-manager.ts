@@ -4,7 +4,7 @@
  */
 
 import { injectable, inject } from 'tsyringe';
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@/app/generated/prisma';
 import { ConnectionPool } from './connection-pool';
 import type {
   DatabaseConfig,

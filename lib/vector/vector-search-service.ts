@@ -3,7 +3,7 @@
  * 集成向量化和搜索功能，提供元数据的语义搜索能力
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@/app/generated/prisma';
 import prisma from '@/lib/prisma/client';
 import { VectorStore } from './vector-store';
 import { EmbeddingGenerator } from './embedding-generator';

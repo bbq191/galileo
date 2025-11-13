@@ -61,7 +61,7 @@ export class EncryptionManager {
       const iv = crypto.randomBytes(16);
 
       // 创建加密器
-      const cipher = crypto.createCipheriv(this.algorithm, this.key, iv);
+      const cipher = crypto.createCipheriv(this.algorithm, this.key, iv) as crypto.CipherGCM;
 
       // 加密数据
       let encrypted = cipher.update(plaintext, 'utf8', this.encoding);
@@ -90,7 +90,7 @@ export class EncryptionManager {
       const authTag = Buffer.from(encryptedData.authTag, this.encoding);
 
       // 创建解密器
-      const decipher = crypto.createDecipheriv(this.algorithm, this.key, iv);
+      const decipher = crypto.createDecipheriv(this.algorithm, this.key, iv) as crypto.DecipherGCM;
       decipher.setAuthTag(authTag);
 
       // 解密数据

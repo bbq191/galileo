@@ -4,7 +4,7 @@
  */
 
 import { injectable, inject } from 'tsyringe';
-import { PrismaClient, TableMeta } from '@prisma/client';
+import { PrismaClient, TableMeta } from '@/app/generated/prisma';
 import { DI_TOKENS } from '@/lib/di/tokens';
 import { changeTracker } from './change-tracker';
 import type {

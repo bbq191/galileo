@@ -6,7 +6,7 @@
 import 'reflect-metadata';
 import { injectable, inject } from 'tsyringe';
 import { DeepseekClient } from '@/lib/ai/deepseek-client';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@/app/generated/prisma';
 import { QueryIntent, RawIntent } from './types';
 import { INTENT_SYSTEM_PROMPT, buildIntentPrompt, buildDisambiguationPrompt } from './prompts/intent-prompts';
 import { EntityResolver } from './entity-resolver';

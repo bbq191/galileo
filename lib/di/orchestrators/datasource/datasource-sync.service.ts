@@ -12,6 +12,7 @@ import type { DatabaseService } from '../../services/database.service';
 import type { ConnectionManager } from '@/lib/database/connection-manager';
 import type { MetadataSyncService } from '@/lib/metadata/sync/metadata-sync-service';
 import type { CacheInvalidationService } from '@/lib/cache/cache-invalidation';
+import { InvalidationEvent } from '@/lib/cache/cache-invalidation';
 import type { DataSourceResult } from '../datasource.orchestrator';
 
 /**
@@ -66,10 +67,10 @@ export class DataSourceSyncService {
       });
 
       // 失效缓存
-      await this.cacheInvalidation.invalidateMetadata({
-        dataSourceId: id,
-        databases,
-      });
+      await this.cacheInvalidation.invalidate(
+        InvalidationEvent.METADATA_SYNCED,
+        { reason: `Data source ${id} metadata synced` }
+      );
 
       console.log(`[DataSourceSyncService] Metadata sync completed: ${result.tableCount} tables`);
 

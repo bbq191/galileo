@@ -11,6 +11,7 @@ import { inject, injectable } from 'tsyringe';
 import { DI_TOKENS } from '../../tokens';
 import type { DatabaseService } from '../../services/database.service';
 import type { CacheInvalidationService } from '@/lib/cache/cache-invalidation';
+import { InvalidationEvent } from '@/lib/cache/cache-invalidation';
 import {
   RelationshipInferencer,
   type RelationshipInferencerConfig,
@@ -154,11 +155,12 @@ export class RelationshipInferenceService {
             tableId: table.id,
             columnName: col.columnName,
             dataType: col.dataType,
+            columnType: col.columnType,
             isNullable: col.isNullable,
-            columnKey: col.columnKey || '',
-            isPrimaryKey: col.columnKey === 'PRI',
-            isUnique: col.columnKey === 'UNI' || col.columnKey === 'PRI',
-            isForeignKey: col.columnKey === 'MUL',
+            columnKey: this.deriveColumnKey(col.isPrimaryKey, col.isUnique),
+            isPrimaryKey: col.isPrimaryKey,
+            isUnique: col.isUnique,
+            isForeignKey: false,
             columnComment: col.columnComment || undefined,
             semanticDescription: col.semanticDescription || undefined,
             databaseName: db.databaseName,
@@ -191,9 +193,8 @@ export class RelationshipInferenceService {
       const lowConfidenceCount = allRelationships.filter(r => r.confidenceScore < 0.6).length;
 
       // 6. 失效缓存
-      await this.cacheInvalidation.invalidateMetadata({
-        dataSourceId: options.dataSourceId,
-        databases: options.databases,
+      await this.cacheInvalidation.invalidate(InvalidationEvent.METADATA_SYNCED, {
+        reason: `Relationship inference completed for data source ${options.dataSourceId}`,
       });
 
       const duration = Date.now() - startTime;
@@ -305,6 +306,9 @@ export class RelationshipInferenceService {
               sourceId: dataSourceId,
             },
           },
+          include: {
+            columns: true,
+          },
         }),
         this.dbService.prisma.tableMeta.findFirst({
           where: {
@@ -313,6 +317,9 @@ export class RelationshipInferenceService {
               databaseName: relationship.targetDatabaseName,
               sourceId: dataSourceId,
             },
+          },
+          include: {
+            columns: true,
           },
         }),
       ]);
@@ -325,15 +332,31 @@ export class RelationshipInferenceService {
         return;
       }
 
+      // 查找源列和目标列
+      const sourceColumn = sourceTable.columns.find(c => c.columnName === relationship.sourceColumn);
+      const targetColumn = targetTable.columns.find(c => c.columnName === relationship.targetColumn);
+
+      if (!sourceColumn || !targetColumn) {
+        console.warn(
+          `[RelationshipInferenceService] Cannot save relationship: column not found ` +
+          `(${relationship.sourceColumn} or ${relationship.targetColumn})`
+        );
+        return;
+      }
+
       // 检查关系是否已存在
       const existing = await this.dbService.prisma.inferredRelationship.findFirst({
         where: {
           sourceTableId: sourceTable.id,
           targetTableId: targetTable.id,
-          sourceColumnName: relationship.sourceColumn,
-          targetColumnName: relationship.targetColumn,
+          sourceColumnId: sourceColumn.id,
+          targetColumnId: targetColumn.id,
         },
       });
+
+      // 转换关系类型
+      const relationshipType = this.convertRelationshipType(relationship.relationshipType);
+      const inferenceMethod = this.convertInferenceMethod(relationship.inferenceMethod);
 
       if (existing) {
         // 更新置信度
@@ -341,7 +364,7 @@ export class RelationshipInferenceService {
           where: { id: existing.id },
           data: {
             confidenceScore: relationship.confidenceScore,
-            inferenceMethod: relationship.inferenceMethod,
+            inferenceMethod,
             reasoning: relationship.reasoning,
           },
         });
@@ -350,12 +373,12 @@ export class RelationshipInferenceService {
         await this.dbService.prisma.inferredRelationship.create({
           data: {
             sourceTableId: sourceTable.id,
-            sourceColumnName: relationship.sourceColumn,
+            sourceColumnId: sourceColumn.id,
             targetTableId: targetTable.id,
-            targetColumnName: relationship.targetColumn,
-            relationshipType: relationship.relationshipType,
+            targetColumnId: targetColumn.id,
+            relationshipType,
             confidenceScore: relationship.confidenceScore,
-            inferenceMethod: relationship.inferenceMethod,
+            inferenceMethod,
             reasoning: relationship.reasoning,
             isVerified: false,
           },
@@ -364,6 +387,60 @@ export class RelationshipInferenceService {
 
     } catch (error) {
       console.error(`[RelationshipInferenceService] Save inferred relationship failed:`, error);
+    }
+  }
+
+  /**
+   * 推导 columnKey（兼容旧代码）
+   *
+   * @param isPrimaryKey - 是否为主键
+   * @param isUnique - 是否唯一
+   * @returns columnKey 值
+   * @private
+   */
+  private deriveColumnKey(isPrimaryKey: boolean, isUnique: boolean): 'PRI' | 'UNI' | 'MUL' | '' {
+    if (isPrimaryKey) return 'PRI';
+    if (isUnique) return 'UNI';
+    return '';
+  }
+
+  /**
+   * 转换关系类型
+   *
+   * @param type - 类型字符串
+   * @returns Prisma 枚举值
+   * @private
+   */
+  private convertRelationshipType(type: string): 'ONE_TO_ONE' | 'ONE_TO_MANY' | 'MANY_TO_MANY' {
+    switch (type) {
+      case 'one-to-one':
+        return 'ONE_TO_ONE';
+      case 'one-to-many':
+        return 'ONE_TO_MANY';
+      case 'many-to-many':
+        return 'MANY_TO_MANY';
+      default:
+        return 'ONE_TO_MANY'; // 默认值
+    }
+  }
+
+  /**
+   * 转换推断方法
+   *
+   * @param method - 方法字符串
+   * @returns Prisma 枚举值
+   * @private
+   */
+  private convertInferenceMethod(method: string): 'rule' | 'ai' | 'hybrid' {
+    switch (method) {
+      case 'rule':
+        return 'rule';
+      case 'ai':
+        return 'ai';
+      case 'hybrid':
+        return 'hybrid';
+      default:
+        return 'rule'; // 默认值
     }
   }
 }

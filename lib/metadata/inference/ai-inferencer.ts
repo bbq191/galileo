@@ -39,7 +39,7 @@ async function callDeepseekAPI(
 interface AIInferenceResult {
   hasRelationship: boolean;
   confidence: number;
-  type: 'one-to-one' | 'one-to-many' | 'many-to-many';
+  type: RelationshipType;
   reasoning: string;
 }
 
@@ -136,12 +136,6 @@ export class AIInferencer {
         confidenceScore: result.confidence,
         inferenceMethod: 'ai',
         reasoning: result.reasoning,
-        metadata: {
-          sourceType: sourceColumn.dataType,
-          targetType: targetColumn.dataType,
-          sourceDescription: sourceColumn.columnComment || undefined,
-          targetDescription: targetColumn.columnComment || undefined,
-        },
       };
     } catch (error) {
       console.error('AI 推断失败:', error);
@@ -203,12 +197,6 @@ export class AIInferencer {
           confidenceScore: result.confidence,
           inferenceMethod: 'ai',
           reasoning: result.reasoning,
-          metadata: {
-            sourceType: pair.source.dataType,
-            targetType: pair.target.dataType,
-            sourceDescription: pair.source.columnComment || undefined,
-            targetDescription: pair.target.columnComment || undefined,
-          },
         };
       });
     } catch (error) {

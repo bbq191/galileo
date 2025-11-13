@@ -3,7 +3,7 @@
  * 负责分析表的索引使用情况
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@/app/generated/prisma';
 import { MetadataContext } from '@/lib/metadata/retrieval/types';
 import { SQLPatternDetector } from './sql-pattern-detector';
 

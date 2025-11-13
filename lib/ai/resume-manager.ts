@@ -7,7 +7,7 @@
  * - 跳过已处理项
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@/app/generated/prisma';
 import prisma from '@/lib/prisma/client';
 import type { TaskType } from './task-queue';
 

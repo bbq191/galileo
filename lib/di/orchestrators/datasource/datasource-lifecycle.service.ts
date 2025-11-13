@@ -12,6 +12,7 @@ import type { DatabaseService } from '../../services/database.service';
 import type { ConnectionManager } from '@/lib/database/connection-manager';
 import type { MetadataSyncService } from '@/lib/metadata/sync/metadata-sync-service';
 import type { CacheInvalidationService } from '@/lib/cache/cache-invalidation';
+import { InvalidationEvent } from '@/lib/cache/cache-invalidation';
 import type { DatabaseConfig } from '@/lib/database';
 import { encryptPassword, decryptPassword } from '@/lib/database/encryption';
 import type {
@@ -239,7 +240,7 @@ export class DataSourceLifecycleService {
         // 关闭旧连接
         if (await this.connectionManager.hasConnection(connectionId)) {
           console.log(`[DataSourceLifecycleService] Closing old connection ${connectionId}...`);
-          await this.connectionManager.removeConnection(connectionId);
+          await this.connectionManager.closeConnection(connectionId);
         }
 
         // 创建新连接
@@ -271,9 +272,10 @@ export class DataSourceLifecycleService {
       }
 
       // 5. 失效相关缓存
-      await this.cacheInvalidation.invalidateMetadata({
-        dataSourceId: options.id,
-      });
+      await this.cacheInvalidation.invalidate(
+        InvalidationEvent.METADATA_SYNCED,
+        { reason: `Data source ${options.id} updated` }
+      );
 
       console.log(`[DataSourceLifecycleService] Data source ${options.id} updated successfully`);
 
@@ -323,7 +325,7 @@ export class DataSourceLifecycleService {
       // 2. 关闭连接池
       if (await this.connectionManager.hasConnection(connectionId)) {
         console.log(`[DataSourceLifecycleService] Closing connection ${connectionId}...`);
-        await this.connectionManager.removeConnection(connectionId);
+        await this.connectionManager.closeConnection(connectionId);
       }
 
       // 3. 删除数据库记录（级联删除元数据）
@@ -332,9 +334,10 @@ export class DataSourceLifecycleService {
       });
 
       // 4. 失效所有相关缓存
-      await this.cacheInvalidation.invalidateMetadata({
-        dataSourceId: id,
-      });
+      await this.cacheInvalidation.invalidate(
+        InvalidationEvent.METADATA_SYNCED,
+        { reason: `Data source ${id} deleted` }
+      );
 
       console.log(`[DataSourceLifecycleService] Data source ${id} deleted successfully`);
 
@@ -366,7 +369,7 @@ export class DataSourceLifecycleService {
 
       // 删除连接池
       if (await this.connectionManager.hasConnection(connectionId)) {
-        await this.connectionManager.removeConnection(connectionId);
+        await this.connectionManager.closeConnection(connectionId);
       }
 
       // 删除数据库记录

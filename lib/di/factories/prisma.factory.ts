@@ -6,6 +6,14 @@
 import { PrismaClient } from '@/app/generated/prisma';
 
 /**
+ * 全局类型扩展
+ */
+declare global {
+  // eslint-disable-next-line no-var
+  var prismaGlobal: PrismaClient | undefined;
+}
+
+/**
  * 创建 PrismaClient 单例
  * 避免开发环境热重载时创建多个实例
  */
@@ -18,10 +26,6 @@ export function createPrismaClient(): PrismaClient {
           : ['error'],
     });
   };
-
-  declare const globalThis: {
-    prismaGlobal: ReturnType<typeof prismaClientSingleton>;
-  } & typeof global;
 
   const prisma = globalThis.prismaGlobal ?? prismaClientSingleton();
 

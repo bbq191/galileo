@@ -16,6 +16,14 @@ export interface RedisFactoryConfig {
 }
 
 /**
+ * 全局类型扩展
+ */
+declare global {
+  // eslint-disable-next-line no-var
+  var redisGlobal: Redis | undefined;
+}
+
+/**
  * 创建 Redis 客户端单例
  */
 export function createRedisClient(config?: RedisFactoryConfig): Redis {
@@ -30,11 +38,6 @@ export function createRedisClient(config?: RedisFactoryConfig): Redis {
     },
     maxRetriesPerRequest: 3,
   };
-
-  // 使用 global 避免热重载时重复创建
-  declare const globalThis: {
-    redisGlobal: Redis;
-  } & typeof global;
 
   if (globalThis.redisGlobal) {
     return globalThis.redisGlobal;

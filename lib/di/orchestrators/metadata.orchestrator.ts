@@ -15,6 +15,7 @@ import type { MetadataSyncService } from '@/lib/metadata/sync/metadata-sync-serv
 import type { MetadataRetriever } from '@/lib/metadata/retrieval/metadata-retriever';
 import type { MetadataRepository } from '@/lib/metadata/storage/metadata-repository';
 import type { CacheInvalidationService } from '@/lib/cache/cache-invalidation';
+import { InvalidationEvent } from '@/lib/cache/cache-invalidation';
 import type { QueryIntent } from '@/lib/nlp/intent-recognizer';
 import type { MetadataContext } from '@/lib/metadata/types';
 
@@ -158,9 +159,8 @@ export class MetadataOrchestrator {
 
       // 3. 失效相关缓存
       console.log(`[MetadataOrchestrator] Invalidating metadata caches...`);
-      await this.cacheInvalidation.invalidateMetadata({
-        dataSourceId: options.dataSourceId,
-        databases: options.databases,
+      await this.cacheInvalidation.invalidate(InvalidationEvent.METADATA_SYNCED, {
+        reason: `Metadata synchronized for data source ${options.dataSourceId}`,
       });
 
       const duration = Date.now() - startTime;

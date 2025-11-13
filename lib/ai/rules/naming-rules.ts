@@ -9,7 +9,7 @@
 
 import { injectable, inject } from 'tsyringe';
 import type { ColumnInfo } from '@/lib/metadata/types';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@/app/generated/prisma';
 import { DI_TOKENS } from '@/lib/di/tokens';
 
 /**

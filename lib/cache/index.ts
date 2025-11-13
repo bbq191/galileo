@@ -4,7 +4,7 @@
 
 export { getRedisClient, closeRedisClient, checkRedisHealth } from './redis-client';
 export { multiLevelCache, MultiLevelCache } from './multi-level-cache';
-export { cacheWarmer, CacheWarmer } from './cache-warmer';
+export { CacheWarmer } from './cache-warmer';
 export { CacheBreakthroughGuard } from './cache-breakthrough-guard';
 export {
   CACHE_CONFIGS,

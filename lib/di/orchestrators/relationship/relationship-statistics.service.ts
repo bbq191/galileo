@@ -143,17 +143,17 @@ export class RelationshipStatisticsService {
       const inferredCount = inferredRelationships.length;
       const verifiedCount = inferredRelationships.filter(r => r.isVerified).length;
 
-      // 按置信度分类
-      const highConfidence = inferredRelationships.filter(r => r.confidenceScore >= 0.8).length;
+      // 按置信度分类 (Decimal 转换为 number)
+      const highConfidence = inferredRelationships.filter(r => r.confidenceScore.toNumber() >= 0.8).length;
       const mediumConfidence = inferredRelationships.filter(
-        r => r.confidenceScore >= 0.6 && r.confidenceScore < 0.8
+        r => r.confidenceScore.toNumber() >= 0.6 && r.confidenceScore.toNumber() < 0.8
       ).length;
-      const lowConfidence = inferredRelationships.filter(r => r.confidenceScore < 0.6).length;
+      const lowConfidence = inferredRelationships.filter(r => r.confidenceScore.toNumber() < 0.6).length;
 
-      // 按类型分类
-      const oneToOne = inferredRelationships.filter(r => r.relationshipType === 'one-to-one').length;
-      const oneToMany = inferredRelationships.filter(r => r.relationshipType === 'one-to-many').length;
-      const manyToMany = inferredRelationships.filter(r => r.relationshipType === 'many-to-many').length;
+      // 按类型分类 (使用 Prisma 枚举值)
+      const oneToOne = inferredRelationships.filter(r => r.relationshipType === 'ONE_TO_ONE').length;
+      const oneToMany = inferredRelationships.filter(r => r.relationshipType === 'ONE_TO_MANY').length;
+      const manyToMany = inferredRelationships.filter(r => r.relationshipType === 'MANY_TO_MANY').length;
 
       // 跨数据库关系（源表和目标表在不同数据库）
       // 简化处理：假设 sourceTableId 和 targetTableId 不同即为跨表
@@ -313,7 +313,7 @@ export class RelationshipStatisticsService {
       ];
 
       for (const rel of relationships) {
-        const score = rel.confidenceScore;
+        const score = rel.confidenceScore.toNumber(); // Decimal 转换为 number
         if (score < 0.5) distribution[0].count++;
         else if (score < 0.6) distribution[1].count++;
         else if (score < 0.7) distribution[2].count++;
@@ -380,7 +380,7 @@ export class RelationshipStatisticsService {
       });
 
       const avgConfidence = relationships.length > 0
-        ? relationships.reduce((sum, r) => sum + r.confidenceScore, 0) / relationships.length
+        ? relationships.reduce((sum, r) => sum + r.confidenceScore.toNumber(), 0) / relationships.length
         : 0;
 
       // 计算综合质量分数 (加权平均)

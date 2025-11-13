@@ -3,7 +3,7 @@
  * 将检索到的元数据组装成完整的上下文
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@/app/generated/prisma';
 import prisma from '@/lib/prisma/client';
 import { TableContext, ColumnContext, MetadataContext, RelationshipContext } from './types';
 import { connectionManager } from '@/lib/database';

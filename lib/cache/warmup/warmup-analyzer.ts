@@ -10,7 +10,7 @@
 import { injectable, inject } from 'tsyringe';
 import { DI_TOKENS } from '@/lib/di/tokens';
 import type { AuditLogger } from '@/lib/audit/audit-logger';
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@/app/generated/prisma';
 
 /**
  * 热表分析结果

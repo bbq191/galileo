@@ -3,7 +3,7 @@
  * 增强 AI 对业务逻辑的理解
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@/app/generated/prisma';
 import { Redis } from 'ioredis';
 import prisma from '@/lib/prisma/client';
 import { getRedisClient } from '@/lib/cache/redis-client';

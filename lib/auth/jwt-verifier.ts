@@ -67,15 +67,11 @@ const JWT_CONFIG = {
  */
 export function generateToken(payload: Omit<JWTPayload, 'iat' | 'exp'>): string {
   try {
-    return jwt.sign(
-      payload,
-      JWT_CONFIG.secret,
-      {
-        expiresIn: JWT_CONFIG.expiresIn,
-        issuer: JWT_CONFIG.issuer,
-        audience: JWT_CONFIG.audience,
-      }
-    );
+    return jwt.sign(payload, JWT_CONFIG.secret, {
+      expiresIn: JWT_CONFIG.expiresIn,
+      issuer: JWT_CONFIG.issuer,
+      audience: JWT_CONFIG.audience,
+    } as jwt.SignOptions);
   } catch (error) {
     console.error('[JWT] 生成 Token 失败:', error);
     throw new Error('Token 生成失败');
@@ -90,15 +86,11 @@ export function generateToken(payload: Omit<JWTPayload, 'iat' | 'exp'>): string 
  */
 export function generateRefreshToken(userId: string): string {
   try {
-    return jwt.sign(
-      { userId, type: 'refresh' },
-      JWT_CONFIG.secret,
-      {
-        expiresIn: JWT_CONFIG.refreshExpiresIn,
-        issuer: JWT_CONFIG.issuer,
-        audience: JWT_CONFIG.audience,
-      }
-    );
+    return jwt.sign({ userId, type: 'refresh' }, JWT_CONFIG.secret, {
+      expiresIn: JWT_CONFIG.refreshExpiresIn,
+      issuer: JWT_CONFIG.issuer,
+      audience: JWT_CONFIG.audience,
+    } as jwt.SignOptions);
   } catch (error) {
     console.error('[JWT] 生成 Refresh Token 失败:', error);
     throw new Error('Refresh Token 生成失败');

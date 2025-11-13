@@ -114,8 +114,18 @@ export class RelationshipGraphService {
         include: {
           tables: {
             include: {
-              sourceRelationships: true,
-              targetRelationships: true,
+              sourceRelationships: {
+                include: {
+                  sourceColumn: true,
+                  targetColumn: true,
+                },
+              },
+              targetRelationships: {
+                include: {
+                  sourceColumn: true,
+                  targetColumn: true,
+                },
+              },
             },
           },
         },
@@ -143,11 +153,11 @@ export class RelationshipGraphService {
             edges.push({
               sourceTableId: rel.sourceTableId,
               targetTableId: rel.targetTableId,
-              sourceColumn: rel.sourceColumnName,
-              targetColumn: rel.targetColumnName,
+              sourceColumn: rel.sourceColumn.columnName,
+              targetColumn: rel.targetColumn.columnName,
               confidence: 1.0,
               type: 'explicit',
-              relationshipType: rel.relationshipType as any,
+              relationshipType: this.convertRelationshipType(rel.relationshipType),
             });
           }
         }
@@ -163,17 +173,21 @@ export class RelationshipGraphService {
           ],
           confidenceScore: { gte: minConfidence },
         },
+        include: {
+          sourceColumn: true,
+          targetColumn: true,
+        },
       });
 
       for (const rel of inferredRels) {
         edges.push({
           sourceTableId: rel.sourceTableId,
           targetTableId: rel.targetTableId,
-          sourceColumn: rel.sourceColumnName,
-          targetColumn: rel.targetColumnName,
-          confidence: rel.confidenceScore,
+          sourceColumn: rel.sourceColumn.columnName,
+          targetColumn: rel.targetColumn.columnName,
+          confidence: rel.confidenceScore.toNumber(),
           type: rel.isVerified ? 'verified' : 'inferred',
-          relationshipType: rel.relationshipType as any,
+          relationshipType: this.convertRelationshipType(rel.relationshipType),
         });
       }
 
@@ -369,6 +383,26 @@ export class RelationshipGraphService {
     } catch (error) {
       console.error(`[RelationshipGraphService] Get central nodes failed:`, error);
       return [];
+    }
+  }
+
+  /**
+   * 转换关系类型枚举
+   *
+   * @param type - Prisma 枚举类型
+   * @returns 接口使用的关系类型
+   * @private
+   */
+  private convertRelationshipType(type: string): 'one-to-one' | 'one-to-many' | 'many-to-many' {
+    switch (type) {
+      case 'ONE_TO_ONE':
+        return 'one-to-one';
+      case 'ONE_TO_MANY':
+        return 'one-to-many';
+      case 'MANY_TO_MANY':
+        return 'many-to-many';
+      default:
+        return 'one-to-many'; // 默认值
     }
   }
 }

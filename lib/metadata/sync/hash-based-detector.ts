@@ -14,7 +14,7 @@
  */
 
 import crypto from 'crypto';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@/app/generated/prisma';
 import prisma from '@/lib/prisma/client';
 import type { Connection } from 'mysql2/promise';
 

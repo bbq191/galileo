@@ -11,7 +11,7 @@
  * - 格式化输出日志
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@/app/generated/prisma';
 import prisma from '@/lib/prisma/client';
 
 function getPrismaClient() {

@@ -13,7 +13,7 @@ import { DI_TOKENS } from '../tokens';
 import type { DatabaseService } from '../services/database.service';
 import type { AuditLog, AuditLogFilters, AuditStats, PaginatedAuditLogs } from '@/lib/audit/types';
 import type { QueryIntent } from '@/lib/nlp/intent-recognizer';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@/app/generated/prisma';
 
 /**
  * 查询审计日志条目

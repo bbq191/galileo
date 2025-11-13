@@ -13,6 +13,7 @@ import { DI_TOKENS } from '../tokens';
 import type { MultiLevelCache } from '@/lib/cache/multi-level-cache';
 import type { QueryCacheManager } from '@/lib/cache/query-cache-manager';
 import type { CacheInvalidationService } from '@/lib/cache/cache-invalidation';
+import { InvalidationEvent } from '@/lib/cache/cache-invalidation';
 import type { CacheWarmer } from '@/lib/cache/cache-warmer';
 import { CacheStats, cacheStats, type CacheMetrics } from '@/lib/cache/cache-config';
 import type { DatabaseService } from '../services/database.service';
@@ -224,17 +225,17 @@ export class CacheOrchestrator {
         case 'metadata':
           // 失效元数据缓存
           if (options.dataSourceId) {
-            await this.cacheInvalidation.invalidateMetadata({
-              dataSourceId: options.dataSourceId,
-              databases: options.databases,
-            });
+            await this.cacheInvalidation.invalidate(
+              InvalidationEvent.METADATA_SYNCED,
+              { reason: `Data source ${options.dataSourceId} metadata changed` }
+            );
             clearedKeys += 1;
           }
           break;
 
         case 'query':
           // 失效查询缓存
-          await this.queryCacheManager.clearAll();
+          await this.queryCacheManager.invalidateAll();
           clearedKeys += 1;
           break;
 
@@ -242,17 +243,17 @@ export class CacheOrchestrator {
         default:
           // 失效所有缓存
           if (options.dataSourceId) {
-            await this.cacheInvalidation.invalidateMetadata({
-              dataSourceId: options.dataSourceId,
-              databases: options.databases,
-            });
+            await this.cacheInvalidation.invalidate(
+              InvalidationEvent.METADATA_SYNCED,
+              { reason: `Data source ${options.dataSourceId} metadata changed` }
+            );
           }
           if (options.tableIds && options.tableIds.length > 0) {
             for (const tableId of options.tableIds) {
-              await this.cacheInvalidation.invalidateTable(tableId);
+              await this.cacheInvalidation.invalidateTableCache(tableId, `table_${tableId}`);
             }
           }
-          await this.queryCacheManager.clearAll();
+          await this.queryCacheManager.invalidateAll();
           clearedKeys += options.tableIds?.length || 1;
           break;
       }
@@ -301,7 +302,7 @@ export class CacheOrchestrator {
       let clearedKeys = 0;
 
       // 清理查询缓存中的过期项
-      await this.queryCacheManager.clearAll();
+      await this.queryCacheManager.invalidateAll();
       clearedKeys += 1;
 
       const duration = Date.now() - startTime;
@@ -342,7 +343,7 @@ export class CacheOrchestrator {
       console.log(`[CacheOrchestrator] Clearing ALL cache...`);
 
       // 清空查询缓存
-      await this.queryCacheManager.clearAll();
+      await this.queryCacheManager.invalidateAll();
 
       // 清空所有多级缓存
       // 注意：MultiLevelCache 可能需要添加 clearAll 方法
@@ -405,10 +406,10 @@ export class CacheOrchestrator {
           },
         },
         queryCache: {
-          intentCacheHits: queryCacheStats.intentHits || 0,
-          sqlCacheHits: queryCacheStats.sqlHits || 0,
-          resultCacheHits: queryCacheStats.resultHits || 0,
-          totalQueries: queryCacheStats.totalQueries || 0,
+          intentCacheHits: queryCacheStats.intentCacheHits || 0,
+          sqlCacheHits: queryCacheStats.sqlCacheHits || 0,
+          resultCacheHits: queryCacheStats.resultCacheHits || 0,
+          totalQueries: (queryCacheStats.totalHits || 0) + (queryCacheStats.totalMisses || 0),
         },
       };
 
@@ -622,7 +623,7 @@ export class CacheOrchestrator {
       console.log(`[CacheOrchestrator] Warming up top ${topN} hot queries...`);
 
       // 从审计日志获取最常用的查询
-      const hotQueries = await this.dbService.prisma.auditLog.groupBy({
+      const hotQueries = await this.dbService.prisma.queryAuditLog.groupBy({
         by: ['naturalLanguageQuery'],
         where: {
           naturalLanguageQuery: {

@@ -11,7 +11,7 @@
  */
 
 import { Parser } from 'node-sql-parser';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@/app/generated/prisma';
 import prisma from '@/lib/prisma/client';
 import { PerformanceAnalysis } from './types';
 import { MetadataContext } from '@/lib/metadata/retrieval/types';

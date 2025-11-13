@@ -91,9 +91,8 @@ export class SQLGenerator {
           { role: 'system', content: SQL_GENERATION_SYSTEM_PROMPT },
           { role: 'user', content: prompt }
         ], {
-          timeout: options.timeout || 30000,
           temperature: 0.1, // 降低温度以获得更确定的输出
-          maxTokens: 2000
+          max_tokens: 2000
         });
 
         // 解析 AI 返回的结果
@@ -455,9 +454,12 @@ ${this.describeConditions(intent.conditions)}
       try {
         const ast = this.parser.astify(sql, { database: 'MySQL' });
 
+        // 如果是数组，取第一个
+        const query = Array.isArray(ast) ? ast[0] : ast;
+
         // 确保只是 SELECT 查询
-        if (ast.type !== 'select') {
-          throw new Error(`不允许的 SQL 类型: ${ast.type}`);
+        if (query.type !== 'select') {
+          throw new Error(`不允许的 SQL 类型: ${query.type}`);
         }
 
         console.log('SQL validation passed (using AST validation)');

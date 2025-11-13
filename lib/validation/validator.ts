@@ -25,8 +25,8 @@ export function validateRequest<T>(
     if (error instanceof ZodError) {
       const errors: Record<string, string[]> = {};
 
-      // Zod 4.x 使用 issues 而不是 errors
-      const issues = (error as any).issues || error.errors || [];
+      // ZodError 使用 issues 属性
+      const issues = error.issues;
 
       if (Array.isArray(issues)) {
         issues.forEach((err: any) => {
@@ -76,5 +76,5 @@ export function validateOrRespond<T>(
     };
   }
 
-  return { data: result.data };
+  return { data: result.data as T };
 }

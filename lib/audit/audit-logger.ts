@@ -10,7 +10,7 @@
  * - 支持审计日志查询和分析
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@/app/generated/prisma';
 import prisma from '@/lib/prisma/client';
 import type { AuditLog, AuditLogFilters, AuditStats, PaginatedAuditLogs } from './types';
 

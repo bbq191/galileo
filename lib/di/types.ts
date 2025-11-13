@@ -2,7 +2,7 @@
  * 依赖注入类型定义
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@/app/generated/prisma';
 import type { Redis } from 'ioredis';
 
 /**

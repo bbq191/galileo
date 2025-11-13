@@ -334,7 +334,7 @@ export function getService<T>(token: symbol): T {
 /**
  * 便捷方法：获取 PrismaClient
  */
-export function getPrismaClient(): import('@prisma/client').PrismaClient {
+export function getPrismaClient(): import('@/app/generated/prisma').PrismaClient {
   return getService(DI_TOKENS.PrismaClient);
 }
 

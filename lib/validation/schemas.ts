@@ -4,9 +4,7 @@ import { z } from 'zod';
 // 查询执行
 export const QueryExecuteSchema = z.object({
   query: z
-    .string({
-      required_error: '查询内容不能为空',
-    })
+    .string({ message: '查询内容不能为空' })
     .min(1, '查询内容不能为空')
     .max(5000, '查询内容不能超过 5000 字符')
     .regex(/^[^<>]*$/, '查询包含非法字符'),
@@ -45,7 +43,7 @@ export const DatasourceCreateSchema = z.object({
     .regex(/^[a-zA-Z0-9_\-\u4e00-\u9fa5]+$/, '名称只能包含字母、数字、下划线、中划线和中文'),
 
   type: z.enum(['mysql', 'mariadb', 'postgresql', 'sqlserver'], {
-    errorMap: () => ({ message: '不支持的数据库类型' }),
+    message: '不支持的数据库类型',
   }),
 
   host: z.string().min(1, '主机地址不能为空'),

@@ -3,7 +3,8 @@
  * 负责创建和配置 DeepseekClient 实例
  */
 
-import { DeepseekClient, type DeepseekConfig } from '@/lib/ai/deepseek-client';
+import { DeepseekClient } from '@/lib/ai/deepseek-client';
+import type { DeepseekConfig } from '@/lib/ai/types';
 
 /**
  * 创建 DeepseekClient 实例

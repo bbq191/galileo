@@ -48,34 +48,39 @@ export class ColumnExtractor {
 
       const columns: Map<string, ColumnInfo> = new Map();
 
+      // 只处理 SELECT 类型的查询
+      if (!query || query.type !== 'select') {
+        return [];
+      }
+
       // 提取 SELECT 子句中的列
-      if (query.columns) {
-        this.extractFromSelect(query.columns, columns);
+      if ('columns' in query && query.columns) {
+        this.extractFromSelect(query.columns as any, columns);
       }
 
       // 提取 WHERE 子句中的列
-      if (query.where) {
-        this.extractFromWhere(query.where, columns);
+      if ('where' in query && query.where) {
+        this.extractFromWhere(query.where as any, columns);
       }
 
       // 提取 JOIN 子句中的列
-      if (query.from) {
-        this.extractFromJoin(query.from, columns);
+      if ('from' in query && query.from) {
+        this.extractFromJoin(query.from as any, columns);
       }
 
       // 提取 ORDER BY 子句中的列
-      if (query.orderby) {
-        this.extractFromOrderBy(query.orderby, columns);
+      if ('orderby' in query && query.orderby) {
+        this.extractFromOrderBy(query.orderby as any, columns);
       }
 
       // 提取 GROUP BY 子句中的列
-      if (query.groupby) {
-        this.extractFromGroupBy(query.groupby, columns);
+      if ('groupby' in query && query.groupby) {
+        this.extractFromGroupBy(query.groupby as any, columns);
       }
 
       // 提取 HAVING 子句中的列
-      if (query.having) {
-        this.extractFromHaving(query.having, columns);
+      if ('having' in query && query.having) {
+        this.extractFromHaving(query.having as any, columns);
       }
 
       return Array.from(columns.values());

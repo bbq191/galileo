@@ -9,7 +9,7 @@
  */
 
 import cron from 'node-cron';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@/app/generated/prisma';
 import prisma from '@/lib/prisma/client';
 import mysql from 'mysql2/promise';
 import { changeDetector, DetectionMode } from './change-detector';

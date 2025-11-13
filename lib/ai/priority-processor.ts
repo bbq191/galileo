@@ -7,7 +7,7 @@
  * - 优化资源使用
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@/app/generated/prisma';
 import prisma from '@/lib/prisma/client';
 import { SemanticAnnotator } from './semantic-annotator';
 import type { BatchProgress } from './batch-processor';

@@ -7,7 +7,7 @@
  * - 提供同步历史查询
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@/app/generated/prisma';
 import prisma from '@/lib/prisma/client';
 
 function getPrismaClient(): PrismaClient {
