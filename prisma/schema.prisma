@@ -446,3 +446,66 @@ model AggregationRule {
   @@index([isEnabled])
   @@map("aggregation_rules")
 }
+
+// ============================================================
+// 错误日志与监控系统 - 数据库模型定义
+// ============================================================
+
+/// 错误日志表
+/// 记录系统中的各类错误日志
+model ErrorLog {
+  id         String    @id @db.VarChar(100)                // 日志 ID
+  level      String    @db.VarChar(20)                     // 错误级别：info, warning, error, critical
+  category   String    @db.VarChar(50)                     // 错误分类：network, api, database, validation, timeout, rate_limit, unknown
+  message    String    @db.Text                            // 错误消息
+  stack      String?   @db.Text                            // 堆栈信息
+  context    String?   @db.Text                            // 上下文信息（JSON 格式）
+  taskId     String?   @map("task_id") @db.VarChar(100)    // 关联的任务 ID
+  taskType   String?   @map("task_type") @db.VarChar(50)   // 任务类型
+  createdAt  DateTime  @default(now()) @map("created_at")  // 创建时间
+
+  @@index([level])
+  @@index([category])
+  @@index([taskId])
+  @@index([createdAt])
+  @@map("error_logs")
+}
+
+/// 性能指标表
+/// 记录系统各操作的性能指标
+model PerformanceMetric {
+  id        String    @id @db.VarChar(100)                // 指标 ID
+  operation String    @db.VarChar(100)                    // 操作名称
+  duration  Int                                           // 耗时（毫秒）
+  success   Boolean                                       // 成功/失败
+  metadata  String?   @db.Text                            // 额外数据（JSON 格式）
+  createdAt DateTime  @default(now()) @map("created_at")  // 创建时间
+
+  @@index([operation])
+  @@index([success])
+  @@index([createdAt])
+  @@map("performance_metrics")
+}
+
+/// 系统告警表
+/// 记录系统严重错误的告警信息
+model SystemAlert {
+  id              String    @id @db.VarChar(100)                   // 告警 ID
+  level           String    @db.VarChar(20)                        // 错误级别：info, warning, error, critical
+  category        String    @db.VarChar(50)                        // 错误分类
+  message         String    @db.Text                               // 告警消息
+  stack           String?   @db.Text                               // 堆栈信息
+  context         String?   @db.Text                               // 上下文信息（JSON 格式）
+  taskId          String?   @map("task_id") @db.VarChar(100)       // 关联的任务 ID
+  taskType        String?   @map("task_type") @db.VarChar(50)      // 任务类型
+  acknowledged    Boolean   @default(false)                        // 是否已确认
+  acknowledgedAt  DateTime? @map("acknowledged_at")                // 确认时间
+  acknowledgedBy  String?   @map("acknowledged_by") @db.VarChar(100) // 确认人
+  createdAt       DateTime  @default(now()) @map("created_at")     // 创建时间
+
+  @@index([level])
+  @@index([category])
+  @@index([acknowledged])
+  @@index([createdAt])
+  @@map("system_alerts")
+}

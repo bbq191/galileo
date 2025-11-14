@@ -12,6 +12,7 @@
 
 import { injectable, inject } from 'tsyringe';
 import { DI_TOKENS } from '@/lib/di/tokens';
+import { PrismaClient } from '@/app/generated/prisma';
 import { DatabaseMetadataRepository } from './database-metadata.repository';
 import { TableMetadataRepository } from './table-metadata.repository';
 import { ColumnMetadataRepository } from './column-metadata.repository';
@@ -48,6 +49,9 @@ import type {
 @injectable()
 export class MetadataRepository {
   constructor(
+    @inject(DI_TOKENS.PrismaClient)
+    private prisma: PrismaClient,
+
     @inject(DI_TOKENS.DatabaseMetadataRepository)
     private databaseRepo: DatabaseMetadataRepository,
 
@@ -285,51 +289,214 @@ export class MetadataRepository {
 
   /**
    * 获取数据源的最后同步时间
+   * 返回该数据源下所有数据库中最新的同步时间
    */
   async getLastSyncTime(dataSourceId: number): Promise<Date | undefined> {
-    // TODO: 实现获取最后同步时间的逻辑
-    const databases = await this.databaseRepo.getDatabasesBySource(dataSourceId);
-    if (databases.length > 0) {
-      return databases[0].lastSyncedAt || undefined;
-    }
-    return undefined;
+    const result = await this.prisma.databaseMeta.findFirst({
+      where: {
+        sourceId: dataSourceId,
+        lastSyncedAt: { not: null },
+      },
+      orderBy: { lastSyncedAt: 'desc' },
+      select: { lastSyncedAt: true },
+    });
+
+    return result?.lastSyncedAt || undefined;
   }
 
   /**
    * 检测元数据变更
+   * 返回与指定数据源相关的最近元数据变更记录
    */
-  async detectChanges(dataSourceId: number): Promise<any[]> {
-    // TODO: 实现变更检测逻辑,暂时返回空数组
-    return [];
+  async detectChanges(dataSourceId: number): Promise<MetadataChange[]> {
+    // 获取该数据源下的所有数据库 ID
+    const databases = await this.prisma.databaseMeta.findMany({
+      where: { sourceId: dataSourceId },
+      select: { id: true },
+    });
+    const databaseIds = databases.map((db) => db.id);
+
+    if (databaseIds.length === 0) {
+      return [];
+    }
+
+    // 获取数据库级别的变更
+    const databaseChanges = await this.prisma.metadataChange.findMany({
+      where: {
+        entityType: 'database',
+        entityId: { in: databaseIds },
+      },
+    });
+
+    // 获取该数据源下的所有表 ID
+    const tables = await this.prisma.tableMeta.findMany({
+      where: { databaseId: { in: databaseIds } },
+      select: { id: true },
+    });
+    const tableIds = tables.map((t) => t.id);
+
+    // 获取表级别的变更
+    const tableChanges =
+      tableIds.length > 0
+        ? await this.prisma.metadataChange.findMany({
+            where: {
+              entityType: 'table',
+              entityId: { in: tableIds },
+            },
+          })
+        : [];
+
+    // 获取该数据源下的所有列 ID
+    const columns =
+      tableIds.length > 0
+        ? await this.prisma.columnMeta.findMany({
+            where: { tableId: { in: tableIds } },
+            select: { id: true },
+          })
+        : [];
+    const columnIds = columns.map((c) => c.id);
+
+    // 获取列级别的变更
+    const columnChanges =
+      columnIds.length > 0
+        ? await this.prisma.metadataChange.findMany({
+            where: {
+              entityType: 'column',
+              entityId: { in: columnIds },
+            },
+          })
+        : [];
+
+    // 合并所有变更并按时间倒序排序
+    const allChanges = [...databaseChanges, ...tableChanges, ...columnChanges];
+    return allChanges.sort((a, b) => b.changedAt.getTime() - a.changedAt.getTime());
   }
 
   /**
    * 获取元数据
+   * 返回完整的元数据层级结构（数据库 -> 表 -> 字段）
    */
   async getMetadata(dataSourceId: number, databases?: string[]): Promise<any[]> {
-    // TODO: 实现获取元数据逻辑
-    const dbList = await this.databaseRepo.getDatabasesBySource(dataSourceId);
+    // 构建查询条件
+    const where: any = { sourceId: dataSourceId };
+    if (databases && databases.length > 0) {
+      where.databaseName = { in: databases };
+    }
+
+    // 查询数据库及其关联的表和字段
+    const dbList = await this.prisma.databaseMeta.findMany({
+      where,
+      include: {
+        tables: {
+          include: {
+            columns: {
+              orderBy: { ordinalPosition: 'asc' },
+            },
+          },
+          orderBy: { tableName: 'asc' },
+        },
+      },
+      orderBy: { databaseName: 'asc' },
+    });
+
     return dbList;
   }
 
   /**
    * 获取最常查询的表
+   * 从查询审计日志中统计使用频率最高的表
    */
   async getTopQueriedTables(dataSourceId: number, limit: number): Promise<any[]> {
-    // TODO: 实现获取最常查询表的逻辑,暂时返回空数组
-    return [];
+    // 获取该数据源下的所有数据库
+    const databases = await this.prisma.databaseMeta.findMany({
+      where: { sourceId: dataSourceId },
+      select: { databaseName: true },
+    });
+    const databaseNames = databases.map((db) => db.databaseName);
+
+    if (databaseNames.length === 0) {
+      return [];
+    }
+
+    // 获取查询审计日志，解析 usedTables 字段并统计
+    const logs = await this.prisma.queryAuditLog.findMany({
+      where: {
+        executionSuccess: true,
+      },
+      select: {
+        usedTables: true,
+        usedDatabases: true,
+      },
+    });
+
+    // 统计表的使用频率
+    const tableCountMap = new Map<string, number>();
+
+    for (const log of logs) {
+      try {
+        const usedDatabases = JSON.parse(log.usedDatabases);
+        const usedTables = JSON.parse(log.usedTables);
+
+        // 检查是否使用了当前数据源的数据库
+        const hasTargetDatabase = usedDatabases.some((db: string) =>
+          databaseNames.includes(db)
+        );
+
+        if (hasTargetDatabase && Array.isArray(usedTables)) {
+          for (const table of usedTables) {
+            const tableKey = typeof table === 'string' ? table : JSON.stringify(table);
+            tableCountMap.set(tableKey, (tableCountMap.get(tableKey) || 0) + 1);
+          }
+        }
+      } catch (error) {
+        // 忽略 JSON 解析错误
+        continue;
+      }
+    }
+
+    // 转换为数组并排序
+    const sortedTables = Array.from(tableCountMap.entries())
+      .map(([table, count]) => ({ table, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, limit);
+
+    return sortedTables;
   }
 
   /**
    * 获取统计信息
+   * 返回数据源的数据库、表、字段数量统计
    */
   async getStatistics(dataSourceId: number): Promise<any> {
-    // TODO: 实现获取统计信息逻辑
-    const databases = await this.databaseRepo.getDatabasesBySource(dataSourceId);
+    // 获取数据库数量
+    const databaseCount = await this.prisma.databaseMeta.count({
+      where: { sourceId: dataSourceId },
+    });
+
+    // 获取表数量
+    const tableCount = await this.prisma.tableMeta.count({
+      where: {
+        database: {
+          sourceId: dataSourceId,
+        },
+      },
+    });
+
+    // 获取字段数量
+    const columnCount = await this.prisma.columnMeta.count({
+      where: {
+        table: {
+          database: {
+            sourceId: dataSourceId,
+          },
+        },
+      },
+    });
+
     return {
-      databaseCount: databases.length,
-      tableCount: 0,
-      columnCount: 0,
+      databaseCount,
+      tableCount,
+      columnCount,
     };
   }
 }

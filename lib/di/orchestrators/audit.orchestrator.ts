@@ -511,6 +511,168 @@ export class AuditOrchestrator {
   }
 
   /**
+   * 获取热门查询
+   *
+   * @param options - 选项
+   * @returns 热门查询列表
+   */
+  async getHotQueries(options: {
+    limit?: number;
+    startDate?: Date;
+    endDate?: Date;
+  } = {}): Promise<Array<{ query: string; count: number; avgDuration: number }>> {
+    try {
+      const where: any = {
+        executionSuccess: true, // 只统计成功的查询
+      };
+
+      if (options.startDate || options.endDate) {
+        where.timestamp = {};
+        if (options.startDate) {
+          where.timestamp.gte = options.startDate;
+        }
+        if (options.endDate) {
+          where.timestamp.lte = options.endDate;
+        }
+      }
+
+      // 获取所有符合条件的查询
+      const logs = await this.prisma.queryAuditLog.findMany({
+        where,
+        select: {
+          naturalLanguageQuery: true,
+          executionTime: true,
+        },
+      });
+
+      // 按查询内容分组统计
+      const queryMap = new Map<string, { count: number; totalDuration: number }>();
+
+      logs.forEach((log) => {
+        const query = log.naturalLanguageQuery;
+        const existing = queryMap.get(query);
+
+        if (existing) {
+          existing.count++;
+          existing.totalDuration += log.executionTime;
+        } else {
+          queryMap.set(query, {
+            count: 1,
+            totalDuration: log.executionTime,
+          });
+        }
+      });
+
+      // 转换为结果数组并排序
+      const results = Array.from(queryMap.entries())
+        .map(([query, stats]) => ({
+          query,
+          count: stats.count,
+          avgDuration: Math.round(stats.totalDuration / stats.count),
+        }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, options.limit || 10);
+
+      console.log(`[AuditOrchestrator] Found ${results.length} hot queries`);
+      return results;
+
+    } catch (error) {
+      console.error(`[AuditOrchestrator] Failed to get hot queries:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * 获取热门表
+   *
+   * @param options - 选项
+   * @returns 热门表列表
+   */
+  async getHotTables(options: {
+    limit?: number;
+    startDate?: Date;
+    endDate?: Date;
+  } = {}): Promise<Array<{ database: string; table: string; accessCount: number }>> {
+    try {
+      const where: any = {};
+
+      if (options.startDate || options.endDate) {
+        where.timestamp = {};
+        if (options.startDate) {
+          where.timestamp.gte = options.startDate;
+        }
+        if (options.endDate) {
+          where.timestamp.lte = options.endDate;
+        }
+      }
+
+      // 获取所有符合条件的查询
+      const logs = await this.prisma.queryAuditLog.findMany({
+        where,
+        select: {
+          usedTables: true,
+          usedDatabases: true,
+        },
+      });
+
+      // 统计表访问次数
+      const tableMap = new Map<string, { database: string; table: string; count: number }>();
+
+      logs.forEach((log) => {
+        try {
+          const tables = JSON.parse(log.usedTables) as string[];
+          const databases = JSON.parse(log.usedDatabases) as string[];
+
+          tables.forEach((table) => {
+            // 从完整表名中提取数据库和表名
+            // 格式可能是 "database.table" 或 "table"
+            let database = databases[0] || 'unknown';
+            let tableName = table;
+
+            if (table.includes('.')) {
+              const parts = table.split('.');
+              database = parts[0];
+              tableName = parts[1];
+            }
+
+            const key = `${database}.${tableName}`;
+            const existing = tableMap.get(key);
+
+            if (existing) {
+              existing.count++;
+            } else {
+              tableMap.set(key, {
+                database,
+                table: tableName,
+                count: 1,
+              });
+            }
+          });
+        } catch (e) {
+          // 忽略 JSON 解析错误
+        }
+      });
+
+      // 转换为结果数组并排序
+      const results = Array.from(tableMap.values())
+        .sort((a, b) => b.count - a.count)
+        .slice(0, options.limit || 10)
+        .map((item) => ({
+          database: item.database,
+          table: item.table,
+          accessCount: item.count,
+        }));
+
+      console.log(`[AuditOrchestrator] Found ${results.length} hot tables`);
+      return results;
+
+    } catch (error) {
+      console.error(`[AuditOrchestrator] Failed to get hot tables:`, error);
+      return [];
+    }
+  }
+
+  /**
    * 获取用户查询模式分析
    *
    * @param userId - 用户 ID

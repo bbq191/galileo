@@ -212,13 +212,15 @@ export class StatisticsAggregationService {
       tables: q.tables,
     }));
 
-    // 2. 获取热门查询（暂时使用空数组，待实现）
-    // TODO: 实现 AuditOrchestrator.getHotQueries 方法
-    const hotQueries: Array<{ query: string; count: number; avgDuration: number }> = [];
+    // 2. 获取热门查询（从审计日志）
+    const hotQueries = await this.auditOrchestrator.getHotQueries({
+      limit: 10,
+    });
 
-    // 3. 获取热门表（暂时使用空数组，待实现）
-    // TODO: 实现 AuditOrchestrator.getHotTables 方法
-    const hotTables: Array<{ database: string; table: string; accessCount: number }> = [];
+    // 3. 获取热门表（从审计日志）
+    const hotTables = await this.auditOrchestrator.getHotTables({
+      limit: 10,
+    });
 
     return {
       hotQueries,
