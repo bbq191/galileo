@@ -172,8 +172,24 @@ export class MetadataOrchestrator {
         databaseCount: syncResult.databaseCount,
         tableCount: syncResult.tableCount,
         columnCount: syncResult.columnCount,
-        relationshipCount: syncResult.relationshipCount,
-        changes: syncResult.changes,
+        relationshipCount: syncResult.explicitRelationshipCount + syncResult.inferredRelationshipCount,
+        changes: syncResult.changes ? {
+          added: {
+            databases: 0,
+            tables: syncResult.changes.tablesAdded,
+            columns: syncResult.changes.columnsAdded,
+          },
+          updated: {
+            databases: 0,
+            tables: syncResult.changes.tablesModified,
+            columns: syncResult.changes.columnsModified,
+          },
+          removed: {
+            databases: 0,
+            tables: syncResult.changes.tablesRemoved,
+            columns: syncResult.changes.columnsRemoved,
+          },
+        } : undefined,
         duration,
       };
 
@@ -225,8 +241,8 @@ export class MetadataOrchestrator {
 
       return {
         hasChanges: changes.length > 0,
-        changedDatabases: Array.from(new Set(changes.map(c => c.database))),
-        changedTables: changes.map(c => ({
+        changedDatabases: Array.from(new Set(changes.map((c: any) => c.database))),
+        changedTables: changes.map((c: any) => ({
           database: c.database,
           table: c.table,
           changeType: c.changeType as 'added' | 'modified' | 'removed',
@@ -383,7 +399,8 @@ export class MetadataOrchestrator {
     try {
       const connectionId = dataSourceId.toString();
       const connection = await this.connectionManager.getConnection(connectionId);
-      return await this.connectionManager.testConnection(connectionId);
+      const result = await this.connectionManager.testConnection(connectionId);
+      return result.healthy;
     } catch (error) {
       console.error(`[MetadataOrchestrator] Connection validation failed:`, error);
       return false;

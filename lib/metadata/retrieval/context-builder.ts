@@ -182,35 +182,34 @@ export class ContextBuilder {
       const tableName = table.tableName;
 
       // 从实际数据库查询索引信息
-      const connectionConfig = {
-        host: source.host,
-        port: source.port,
-        user: source.username,
-        // 注意：这里需要解密密码
-        password: source.passwordEncrypted,
-        database: databaseName,
-      };
+      const connectionId = source.id.toString();
 
-      const connection = await connectionManager.getConnection(
-        `${source.host}:${source.port}/${databaseName}`,
-        connectionConfig
-      );
+      const pool = await connectionManager.getConnection(connectionId);
 
       // 查询索引信息（MySQL/MariaDB）
-      const [rows] = await connection.execute(
-        `SHOW INDEX FROM \`${databaseName}\`.\`${tableName}\``,
-        []
-      );
+      const connection = await pool.getConnection();
+      try {
+        const [rows] = await connection.query(
+          `SHOW INDEX FROM \`${databaseName}\`.\`${tableName}\``
+        ) as any;
 
-      // 提取唯一的索引名称
-      const indexes = new Set<string>();
-      for (const row of rows as any[]) {
-        if (row.Key_name && row.Key_name !== 'PRIMARY') {
-          indexes.add(row.Key_name);
+        // 释放连接
+        connection.release();
+
+        // 提取唯一的索引名称
+        const indexes = new Set<string>();
+        for (const row of rows as any[]) {
+          if (row.Key_name && row.Key_name !== 'PRIMARY') {
+            indexes.add(row.Key_name);
+          }
         }
-      }
 
-      return Array.from(indexes);
+        return Array.from(indexes);
+      } catch (queryError) {
+        // 确保连接被释放
+        connection.release();
+        throw queryError;
+      }
     } catch (error: any) {
       // 静默失败，返回空数组
       // 索引信息不是必需的，不应阻塞主流程

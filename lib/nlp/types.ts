@@ -25,7 +25,7 @@ export interface QueryIntent {
     timeRange?: {
       start?: Date;
       end?: Date;
-      /** 相对时间表达式，如"最近一个月"、"今年" */
+      /** 相对时间表达式,如"最近一个月"、"今年" */
       relative?: string;
     };
     /** 过滤条件 */
@@ -57,6 +57,38 @@ export interface QueryIntent {
 
   /** 模糊性标记 */
   ambiguities?: string[];
+
+  // ====== 向后兼容属性 (为了支持旧代码) ======
+  /** @deprecated 使用 entities.tables 代替 */
+  tables?: string[];
+  /** @deprecated 使用 entities.columns 代替 */
+  columns?: string[];
+  /** @deprecated 使用 aggregations 代替 */
+  aggregation?: {
+    function: 'SUM' | 'COUNT' | 'AVG' | 'MAX' | 'MIN';
+    column: string;
+  };
+  /** @deprecated 使用 aggregations.groupBy 代替 */
+  groupBy?: string[];
+  /** @deprecated 使用 conditions.orderBy 代替 */
+  sort?: {
+    column: string;
+    direction: 'ASC' | 'DESC';
+  };
+  /** @deprecated 使用 conditions.timeRange 代替 */
+  timeRange?: {
+    start?: Date;
+    end?: Date;
+    relative?: string;
+  };
+  /** @deprecated 使用 conditions.limit 代替 */
+  limit?: number;
+  /** @deprecated 使用 conditions.filters 代替 */
+  filters?: Filter[];
+  /** @deprecated 原始查询字符串 */
+  originalQuery?: string;
+  /** @deprecated 使用 type 代替 */
+  queryType?: 'select' | 'aggregate' | 'statistics' | 'comparison' | 'aggregation' | 'join' | 'filter';
 }
 
 /**

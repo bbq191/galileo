@@ -84,6 +84,9 @@ export interface ChangeDetectionResult {
   /** 总变更数 */
   totalChanges: number;
 
+  /** 是否有变更 */
+  hasChanges: boolean;
+
   /** 使用的检测方法 */
   detectionMethod: 'hash' | 'fallback' | 'mixed';
 }
@@ -183,6 +186,7 @@ export class ChangeDetector {
     const completedAt = new Date();
     const duration = completedAt.getTime() - startedAt.getTime();
 
+    const totalChanges = tableDiff.totalChanges + changedTables.length;
     const result: ChangeDetectionResult = {
       databaseId,
       databaseName,
@@ -191,8 +195,8 @@ export class ChangeDetector {
       duration,
       tableDiff,
       changedTables,
-      totalChanges:
-        tableDiff.totalChanges + changedTables.length,
+      totalChanges,
+      hasChanges: totalChanges > 0,
       detectionMethod,
     };
 
@@ -270,10 +274,10 @@ export class ChangeDetector {
             entityType: 'table',
             entityId: 0, // 新增表还没有 ID
             oldValue: null,
-            newValue: {
+            newValue: JSON.stringify({
               tableName: newTable.tableName,
               tableComment: newTable.tableComment,
-            },
+            }),
           },
         });
       }
@@ -285,9 +289,9 @@ export class ChangeDetector {
             changeType: 'table_removed',
             entityType: 'table',
             entityId: deletedTable.tableId,
-            oldValue: {
+            oldValue: JSON.stringify({
               tableName: deletedTable.tableName,
-            },
+            }),
             newValue: null,
           },
         });
@@ -301,12 +305,12 @@ export class ChangeDetector {
               changeType: 'table_modified',
               entityType: 'table',
               entityId: changedTable.tableId,
-              oldValue: {
+              oldValue: JSON.stringify({
                 hash: changedTable.oldHash,
-              },
-              newValue: {
+              }),
+              newValue: JSON.stringify({
                 hash: changedTable.newHash,
-              },
+              }),
             },
           });
         }

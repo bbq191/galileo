@@ -166,7 +166,7 @@ export class MetadataRetriever {
     // 6. 限制返回数量
     // 如果有精确匹配，优先返回精确匹配的表，减少其他表的干扰
     let limit = options.limit || 10;
-    if (hasExactMatch && intent.entities.tables.length === 1) {
+    if (hasExactMatch && intent.entities.tables && intent.entities.tables.length === 1) {
       limit = Math.min(limit, 2); // 最多返回2个表，减少干扰
       console.log(`精确匹配单表查询，限制返回 ${limit} 个表`);
     }
@@ -178,33 +178,27 @@ export class MetadataRetriever {
    * 获取表详情
    */
   async getTableDetails(tableId: number): Promise<any> {
-    const cacheKey = `table:${tableId}`;
+    return await this.cache.get(
+      'table',
+      { id: tableId },
+      async () => {
+        const table = await this.prisma.tableMeta.findUnique({
+          where: { id: tableId },
+          include: {
+            database: true,
+            columns: {
+              orderBy: { ordinalPosition: 'asc' },
+            },
+          },
+        });
 
-    // 检查缓存
-    const cached = await this.cache.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
+        if (!table) {
+          throw new Error(`表不存在: ID=${tableId}`);
+        }
 
-    // 查询数据库
-    const table = await this.prisma.tableMeta.findUnique({
-      where: { id: tableId },
-      include: {
-        database: true,
-        columns: {
-          orderBy: { ordinalPosition: 'asc' },
-        },
-      },
-    });
-
-    if (!table) {
-      throw new Error(`表不存在: ID=${tableId}`);
-    }
-
-    // 缓存结果
-    await this.cache.set(cacheKey, table);
-
-    return table;
+        return table;
+      }
+    );
   }
 
   /**
@@ -270,38 +264,31 @@ export class MetadataRetriever {
    * 获取数据库统计信息
    */
   async getDatabaseStats(databaseId: number): Promise<any> {
-    const cacheKey = `db:stats:${databaseId}`;
+    return await this.cache.get(
+      'database-stats',
+      { id: databaseId },
+      async () => {
+        // 统计表数量
+        const tableCount = await this.prisma.tableMeta.count({
+          where: { databaseId },
+        });
 
-    // 检查缓存
-    const cached = await this.cache.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
+        // 统计关系数量
+        const relCount = await this.prisma.explicitRelationship.count({
+          where: {
+            OR: [
+              { sourceTable: { databaseId } },
+              { targetTable: { databaseId } },
+            ],
+          },
+        });
 
-    // 统计表数量
-    const tableCount = await this.prisma.tableMeta.count({
-      where: { databaseId },
-    });
-
-    // 统计关系数量
-    const relCount = await this.prisma.explicitRelationship.count({
-      where: {
-        OR: [
-          { sourceTable: { databaseId } },
-          { targetTable: { databaseId } },
-        ],
-      },
-    });
-
-    const stats = {
-      tableCount,
-      relationshipCount: relCount,
-    };
-
-    // 缓存结果
-    await this.cache.set(cacheKey, stats, { ttl: 600 }); // 10分钟
-
-    return stats;
+        return {
+          tableCount,
+          relationshipCount: relCount,
+        };
+      }
+    );
   }
 
   /**
@@ -323,16 +310,16 @@ export function getMetadataRetriever(): MetadataRetriever {
   if (!_metadataRetriever) {
     const { getService } = require('@/lib/di/setup');
     try {
-      _metadataRetriever = getService<MetadataRetriever>(DI_TOKENS.MetadataRetriever);
+      _metadataRetriever = getService(DI_TOKENS.MetadataRetriever);
     } catch {
       // 回退方案：创建不使用 DI 的实例
       const prisma = require('@/lib/prisma/client').default;
       const { MultiLevelCache } = require('@/lib/cache/multi-level-cache');
-      const cache = new MultiLevelCache({ ttl: 300, maxSize: 100 });
+      const cache = new MultiLevelCache();
       _metadataRetriever = new MetadataRetriever(prisma, cache);
     }
   }
-  return _metadataRetriever;
+  return _metadataRetriever!;
 }
 
 export const metadataRetriever = new Proxy({} as MetadataRetriever, {

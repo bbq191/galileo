@@ -627,9 +627,9 @@ export class CacheOrchestrator {
         by: ['naturalLanguageQuery'],
         where: {
           naturalLanguageQuery: {
-            not: null,
+            not: undefined,
           },
-          success: true,
+          executionSuccess: true,
         },
         _count: {
           naturalLanguageQuery: true,

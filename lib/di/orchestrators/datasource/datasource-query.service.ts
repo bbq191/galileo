@@ -49,7 +49,13 @@ export class DataSourceQueryService {
 
           let connectionStats;
           if (hasConnection) {
-            connectionStats = await this.connectionManager.getConnectionStats(connectionId);
+            const stats = await this.connectionManager.getConnectionStats(connectionId);
+            connectionStats = {
+              activeConnections: stats.active,
+              idleConnections: stats.idle,
+              totalConnections: stats.total,
+              waitingRequests: stats.waiting,
+            };
           }
 
           return {
@@ -104,7 +110,13 @@ export class DataSourceQueryService {
 
       let connectionStats;
       if (hasConnection) {
-        connectionStats = await this.connectionManager.getConnectionStats(connectionId);
+        const stats = await this.connectionManager.getConnectionStats(connectionId);
+        connectionStats = {
+          activeConnections: stats.active,
+          idleConnections: stats.idle,
+          totalConnections: stats.total,
+          waitingRequests: stats.waiting,
+        };
       }
 
       return {

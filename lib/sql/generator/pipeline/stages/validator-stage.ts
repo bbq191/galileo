@@ -42,37 +42,31 @@ export class Validator extends BasePipelineStage {
     this.log(context, `验证 SQL：${sql.substring(0, 100)}...`, 'info');
 
     // 执行完整验证
-    const validationResult = await this.validator.validate(sql, {
-      checkSyntax: true,
-      checkSecurity: true,
-      checkPermissions: true,
-      checkSemantics: true,
-      performanceAnalysis: true,
-      metadata: context.metadata
-    });
+    const validationResult = await this.validator.validate(sql, context.metadata);
 
     // 检查验证结果
     if (!validationResult.isValid) {
-      const errors = validationResult.errors.join('; ');
+      const errors = validationResult.errors.map(e => e.message).join('; ');
       this.log(context, `SQL 验证失败：${errors}`, 'error');
       throw new Error(`SQL 验证失败: ${errors}`);
     }
 
     // 添加验证警告到结果
     if (validationResult.warnings && validationResult.warnings.length > 0) {
-      this.log(context, `SQL 验证警告：${validationResult.warnings.join(', ')}`, 'warn');
+      const warningMessages = validationResult.warnings.map(w => w.message);
+      this.log(context, `SQL 验证警告：${warningMessages.join(', ')}`, 'warn');
 
       context.result.warnings = [
         ...(context.result.warnings || []),
-        ...validationResult.warnings
+        ...warningMessages
       ];
     }
 
     // 添加性能建议
-    if (validationResult.performanceSuggestions && validationResult.performanceSuggestions.length > 0) {
+    if (validationResult.optimizationSuggestions && validationResult.optimizationSuggestions.length > 0) {
       context.result.warnings = [
         ...(context.result.warnings || []),
-        ...validationResult.performanceSuggestions.map(s => `性能建议: ${s}`)
+        ...validationResult.optimizationSuggestions.map(s => `性能建议: ${s.message}`)
       ];
     }
 

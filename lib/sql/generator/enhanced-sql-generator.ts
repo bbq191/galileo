@@ -28,8 +28,13 @@ export class EnhancedSQLGenerator extends SQLGenerator {
   private businessRulesEngine: BusinessRulesEngine;
   private enableBusinessRules: boolean;
 
-  constructor(aiClient?: DeepseekClient, enableBusinessRules: boolean = true) {
-    super(aiClient);
+  constructor(
+    aiClient: DeepseekClient,
+    crossDbHandler: any,
+    queryCacheManager: any,
+    enableBusinessRules: boolean = true
+  ) {
+    super(aiClient, crossDbHandler, queryCacheManager);
     this.businessRulesEngine = new BusinessRulesEngine();
     this.enableBusinessRules = enableBusinessRules;
   }
@@ -40,13 +45,15 @@ export class EnhancedSQLGenerator extends SQLGenerator {
   async generate(
     intent: QueryIntent,
     context: MetadataContext,
-    naturalLanguageQuery: string,
     options: SQLGenerationOptions = {}
   ): Promise<SQLGenerationResult> {
     console.log('[EnhancedSQLGenerator] 开始增强的 SQL 生成...');
 
-    if (!this.enableBusinessRules) {
-      // 如果未启用业务规则，回退到基础生成器
+    // 从 intent 中获取原始查询（如果可用）
+    const naturalLanguageQuery = intent.originalQuery || '';
+
+    if (!this.enableBusinessRules || !naturalLanguageQuery) {
+      // 如果未启用业务规则或没有原始查询，回退到基础生成器
       return super.generate(intent, context, options);
     }
 
@@ -68,7 +75,7 @@ export class EnhancedSQLGenerator extends SQLGenerator {
 
     // 4. 获取适用的过滤规则
     const applicableFilters = await this.businessRulesEngine.getApplicableFilters(
-      intent.entities.tables
+      intent.entities.tables || []
     );
     console.log(`[EnhancedSQLGenerator] 找到 ${applicableFilters.length} 个适用过滤规则`);
 

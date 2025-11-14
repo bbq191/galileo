@@ -37,7 +37,7 @@ export interface SyncScheduleConfig {
  */
 interface SyncTask {
   config: SyncScheduleConfig;
-  job: cron.ScheduledTask;
+  job: ReturnType<typeof cron.schedule>;
   isRunning: boolean;
   lastRunAt?: Date;
   lastStatus?: 'success' | 'failure';
@@ -144,10 +144,12 @@ export class SyncScheduler {
         await this.executeSyncTask(config.sourceId);
       },
       {
-        scheduled: false,  // 不自动启动
         timezone: 'Asia/Shanghai',
       }
     );
+
+    // 默认不自动启动，需要手动调用 start()
+    job.stop();
 
     const task: SyncTask = {
       config,
@@ -337,7 +339,7 @@ export class SyncScheduler {
                 changeResult,
                 {
                   batchSize: task.config.batchSize,
-                  enableAIAnnotation: task.config.enableAIAnnotation,
+                  triggerAIAnnotation: task.config.enableAIAnnotation,
                   verbose: false,
                 }
               );

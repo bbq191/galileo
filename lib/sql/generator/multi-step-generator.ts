@@ -18,9 +18,12 @@ export class MultiStepSQLGenerator {
   private aiClient: DeepseekClient;
   private simpleGenerator: SQLGenerator;
 
-  constructor() {
-    this.aiClient = new DeepseekClient();
-    this.simpleGenerator = new SQLGenerator();
+  constructor(
+    aiClient: DeepseekClient,
+    simpleGenerator: SQLGenerator
+  ) {
+    this.aiClient = aiClient;
+    this.simpleGenerator = simpleGenerator;
   }
 
   /**
@@ -141,7 +144,7 @@ ${context.tables.map(t => `- ${t.databaseName}.${t.tableName} (${t.columns.lengt
         { role: 'user', content: prompt }
       ], {
         temperature: 0.2,
-        maxTokens: 2000
+        max_tokens: 2000
       });
 
       // 提取 JSON
@@ -218,7 +221,7 @@ ${context.tables.map(t => `- ${t.databaseName}.${t.tableName} (${t.columns.lengt
         { role: 'user', content: prompt }
       ], {
         temperature: 0.1,
-        maxTokens: 1500
+        max_tokens: 1500
       });
 
       // 提取 SQL

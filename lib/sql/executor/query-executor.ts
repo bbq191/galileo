@@ -454,7 +454,7 @@ export const queryExecutor: QueryExecutor = new Proxy({} as QueryExecutor, {
     if (!_queryExecutor) {
       const { resolve } = require('@/lib/di/container');
       const { DI_TOKENS } = require('@/lib/di/tokens');
-      _queryExecutor = resolve<QueryExecutor>(DI_TOKENS.QueryExecutor);
+      _queryExecutor = resolve(DI_TOKENS.QueryExecutor);
     }
     return (_queryExecutor as any)[prop];
   }

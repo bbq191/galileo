@@ -67,7 +67,7 @@ export class ResultFormatter {
       length: extendedField.length,
       table: extendedField.table,
       database: extendedField.db,
-      nullable: this.isNullable(extendedField.flags),
+      nullable: this.isNullable(typeof extendedField.flags === 'number' ? extendedField.flags : undefined),
       charset: extendedField.characterSet?.toString(),
     };
   }
@@ -352,7 +352,7 @@ export const resultFormatter: ResultFormatter = new Proxy({} as ResultFormatter,
     if (!_resultFormatter) {
       const { resolve } = require('@/lib/di/container');
       const { DI_TOKENS } = require('@/lib/di/tokens');
-      _resultFormatter = resolve<ResultFormatter>(DI_TOKENS.ResultFormatter);
+      _resultFormatter = resolve(DI_TOKENS.ResultFormatter);
     }
     return (_resultFormatter as any)[prop];
   }

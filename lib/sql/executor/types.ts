@@ -152,9 +152,9 @@ export interface ExtendedFieldPacket extends FieldPacket {
   name: string;
   type: number;
   length: number;
-  table?: string;
+  table: string;
   db?: string;
-  flags?: number;
-  decimals?: number;
+  flags: number | string[]; // 与 FieldPacket 保持一致
+  decimals: number; // 必需字段，与 FieldPacket 保持一致
   characterSet?: number;
 }

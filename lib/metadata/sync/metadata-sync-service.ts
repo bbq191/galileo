@@ -591,8 +591,8 @@ export function getMetadataSyncService(): MetadataSyncService {
   if (!_metadataSyncService) {
     const { getService } = require('@/lib/di/setup');
     try {
-      _metadataSyncService = getService<MetadataSyncService>(DI_TOKENS.MetadataSyncService);
-    } catch {
+      _metadataSyncService = getService(DI_TOKENS.MetadataSyncService);
+    } catch (error) {
       // 回退方案：创建不使用 DI 的实例
       const prisma = require('@/lib/prisma/client').default;
       const connectionManager = require('@/lib/database/connection-manager').default;
@@ -604,7 +604,7 @@ export function getMetadataSyncService(): MetadataSyncService {
       );
     }
   }
-  return _metadataSyncService;
+  return _metadataSyncService!;
 }
 
 export const metadataSyncService = new Proxy({} as MetadataSyncService, {

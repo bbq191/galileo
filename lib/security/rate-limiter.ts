@@ -95,12 +95,13 @@ export async function checkRateLimit(
   } catch (error: any) {
     // 超过限制
     if (error instanceof Error && 'msBeforeNext' in error) {
+      const msBeforeNext = typeof error.msBeforeNext === 'number' ? error.msBeforeNext : 0;
       return {
         success: false,
         limit: limiter.points,
         remaining: 0,
-        resetMs: error.msBeforeNext,
-        retryAfter: Math.ceil(error.msBeforeNext / 1000),
+        resetMs: msBeforeNext,
+        retryAfter: Math.ceil(msBeforeNext / 1000),
       };
     }
 

@@ -45,23 +45,23 @@ export class QualityEnhancer extends BasePipelineStage {
 
     try {
       // 应用自动修正
-      const fixResult = await this.autoFixer.autoFix(originalSQL);
+      const fixResult = this.autoFixer.fix(originalSQL, context.metadata);
 
-      if (fixResult.modified) {
+      if (fixResult.fixed) {
         this.log(
           context,
-          `SQL 已修正（${fixResult.fixes.length} 处修改）：${fixResult.fixes.join(', ')}`,
+          `SQL 已修正（${fixResult.appliedFixes.length} 处修改）：${fixResult.appliedFixes.map(f => f.description).join(', ')}`,
           'info'
         );
 
         // 更新结果
-        context.result.sql = fixResult.sql;
+        context.result.sql = fixResult.fixedSQL;
 
         // 添加修正信息到警告
-        if (fixResult.fixes.length > 0) {
+        if (fixResult.appliedFixes.length > 0) {
           context.result.warnings = [
             ...(context.result.warnings || []),
-            `自动修正: ${fixResult.fixes.join(', ')}`
+            `自动修正: ${fixResult.appliedFixes.map(f => f.description).join(', ')}`
           ];
         }
       } else {

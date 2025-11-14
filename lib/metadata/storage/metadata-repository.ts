@@ -280,6 +280,58 @@ export class MetadataRepository {
   ): Promise<any[]> {
     return this.searchRepo.searchColumns(query, options);
   }
+
+  // ==================== 额外的辅助方法 ====================
+
+  /**
+   * 获取数据源的最后同步时间
+   */
+  async getLastSyncTime(dataSourceId: number): Promise<Date | undefined> {
+    // TODO: 实现获取最后同步时间的逻辑
+    const databases = await this.databaseRepo.getDatabasesBySource(dataSourceId);
+    if (databases.length > 0) {
+      return databases[0].lastSyncedAt || undefined;
+    }
+    return undefined;
+  }
+
+  /**
+   * 检测元数据变更
+   */
+  async detectChanges(dataSourceId: number): Promise<any[]> {
+    // TODO: 实现变更检测逻辑,暂时返回空数组
+    return [];
+  }
+
+  /**
+   * 获取元数据
+   */
+  async getMetadata(dataSourceId: number, databases?: string[]): Promise<any[]> {
+    // TODO: 实现获取元数据逻辑
+    const dbList = await this.databaseRepo.getDatabasesBySource(dataSourceId);
+    return dbList;
+  }
+
+  /**
+   * 获取最常查询的表
+   */
+  async getTopQueriedTables(dataSourceId: number, limit: number): Promise<any[]> {
+    // TODO: 实现获取最常查询表的逻辑,暂时返回空数组
+    return [];
+  }
+
+  /**
+   * 获取统计信息
+   */
+  async getStatistics(dataSourceId: number): Promise<any> {
+    // TODO: 实现获取统计信息逻辑
+    const databases = await this.databaseRepo.getDatabasesBySource(dataSourceId);
+    return {
+      databaseCount: databases.length,
+      tableCount: 0,
+      columnCount: 0,
+    };
+  }
 }
 
 /**
@@ -291,14 +343,13 @@ export function getMetadataRepository(): MetadataRepository {
   if (!_metadataRepository) {
     const { getService } = require('@/lib/di/setup');
     try {
-      _metadataRepository = getService<MetadataRepository>(DI_TOKENS.MetadataRepository);
-    } catch {
-      // 回退方案：创建不使用 DI 的实例
-      const prisma = require('@/lib/prisma/client').default;
-      _metadataRepository = new MetadataRepository(prisma);
+      _metadataRepository = getService(DI_TOKENS.MetadataRepository);
+    } catch (error) {
+      // 回退方案：无法创建不使用 DI 的实例，因为需要多个依赖
+      throw new Error(`无法获取 MetadataRepository 实例: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  return _metadataRepository;
+  return _metadataRepository!;
 }
 
 export const metadataRepository = new Proxy({} as MetadataRepository, {

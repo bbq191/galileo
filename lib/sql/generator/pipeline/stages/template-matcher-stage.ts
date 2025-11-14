@@ -166,7 +166,7 @@ export class TemplateMatcher extends BasePipelineStage {
       case 'time_range':
         return queryType === 'aggregation' && intent.timeRange !== undefined;
       case 'join':
-        return queryType === 'join' || (intent.tables && intent.tables.length > 1);
+        return queryType === 'join' || Boolean(intent.tables && intent.tables.length > 1);
       case 'ranking':
         return queryType === 'aggregation' && intent.sort !== undefined;
       case 'comparison':
@@ -237,14 +237,15 @@ export class TemplateMatcher extends BasePipelineStage {
 
     // 提取表和数据库
     if (tables.length > 0) {
-      const firstTable = metadata.relevantTables[0];
+      const relevantTables = metadata.relevantTables || metadata.tables;
+      const firstTable = relevantTables?.[0];
       if (firstTable) {
         parameters.set('database', firstTable.databaseName);
         parameters.set('table', firstTable.tableName);
       }
 
-      if (tables.length > 1 && metadata.relevantTables[1]) {
-        const secondTable = metadata.relevantTables[1];
+      if (tables.length > 1 && relevantTables?.[1]) {
+        const secondTable = relevantTables[1];
         parameters.set('database1', firstTable.databaseName);
         parameters.set('table1', firstTable.tableName);
         parameters.set('database2', secondTable.databaseName);
@@ -275,16 +276,17 @@ export class TemplateMatcher extends BasePipelineStage {
     }
 
     // 提取排序字段
-    if (intent.sort && intent.sort.length > 0) {
-      const sortField = intent.sort[0];
-      parameters.set('orderColumn', sortField.column);
-      parameters.set('direction', sortField.direction.toUpperCase());
+    if (intent.sort) {
+      parameters.set('orderColumn', intent.sort.column);
+      parameters.set('direction', intent.sort.direction.toUpperCase());
     }
 
     // 提取时间范围
     if (intent.timeRange) {
       const timeRange = intent.timeRange;
-      parameters.set('timeColumn', timeRange.column || 'created_at');
+      // 尝试从过滤条件中找到时间列，否则使用默认值
+      const timeColumn = intent.filters?.find(f => f.column.toLowerCase().includes('time') || f.column.toLowerCase().includes('date'))?.column || 'created_at';
+      parameters.set('timeColumn', timeColumn);
 
       // 转换时间间隔
       if (timeRange.relative) {
@@ -309,10 +311,11 @@ export class TemplateMatcher extends BasePipelineStage {
     }
 
     // 提取 JOIN 列（简化版本）
-    if (metadata.relevantTables.length >= 2) {
+    const relevantTables = metadata.relevantTables || metadata.tables;
+    if (relevantTables && relevantTables.length >= 2) {
       // 尝试找到关联字段（通常是 id 或 外键）
-      const table1Columns = metadata.relevantTables[0].columns;
-      const table2Columns = metadata.relevantTables[1].columns;
+      const table1Columns = relevantTables[0].columns;
+      const table2Columns = relevantTables[1].columns;
 
       const joinColumn1 = table1Columns.find(c => c.columnName.includes('id'))?.columnName || 'id';
       const joinColumn2 = table2Columns.find(c => c.columnName.includes('id'))?.columnName || 'id';

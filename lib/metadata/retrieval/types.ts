@@ -15,6 +15,8 @@ export interface MetadataContext {
   columns: ColumnContext[];
   /** 估算的查询复杂度 */
   estimatedComplexity: 'low' | 'medium' | 'high';
+  /** @deprecated 相关的表(使用 tables 代替) */
+  relevantTables?: TableContext[];
 }
 
 /**

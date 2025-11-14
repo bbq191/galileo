@@ -12,6 +12,8 @@ import { SQLQualityAssessor } from '../quality/sql-quality-assessor';
 import { SQLAutoFixer } from '../quality/sql-auto-fixer';
 import { UserFeedbackCollector } from '../quality/user-feedback-collector';
 import { QueryTemplateMatcher, QUERY_TEMPLATES } from '../templates/query-templates';
+import { CrossDatabaseHandler } from './cross-db-handler';
+import type { QueryCacheManager } from '@/lib/cache/query-cache-manager';
 
 export interface QualityEnhancedOptions extends SQLGenerationOptions {
   enableQualityAssessment?: boolean;
@@ -42,8 +44,12 @@ export class QualityEnhancedSQLGenerator extends SQLGenerator {
   private feedbackCollector: UserFeedbackCollector;
   private templateMatcher: QueryTemplateMatcher;
 
-  constructor(aiClient?: DeepseekClient) {
-    super(aiClient);
+  constructor(
+    aiClient: DeepseekClient,
+    crossDbHandler: CrossDatabaseHandler,
+    queryCacheManager: QueryCacheManager
+  ) {
+    super(aiClient, crossDbHandler, queryCacheManager);
     this.qualityAssessor = new SQLQualityAssessor();
     this.autoFixer = new SQLAutoFixer();
     this.feedbackCollector = new UserFeedbackCollector();
@@ -248,7 +254,7 @@ export class QualityEnhancedSQLGenerator extends SQLGenerator {
     generatedSQL: string;
     correctedSQL?: string;
     rating: 'excellent' | 'good' | 'fair' | 'poor';
-    feedbackType: string[];
+    feedbackType: any[];
     comment?: string;
     userId?: string;
   }): Promise<void> {
