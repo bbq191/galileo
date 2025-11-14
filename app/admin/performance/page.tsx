@@ -79,12 +79,54 @@ interface CacheStats {
 }
 
 /**
+ * 系统健康检查数据类型
+ */
+interface HealthData {
+  status: 'ok' | 'degraded' | 'error';
+  timestamp: string;
+  checks: {
+    prisma?: {
+      status: string;
+      message: string;
+    };
+    connectionManager?: {
+      status: string;
+      totalConnections: number;
+      healthyConnections: number;
+      message: string;
+    };
+    multiLevelCache?: {
+      status: string;
+      l1Size: number;
+      l1MaxSize: number;
+      hitRate: number;
+      message: string;
+      guardMessage?: string;
+    };
+    queryCacheManager?: {
+      status: string;
+      totalHits: number;
+      totalMisses: number;
+      hitRate: number;
+      message: string;
+    };
+    cacheInvalidationService?: {
+      status: string;
+      message: string;
+    };
+  };
+  phase: string;
+  message: string;
+}
+
+/**
  * 性能监控页面
  * 提供系统性能监控和缓存统计功能
  */
 export default function PerformancePage() {
   const [performanceData, setPerformanceData] = useState<PerformanceData | null>(null);
   const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
+  const [healthData, setHealthData] = useState<HealthData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
@@ -128,6 +170,25 @@ export default function PerformancePage() {
   };
 
   /**
+   * 获取系统健康检查数据
+   */
+  const fetchHealthData = async () => {
+    try {
+      const response = await fetch('/api/health');
+      const data = await response.json();
+
+      if (data.status) {
+        setHealthData(data);
+      } else {
+        throw new Error('获取健康检查数据失败');
+      }
+    } catch (err) {
+      console.error('获取健康检查数据失败:', err);
+      setError(err instanceof Error ? err.message : '获取健康检查数据失败');
+    }
+  };
+
+  /**
    * 刷新所有数据
    */
   const refreshData = async () => {
@@ -135,7 +196,11 @@ export default function PerformancePage() {
     setError(null);
 
     try {
-      await Promise.all([fetchPerformanceData(), fetchCacheStats()]);
+      await Promise.all([
+        fetchPerformanceData(),
+        fetchCacheStats(),
+        fetchHealthData()
+      ]);
     } finally {
       setLoading(false);
     }
@@ -199,6 +264,38 @@ export default function PerformancePage() {
     }
   };
 
+  /**
+   * 获取健康状态样式
+   */
+  const getHealthStatusBadge = (status: string) => {
+    switch (status) {
+      case 'ok':
+        return 'badge-success';
+      case 'degraded':
+        return 'badge-warning';
+      case 'error':
+        return 'badge-error';
+      default:
+        return 'badge-ghost';
+    }
+  };
+
+  /**
+   * 获取健康状态文本
+   */
+  const getHealthStatusText = (status: string) => {
+    switch (status) {
+      case 'ok':
+        return '正常';
+      case 'degraded':
+        return '降级';
+      case 'error':
+        return '错误';
+      default:
+        return '未知';
+    }
+  };
+
   return (
     <div className="min-h-screen bg-base-200">
       {/* 页面头部 */}
@@ -219,6 +316,7 @@ export default function PerformancePage() {
           <a href="/admin/audit" className="btn btn-ghost btn-sm">审计日志</a>
           <a href="/admin/ai-cost" className="btn btn-ghost btn-sm">AI成本</a>
           <a href="/admin/statistics" className="btn btn-ghost btn-sm">统计分析</a>
+          <a href="/admin/health" className="btn btn-ghost btn-sm">系统健康</a>
         </div>
       </div>
 
@@ -268,6 +366,133 @@ export default function PerformancePage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span>{error}</span>
+          </div>
+        )}
+
+        {/* 系统健康检查 */}
+        {healthData && (
+          <div className="card bg-base-100 shadow-xl">
+            <div className="card-body">
+              <h2 className="card-title">
+                系统健康检查
+                <span className={`badge ${getHealthStatusBadge(healthData.status)}`}>
+                  {getHealthStatusText(healthData.status)}
+                </span>
+              </h2>
+
+              <div className="alert alert-info mt-2">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-current shrink-0 w-6 h-6">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <div>
+                  <div className="font-bold">{healthData.message}</div>
+                  <div className="text-xs">更新时间: {new Date(healthData.timestamp).toLocaleString('zh-CN')}</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+                {/* Prisma 数据库连接 */}
+                {healthData.checks.prisma && (
+                  <div className="card bg-base-200">
+                    <div className="card-body p-4">
+                      <h3 className="font-bold flex items-center justify-between">
+                        <span>数据库连接</span>
+                        <span className={`badge ${getHealthStatusBadge(healthData.checks.prisma.status)}`}>
+                          {getHealthStatusText(healthData.checks.prisma.status)}
+                        </span>
+                      </h3>
+                      <p className="text-sm text-base-content/70">{healthData.checks.prisma.message}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* ConnectionManager */}
+                {healthData.checks.connectionManager && (
+                  <div className="card bg-base-200">
+                    <div className="card-body p-4">
+                      <h3 className="font-bold flex items-center justify-between">
+                        <span>连接管理器</span>
+                        <span className={`badge ${getHealthStatusBadge(healthData.checks.connectionManager.status)}`}>
+                          {getHealthStatusText(healthData.checks.connectionManager.status)}
+                        </span>
+                      </h3>
+                      <p className="text-sm text-base-content/70">{healthData.checks.connectionManager.message}</p>
+                      <div className="text-xs mt-2">
+                        <span className="font-semibold">健康连接:</span> {healthData.checks.connectionManager.healthyConnections} / {healthData.checks.connectionManager.totalConnections}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* MultiLevelCache */}
+                {healthData.checks.multiLevelCache && (
+                  <div className="card bg-base-200">
+                    <div className="card-body p-4">
+                      <h3 className="font-bold flex items-center justify-between">
+                        <span>多级缓存</span>
+                        <span className={`badge ${getHealthStatusBadge(healthData.checks.multiLevelCache.status)}`}>
+                          {getHealthStatusText(healthData.checks.multiLevelCache.status)}
+                        </span>
+                      </h3>
+                      <p className="text-sm text-base-content/70">{healthData.checks.multiLevelCache.message}</p>
+                      <div className="text-xs mt-2 space-y-1">
+                        <div>
+                          <span className="font-semibold">L1缓存:</span> {healthData.checks.multiLevelCache.l1Size} / {healthData.checks.multiLevelCache.l1MaxSize}
+                        </div>
+                        <div>
+                          <span className="font-semibold">命中率:</span> {(healthData.checks.multiLevelCache.hitRate * 100).toFixed(2)}%
+                        </div>
+                        {healthData.checks.multiLevelCache.guardMessage && (
+                          <div className="text-success">{healthData.checks.multiLevelCache.guardMessage}</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* QueryCacheManager */}
+                {healthData.checks.queryCacheManager && (
+                  <div className="card bg-base-200">
+                    <div className="card-body p-4">
+                      <h3 className="font-bold flex items-center justify-between">
+                        <span>查询缓存</span>
+                        <span className={`badge ${getHealthStatusBadge(healthData.checks.queryCacheManager.status)}`}>
+                          {getHealthStatusText(healthData.checks.queryCacheManager.status)}
+                        </span>
+                      </h3>
+                      <p className="text-sm text-base-content/70">{healthData.checks.queryCacheManager.message}</p>
+                      <div className="text-xs mt-2 space-y-1">
+                        <div>
+                          <span className="font-semibold">总命中:</span> {healthData.checks.queryCacheManager.totalHits}
+                        </div>
+                        <div>
+                          <span className="font-semibold">总未命中:</span> {healthData.checks.queryCacheManager.totalMisses}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* CacheInvalidationService */}
+                {healthData.checks.cacheInvalidationService && (
+                  <div className="card bg-base-200">
+                    <div className="card-body p-4">
+                      <h3 className="font-bold flex items-center justify-between">
+                        <span>缓存失效服务</span>
+                        <span className={`badge ${getHealthStatusBadge(healthData.checks.cacheInvalidationService.status)}`}>
+                          {getHealthStatusText(healthData.checks.cacheInvalidationService.status)}
+                        </span>
+                      </h3>
+                      <p className="text-sm text-base-content/70">{healthData.checks.cacheInvalidationService.message}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="divider text-xs text-base-content/50">
+                {healthData.phase}
+              </div>
+            </div>
           </div>
         )}
 

@@ -243,6 +243,7 @@ export default function AICostPage() {
           <a href="/admin/audit" className="btn btn-ghost btn-sm">审计日志</a>
           <a href="/admin/performance" className="btn btn-ghost btn-sm">性能监控</a>
           <a href="/admin/statistics" className="btn btn-ghost btn-sm">统计分析</a>
+          <a href="/admin/health" className="btn btn-ghost btn-sm">系统健康</a>
         </div>
       </div>
 

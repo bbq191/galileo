@@ -166,6 +166,7 @@ export default function AuditPage() {
           <a href="/admin/performance" className="btn btn-ghost btn-sm">性能监控</a>
           <a href="/admin/ai-cost" className="btn btn-ghost btn-sm">AI成本</a>
           <a href="/admin/statistics" className="btn btn-ghost btn-sm">统计分析</a>
+          <a href="/admin/health" className="btn btn-ghost btn-sm">系统健康</a>
         </div>
       </div>
 
