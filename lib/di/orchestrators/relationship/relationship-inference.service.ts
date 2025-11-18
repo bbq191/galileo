@@ -820,16 +820,8 @@ export class RelationshipInferenceService {
       databasesMap.set(db.databaseName, columns);
     }
 
-    // 注意：跨库推断暂不支持增量模式，因为需要考虑所有数据库的关系
-    if (changedColumnIds && changedColumnIds.size > 0) {
-      console.warn(
-        `[RelationshipInferenceService] Cross-database inference does not support incremental mode yet. ` +
-        `Falling back to full inference.`
-      );
-    }
-
-    // 执行跨库推断
-    return await inferencer.inferCrossDatabaseRelationships(databasesMap);
+    // 执行跨库推断（支持增量模式）
+    return await inferencer.inferCrossDatabaseRelationships(databasesMap, changedColumnIds);
   }
 
   /**

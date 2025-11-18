@@ -42,6 +42,12 @@ interface InferRelationshipsRequest {
 
   /** 是否保存到数据库（默认 true） */
   saveToDatabase?: boolean;
+
+  /** 增量模式（只推断变更的表/列） */
+  incrementalMode?: boolean;
+
+  /** 增量推断的起始时间 */
+  sinceTimestamp?: Date;
 }
 
 /**
@@ -66,6 +72,8 @@ export async function POST(request: NextRequest) {
       minConfidence = 0.70,
       enableAI = true,
       saveToDatabase = true,
+      incrementalMode = false,
+      sinceTimestamp,
     } = body;
 
     // 验证必需参数
@@ -119,6 +127,8 @@ export async function POST(request: NextRequest) {
       crossDatabase,
       autoSave: saveToDatabase,
       autoSaveThreshold: 0.80, // 自动保存高置信度关系
+      incrementalMode,
+      sinceTimestamp,
     });
 
     const duration = Date.now() - startTime;

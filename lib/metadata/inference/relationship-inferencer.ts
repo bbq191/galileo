@@ -267,9 +267,13 @@ export class RelationshipInferencer {
 
   /**
    * 推断跨数据库关系
+   *
+   * @param databases - 数据库列表
+   * @param changedColumnIds - 变更的列 ID 集合（用于增量推断）
    */
   async inferCrossDatabaseRelationships(
-    databases: Map<string, ColumnInfo[]>
+    databases: Map<string, ColumnInfo[]>,
+    changedColumnIds?: Set<number>
   ): Promise<InferenceResult> {
     if (!this.config.crossDatabase) {
       throw new Error('Cross-database inference is disabled');
@@ -293,10 +297,24 @@ export class RelationshipInferencer {
       columnsByDatabase.set(dbName, tableGroups);
     }
 
+    // 增量模式：过滤出变更的列作为源列
+    const sourceColumnsToCheck = changedColumnIds && changedColumnIds.size > 0
+      ? allColumns.filter(col => col.id !== undefined && changedColumnIds.has(col.id))
+      : allColumns;
+
     console.log(`数据库数: ${databases.size}`);
-    console.log(`总字段数: ${allColumns.length}\n`);
+    console.log(`总字段数: ${allColumns.length}`);
+    if (changedColumnIds && changedColumnIds.size > 0) {
+      console.log(`增量模式: 只推断 ${sourceColumnsToCheck.length} 个变更字段`);
+    }
+    console.log();
 
     let checkedPairs = 0;
+
+    // 构建变更列的快速查找集合
+    const changedColumnIdsSet = changedColumnIds && changedColumnIds.size > 0
+      ? changedColumnIds
+      : undefined;
 
     // 遍历每个数据库作为源
     for (const [sourceDbName, sourceTableGroups] of columnsByDatabase) {
@@ -308,6 +326,11 @@ export class RelationshipInferencer {
 
         // 遍历源表的每个字段
         for (const sourceColumn of sourceColumns) {
+          // 增量模式：只处理变更的列
+          if (changedColumnIdsSet && (sourceColumn.id === undefined || !changedColumnIdsSet.has(sourceColumn.id))) {
+            continue;
+          }
+
           // 性能优化：跳过不太可能是外键的字段
           if (this.shouldSkipColumn(sourceColumn)) {
             continue;
@@ -390,10 +413,11 @@ export class RelationshipInferencer {
       }
 
       const aiRelationships = await this.performAIInference(
-        allColumns,
+        sourceColumnsToCheck, // 使用过滤后的源列
         allTableColumns,
         allTableNames,
-        relationships
+        relationships,
+        changedColumnIds // 传递变更列 ID，用于增量过滤
       );
 
       relationships.push(...aiRelationships);
@@ -553,8 +577,11 @@ export class RelationshipInferencer {
 
       for (const sourceColumn of sourceColumns) {
         // 增量模式：只处理变更的列作为源列
-        if (changedColumnIds && changedColumnIds.size > 0 && sourceColumn.id !== undefined && !changedColumnIds.has(sourceColumn.id)) {
-          continue;
+        if (changedColumnIds && changedColumnIds.size > 0) {
+          // 如果列没有 ID 或者 ID 不在变更集合中，则跳过
+          if (sourceColumn.id === undefined || !changedColumnIds.has(sourceColumn.id)) {
+            continue;
+          }
         }
 
         // 使用 AI 推断器判断是否为外键候选
