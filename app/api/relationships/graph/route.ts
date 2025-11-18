@@ -43,6 +43,7 @@ export async function GET(request: NextRequest) {
     const databases = searchParams.get('databases')?.split(',');
     const tableIdStr = searchParams.get('tableId');
     const depth = parseInt(searchParams.get('depth') || '2');
+    const includeInferred = searchParams.get('includeInferred') === 'true';
     const minConfidence = parseFloat(searchParams.get('minConfidence') || '0.7');
 
     // 参数验证
@@ -69,7 +70,8 @@ export async function GET(request: NextRequest) {
       minConfidence,
       tableId,
       depth,
-      databaseId
+      databaseId,
+      includeInferred
     );
 
     console.log(

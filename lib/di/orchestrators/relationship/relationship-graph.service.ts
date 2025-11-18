@@ -106,7 +106,8 @@ export class RelationshipGraphService {
     minConfidence: number = 0.70,
     tableId?: number,
     depth: number = 2,
-    databaseId?: number
+    databaseId?: number,
+    includeInferred: boolean = true
   ): Promise<RelationshipGraph> {
     try {
       console.log(`[RelationshipGraphService] Building relationship graph for data source ${dataSourceId}, table ${tableId || 'all'}, depth ${depth}...`);
@@ -125,8 +126,8 @@ export class RelationshipGraphService {
         databaseFilter = { databaseName: { in: databases } };
       }
 
-      // 获取数据库和表
-      const dbMetas = await this.dbService.prisma.databaseMeta.findMany({
+      // 获取主数据库和表(用户选择的数据库)
+      const primaryDbMetas = await this.dbService.prisma.databaseMeta.findMany({
         where: {
           sourceId: dataSourceId,
           ...databaseFilter,
@@ -151,16 +152,19 @@ export class RelationshipGraphService {
         },
       });
 
-      // 构建所有节点
-      const allNodes: RelationshipGraphNode[] = [];
-      const allEdges: RelationshipGraphEdge[] = [];
+      // 构建主节点(来自选择的数据库)
+      const primaryNodes: RelationshipGraphNode[] = [];
+      const primaryEdges: RelationshipGraphEdge[] = [];
+      const primaryTableIds = new Set<number>();
 
-      for (const db of dbMetas) {
+      for (const db of primaryDbMetas) {
         for (const table of db.tables) {
+          primaryTableIds.add(table.id);
+
           const outDegree = table.sourceRelationships.length;
           const inDegree = table.targetRelationships.length;
 
-          allNodes.push({
+          primaryNodes.push({
             tableId: table.id,
             tableName: table.tableName,
             databaseName: db.databaseName,
@@ -170,7 +174,7 @@ export class RelationshipGraphService {
 
           // 添加显式关系边
           for (const rel of table.sourceRelationships) {
-            allEdges.push({
+            primaryEdges.push({
               sourceTableId: rel.sourceTableId,
               targetTableId: rel.targetTableId,
               sourceColumn: rel.sourceColumn.columnName,
@@ -183,43 +187,161 @@ export class RelationshipGraphService {
         }
       }
 
-      // 添加推断关系边
-      const allTableIds = allNodes.map(n => n.tableId);
-      const inferredRels = await this.dbService.prisma.inferredRelationship.findMany({
-        where: {
-          OR: [
-            { sourceTableId: { in: allTableIds } },
-            { targetTableId: { in: allTableIds } },
-          ],
-          confidenceScore: { gte: minConfidence },
-        },
-        include: {
-          sourceColumn: true,
-          targetColumn: true,
-        },
-      });
-
-      for (const rel of inferredRels) {
-        allEdges.push({
-          sourceTableId: rel.sourceTableId,
-          targetTableId: rel.targetTableId,
-          sourceColumn: rel.sourceColumn.columnName,
-          targetColumn: rel.targetColumn.columnName,
-          confidence: rel.confidenceScore.toNumber(),
-          type: rel.isVerified ? 'verified' : 'inferred',
-          relationshipType: this.convertRelationshipType(rel.relationshipType),
+      // 查询主表的推断关系（仅在 includeInferred 为 true 时）
+      if (includeInferred) {
+        const primaryInferredRels = await this.dbService.prisma.inferredRelationship.findMany({
+          where: {
+            OR: [
+              { sourceTableId: { in: Array.from(primaryTableIds) } },
+              { targetTableId: { in: Array.from(primaryTableIds) } },
+            ],
+            confidenceScore: { gte: minConfidence },
+          },
+          include: {
+            sourceColumn: true,
+            targetColumn: true,
+          },
         });
+
+        for (const rel of primaryInferredRels) {
+          primaryEdges.push({
+            sourceTableId: rel.sourceTableId,
+            targetTableId: rel.targetTableId,
+            sourceColumn: rel.sourceColumn.columnName,
+            targetColumn: rel.targetColumn.columnName,
+            confidence: rel.confidenceScore.toNumber(),
+            type: rel.isVerified ? 'verified' : 'inferred',
+            relationshipType: this.convertRelationshipType(rel.relationshipType),
+          });
+        }
       }
+
+      // 查找跨库关系中涉及的其他数据库的表
+      const relatedTableIds = new Set<number>();
+      for (const edge of primaryEdges) {
+        if (!primaryTableIds.has(edge.sourceTableId)) {
+          relatedTableIds.add(edge.sourceTableId);
+        }
+        if (!primaryTableIds.has(edge.targetTableId)) {
+          relatedTableIds.add(edge.targetTableId);
+        }
+      }
+
+      console.log(`[RelationshipGraphService] Found ${relatedTableIds.size} related tables from other databases`);
+
+      // 加载关联表的详细信息及其关系
+      const relatedNodes: RelationshipGraphNode[] = [];
+      const relatedEdges: RelationshipGraphEdge[] = [];
+
+      if (relatedTableIds.size > 0) {
+        const relatedTables = await this.dbService.prisma.tableMeta.findMany({
+          where: {
+            id: { in: Array.from(relatedTableIds) },
+          },
+          include: {
+            database: true,
+            sourceRelationships: {
+              include: {
+                sourceColumn: true,
+                targetColumn: true,
+              },
+            },
+            targetRelationships: {
+              include: {
+                sourceColumn: true,
+                targetColumn: true,
+              },
+            },
+          },
+        });
+
+        // 已知表集合 = 主库表 + 跨库关联表
+        const allKnownTableIds = new Set([...primaryTableIds, ...relatedTableIds]);
+
+        for (const table of relatedTables) {
+          const outDegree = table.sourceRelationships.length;
+          const inDegree = table.targetRelationships.length;
+
+          relatedNodes.push({
+            tableId: table.id,
+            tableName: table.tableName,
+            databaseName: table.database.databaseName,
+            outDegree,
+            inDegree,
+          });
+
+          // 添加关联表的显式关系边（只保留目标表也在已知表集合中的边）
+          for (const rel of table.sourceRelationships) {
+            // 只添加目标表也在已知表集合中的关系
+            if (allKnownTableIds.has(rel.targetTableId)) {
+              relatedEdges.push({
+                sourceTableId: rel.sourceTableId,
+                targetTableId: rel.targetTableId,
+                sourceColumn: rel.sourceColumn.columnName,
+                targetColumn: rel.targetColumn.columnName,
+                confidence: 1.0,
+                type: 'explicit',
+                relationshipType: this.convertRelationshipType(rel.relationshipType),
+              });
+            }
+          }
+        }
+
+        // 查询关联表的推断关系（仅在 includeInferred 为 true 时）
+        if (includeInferred) {
+          const relatedInferredRels = await this.dbService.prisma.inferredRelationship.findMany({
+            where: {
+              OR: [
+                { sourceTableId: { in: Array.from(relatedTableIds) } },
+                { targetTableId: { in: Array.from(relatedTableIds) } },
+              ],
+              confidenceScore: { gte: minConfidence },
+            },
+            include: {
+              sourceColumn: true,
+              targetColumn: true,
+            },
+          });
+
+          for (const rel of relatedInferredRels) {
+            // 只添加源表和目标表都在已知表集合中的关系
+            if (allKnownTableIds.has(rel.sourceTableId) && allKnownTableIds.has(rel.targetTableId)) {
+              relatedEdges.push({
+                sourceTableId: rel.sourceTableId,
+                targetTableId: rel.targetTableId,
+                sourceColumn: rel.sourceColumn.columnName,
+                targetColumn: rel.targetColumn.columnName,
+                confidence: rel.confidenceScore.toNumber(),
+                type: rel.isVerified ? 'verified' : 'inferred',
+                relationshipType: this.convertRelationshipType(rel.relationshipType),
+              });
+            }
+          }
+        }
+      }
+
+      // 合并主节点和关联节点
+      const allNodes = [...primaryNodes, ...relatedNodes];
+
+      // 合并主边和关联边,去重
+      const edgeMap = new Map<string, RelationshipGraphEdge>();
+      for (const edge of [...primaryEdges, ...relatedEdges]) {
+        const key = `${edge.sourceTableId}-${edge.targetTableId}-${edge.sourceColumn}-${edge.targetColumn}`;
+        if (!edgeMap.has(key)) {
+          edgeMap.set(key, edge);
+        }
+      }
+      const allEdges = Array.from(edgeMap.values());
 
       // 如果指定了中心表，则过滤出相关节点和边
       let filteredNodes = allNodes;
       let filteredEdges = allEdges;
 
       if (tableId) {
-        const relatedTableIds = this.findRelatedTables(tableId, allEdges, depth);
-        filteredNodes = allNodes.filter(n => relatedTableIds.has(n.tableId));
+        const relatedTableSet = this.findRelatedTables(tableId, allEdges, depth);
+        filteredNodes = allNodes.filter(n => relatedTableSet.has(n.tableId));
         filteredEdges = allEdges.filter(e =>
-          relatedTableIds.has(e.sourceTableId) && relatedTableIds.has(e.targetTableId)
+          relatedTableSet.has(e.sourceTableId) && relatedTableSet.has(e.targetTableId)
         );
       }
 
@@ -241,7 +363,8 @@ export class RelationshipGraphService {
       };
 
       console.log(
-        `[RelationshipGraphService] Graph built: ${graph.stats.nodeCount} nodes, ${graph.stats.edgeCount} edges`
+        `[RelationshipGraphService] Graph built: ${graph.stats.nodeCount} nodes, ${graph.stats.edgeCount} edges, ` +
+        `${relatedNodes.length} cross-database nodes`
       );
       return graph;
 

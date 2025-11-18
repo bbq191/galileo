@@ -9,7 +9,7 @@ import { injectable, inject } from 'tsyringe';
 import { Parser } from 'node-sql-parser';
 import { DeepseekClient } from '@/lib/ai/deepseek-client';
 import { QueryIntent } from '@/lib/nlp/types';
-import { MetadataContext } from '@/lib/metadata/retrieval/types';
+import { MetadataContext, TableContext } from '@/lib/metadata/retrieval/types';
 import { SQLGenerationResult, SQLGenerationOptions } from './types';
 import { SQL_GENERATION_SYSTEM_PROMPT } from './prompts/sql-prompts';
 import { CrossDatabaseHandler } from './cross-db-handler';
@@ -68,22 +68,80 @@ export class SQLGenerator {
 
         // 如果是重试，添加错误反馈
         if (attempt > 0 && previousFailedSQL && previousErrors.length > 0) {
-          prompt += `\n\n## 重要：上一次生成失败\n\n`;
-          prompt += `上一次生成的SQL有以下问题：\n`;
+          prompt += `\n\n`;
+          prompt += `🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨\n`;
+          prompt += `🚨 警告：上一次生成的SQL完全失败！！！\n`;
+          prompt += `🚨 必须仔细阅读以下错误分析并完全改正！\n`;
+          prompt += `🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨\n\n`;
+
+          prompt += `## ❌ 上一次失败的SQL：\n\`\`\`sql\n${previousFailedSQL}\n\`\`\`\n\n`;
+
+          prompt += `## ❌ 检测到的错误：\n`;
           prompt += previousErrors.map((err, index) => `${index + 1}. ${err}`).join('\n');
-          prompt += `\n\n上一次失败的SQL：\n\`\`\`sql\n${previousFailedSQL}\n\`\`\`\n\n`;
-          prompt += `请修正这些问题，生成新的SQL。特别注意：\n`;
-          prompt += `- **必须使用 MySQL 语法，不要使用 SQL Server 的 TOP 语法**\n`;
-          prompt += `- **限制结果数量使用 LIMIT，不要使用 TOP**\n`;
-          prompt += `- **反引号格式**：必须是 \\\`database\\\`.\\\`table\\\`，不能是 \\\`database.table\\\`\n`;
-          prompt += `- **严格使用元数据中的表名，不要修改表名的任何部分**\n`;
-          prompt += `- **例如：如果元数据中的表名是 tb_chatroom_relation，就使用 tb_chatroom_relation，不要改成 db_chatroom_relation 或 chatroom_relation**\n`;
-          prompt += `- **错误示例**：FROM \\\`db_live.tb_chatroom_relation\\\` (整体用反引号包裹 - 错误)\n`;
-          prompt += `- **正确示例**：FROM \\\`db_live\\\`.\\\`tb_chatroom_relation\\\` (分别用反引号包裹 - 正确)\n`;
-          prompt += `- 只使用元数据中明确列出的表和字段\n`;
-          prompt += `- 不要臆想或使用未提供的表名\n`;
-          prompt += `- 确保表名和字段名与元数据完全一致（包括前缀、大小写等）\n`;
-          prompt += `- 生成的 JSON 中 SQL 字段必须是单行字符串，不要包含换行符\n`;
+          prompt += `\n\n`;
+
+          prompt += `## 🔧 你必须立即修正以下问题：\n\n`;
+
+          // 检测具体的错误类型并给出针对性的指导
+          const hasOrderError = previousFailedSQL.match(/LIMIT\s+\d+\s+WHERE/i);
+          const hasWhereError = previousFailedSQL.match(/WHERE\s+`?\w+`?(?:\s+(?:AND|OR|LIMIT|ORDER|GROUP|$))/i);
+          const hasTableNameError = previousErrors.some(e => e.includes('表') && e.includes('不在元数据中'));
+          const hasDatabaseError = previousFailedSQL.includes('available') || previousFailedSQL.includes('main');
+
+          if (hasOrderError) {
+            prompt += `### ⚠️ 致命错误1：SQL子句顺序错误\n`;
+            prompt += `你在上一次生成中犯了 **子句顺序错误**！\n\n`;
+            prompt += `**你的错误**：\`${hasOrderError[0]}\`\n`;
+            prompt += `**正确写法**：\`WHERE ... LIMIT {number}\`\n\n`;
+            prompt += `**MySQL语法规则（绝对不可违反）**：\n`;
+            prompt += `\`\`\`\nSELECT ... FROM ... WHERE ... GROUP BY ... HAVING ... ORDER BY ... LIMIT ...\n\`\`\`\n\n`;
+            prompt += `LIMIT **必须** 在 WHERE/ORDER BY 之后！\n\n`;
+          }
+
+          if (hasWhereError) {
+            prompt += `### ⚠️ 致命错误2：WHERE条件不完整\n`;
+            prompt += `你在上一次生成中使用了 **不完整的WHERE条件**！\n\n`;
+            prompt += `**你的错误**：\`WHERE field_name\` 或 \`WHERE field AND other\`\n`;
+            prompt += `这不是有效的SQL语法！WHERE后面必须跟完整的条件表达式！\n\n`;
+            prompt += `**必须使用以下格式之一**：\n`;
+            prompt += `- \`WHERE field = value\`\n`;
+            prompt += `- \`WHERE field > value\`\n`;
+            prompt += `- \`WHERE field IS NOT NULL\`\n`;
+            prompt += `- \`WHERE field BETWEEN value1 AND value2\`\n`;
+            prompt += `- \`WHERE field IN (value1, value2)\`\n`;
+            prompt += `- \`WHERE field LIKE '%pattern%'\`\n\n`;
+            prompt += `**特别注意**：如果用户只是要"统计总数"，根本不需要WHERE子句！\n`;
+            prompt += `直接使用：\`SELECT COUNT(*) FROM table\`\n\n`;
+          }
+
+          if (hasTableNameError || hasDatabaseError) {
+            prompt += `### ⚠️ 致命错误3：表名或数据库名错误\n`;
+            prompt += `你在上一次生成中使用了 **元数据中不存在的表名或数据库名**！\n\n`;
+
+            if (hasDatabaseError) {
+              prompt += `**你使用的错误数据库名**：\`available\` 或其他臆想的名字\n`;
+              prompt += `**你必须使用元数据中明确标注的数据库名**！不要臆造！\n\n`;
+            }
+
+            prompt += `**规则**：\n`;
+            prompt += `1. 仔细查看元数据中每个表的 "数据库" 和 "表名" 字段\n`;
+            prompt += `2. 完全照抄这些名字，一个字都不要改\n`;
+            prompt += `3. 使用格式：\\\`数据库名\\\`.\\\`表名\\\` （注意反引号）\n\n`;
+            prompt += `**示例**：\n`;
+            prompt += `- 元数据给出：数据库=\`db_live\`, 表名=\`tb_live_all_room\`\n`;
+            prompt += `- 你必须写：\\\`db_live\\\`.\\\`tb_live_all_room\\\`\n`;
+            prompt += `- ❌ 不能写：\\\`available\\\`.\\\`tb_live_all_room\\\`\n`;
+            prompt += `- ❌ 不能写：\\\`db_live\\\`.\\\`db_live_all_room\\\`\n\n`;
+          }
+
+          prompt += `## ✅ 现在请重新生成SQL，确保：\n`;
+          prompt += `1. ✅ 子句顺序：SELECT → FROM → WHERE → GROUP BY → HAVING → ORDER BY → LIMIT\n`;
+          prompt += `2. ✅ WHERE条件完整：\`WHERE field = value\` 不是 \`WHERE field\`\n`;
+          prompt += `3. ✅ 表名和数据库名：完全使用元数据中提供的，一字不改\n`;
+          prompt += `4. ✅ 反引号格式：\\\`database\\\`.\\\`table\\\` 不是 \\\`database.table\\\`\n`;
+          prompt += `5. ✅ 如果只是统计总数，不需要WHERE子句\n\n`;
+
+          prompt += `🚨 这是第 ${attempt + 1} 次尝试，请务必成功！\n\n`;
         }
 
         // 调用 AI 生成 SQL
@@ -214,10 +272,11 @@ ${t.columns.map(c => `  - ${c.columnName} (${c.dataType})${c.isPrimaryKey ? ' [�
 统计该表的记录数：SELECT COUNT(*) FROM ${fullTableName}
 查询前10条：SELECT * FROM ${fullTableName} LIMIT 10
 
-**重要提示**：
-- 数据库名和表名分别用反引号包裹，格式为：\\\`数据库名\\\`.\\\`表名\\\`
-- 不要写成：\\\`数据库名.表名\\\` (错误)
-- 表名必须是 ${t.tableName}，不能改成其他名字（如 db_${t.tableName.replace('tb_', '')}）
+**🚨 表名使用规则（必须严格遵守）**：
+1. **完整表名格式**：必须是 ${fullTableName}
+2. **严禁修改表名**：表名是 "${t.tableName}"，不能改成 "db_${t.tableName}" 或其他任何变体
+3. **反引号格式**：\\\`${t.databaseName}\\\`.\\\`${t.tableName}\\\` ✓  |  \\\`${t.databaseName}.${t.tableName}\\\` ✗
+4. **表名前缀**：如果表名是 "tb_xxx"，不能改成 "db_xxx" 或 "t_xxx"
 `;
     }).join('\n');
 
@@ -249,24 +308,129 @@ ${this.describeConditions(intent.conditions)}
 
 请生成符合以下要求的 SQL 查询：
 
-1. 使用上述表和字段
+1. **严格使用元数据中提供的表名和字段名，一字不差**
 2. 处理跨表关联（如果需要）
 3. 应用查询条件和过滤
-4. **重要**：必须使用完整限定的表名，格式为 \`数据库名.表名\`（例如：使用 \`db_live.tb_chatroom_relation\` 而不是 \`tb_chatroom_relation\`）
-5. 确保 SQL 语法正确且高效
-6. **对于简单的统计查询（如"统计表的数据"），直接使用 SELECT COUNT(*) FROM table，不需要添加 WHERE 子句**
-7. 只在有明确过滤条件时才使用 WHERE 子句
-8. 不要为了使用参数化而添加无意义的条件
+4. 确保 SQL 语法正确且高效
+5. **对于简单的统计查询（如"统计表的数据"），直接使用 SELECT COUNT(*) FROM table，不需要添加 WHERE 子句**
+6. 只在有明确过滤条件时才使用 WHERE 子句
+7. 不要为了使用参数化而添加无意义的条件
+
+## 🚨 关键规则（违反将导致错误）：
+
+### 1. SQL子句顺序（严格遵守）
+正确顺序：**SELECT ... FROM ... WHERE ... GROUP BY ... HAVING ... ORDER BY ... LIMIT ...**
+
+**常见错误**：
+- ❌ \`SELECT ... FROM ... LIMIT 10 WHERE ...\` （LIMIT在WHERE之前 - 语法错误）
+- ❌ \`SELECT ... FROM ... GROUP BY ... WHERE ...\` （GROUP BY在WHERE之前 - 语法错误）
+- ✅ \`SELECT ... FROM ... WHERE ... GROUP BY ... ORDER BY ... LIMIT 10\` （正确）
+
+### 2. WHERE条件必须完整
+**错误示例**：
+- ❌ \`WHERE last_30_days\` （只有字段名，不是完整条件）
+- ❌ \`WHERE field1 AND field2\` （字段作为布尔值使用）
+- ❌ \`WHERE field AND COUNT <= 10\` （第一个条件不完整）
+
+**正确示例**：
+- ✅ \`WHERE last_30_days = '2024-01-01'\`
+- ✅ \`WHERE last_30_days IS NOT NULL\`
+- ✅ \`WHERE last_30_days > '2024-01-01' AND count_value <= 10\`
+
+**注意**：如果用户查询是"统计总数"而没有明确的过滤条件，**不要添加WHERE子句**，直接使用 \`SELECT COUNT(*) FROM table\`
+
+### 3. 表名格式
+- ✅ 正确：\`数据库名\`.\`表名\`（例如：\`db_live\`.\`tb_live_all_room\`）
+- ❌ 错误：\`数据库名.表名\`（例如：\`db_live.tb_live_all_room\`）
+
+### 4. 表名完整性
+- ✅ 正确：使用元数据中提供的完整表名（如 \`tb_live_all_room\`）
+- ❌ 错误：修改表名（如将 \`tb_live_all_room\` 改成 \`db_live_all_room\`）
+- ❌ 错误：修改表名前缀（如将 \`tb_\` 改成 \`db_\` 或 \`t_\`）
+
+### 5. usedColumns 字段
+- ✅ 正确：只包含实际的字段名（如 ["live_id", "title"]）
+- ❌ 错误：包含SQL函数名（如 ["COUNT", "SUM"]）
+- ℹ️ 提示：COUNT(*), SUM(field) 这些是聚合函数，不要放在 usedColumns 中
 
 返回 JSON 格式：
 {
-  "sql": "生成的 SQL 语句",
+  "sql": "生成的 SQL 语句（必须是单行字符串，不包含换行符）",
   "explanation": "SQL 解释说明",
   "confidence": 0.95,
   "usedTables": ["table1", "table2"],
   "usedColumns": ["col1", "col2"],
   "warnings": ["跨库 JOIN 可能影响性能"]
 }
+
+## 💡 成功示例参考
+
+假设元数据提供了：
+- 数据库：\`db_live\`
+- 表名：\`tb_live_all_room\`
+- 字段：live_id, title, user_name 等
+
+### 示例1：统计表的总记录数
+**用户查询**："请查询直播用户总量" 或 "统计表的数据"
+
+**✅ 正确的SQL**：
+\`\`\`json
+{
+  "sql": "SELECT COUNT(*) FROM \\\`db_live\\\`.\\\`tb_live_all_room\\\`",
+  "explanation": "统计tb_live_all_room表的总记录数",
+  "confidence": 0.95,
+  "usedTables": ["tb_live_all_room"],
+  "usedColumns": [],
+  "warnings": []
+}
+\`\`\`
+
+**关键点**：
+- ✅ 没有WHERE子句（因为是统计总数）
+- ✅ 使用 \\\`db_live\\\`.\\\`tb_live_all_room\\\` 格式
+- ✅ usedColumns 为空（COUNT(*)不是字段）
+- ✅ 子句顺序正确
+
+### 示例2：带条件的查询
+**用户查询**："查询live_id大于100的记录数"
+
+**✅ 正确的SQL**：
+\`\`\`json
+{
+  "sql": "SELECT COUNT(*) FROM \\\`db_live\\\`.\\\`tb_live_all_room\\\` WHERE live_id > 100",
+  "explanation": "统计live_id大于100的记录数",
+  "confidence": 0.95,
+  "usedTables": ["tb_live_all_room"],
+  "usedColumns": ["live_id"],
+  "warnings": []
+}
+\`\`\`
+
+**关键点**：
+- ✅ WHERE条件完整：\`WHERE live_id > 100\`
+- ✅ 子句顺序：FROM → WHERE
+- ✅ usedColumns 只包含 live_id（不包含COUNT）
+
+### 示例3：带LIMIT的查询
+**用户查询**："查询前10条记录"
+
+**✅ 正确的SQL**：
+\`\`\`json
+{
+  "sql": "SELECT * FROM \\\`db_live\\\`.\\\`tb_live_all_room\\\` ORDER BY live_id DESC LIMIT 10",
+  "explanation": "查询前10条记录，按live_id降序排列",
+  "confidence": 0.95,
+  "usedTables": ["tb_live_all_room"],
+  "usedColumns": ["live_id"],
+  "warnings": []
+}
+\`\`\`
+
+**关键点**：
+- ✅ 子句顺序：FROM → ORDER BY → LIMIT
+- ❌ 不能写成：FROM → LIMIT → ORDER BY
+
+⚠️ 请严格参考以上示例的格式和规则！
 `;
   }
 
@@ -427,9 +591,13 @@ ${this.describeConditions(intent.conditions)}
         throw new Error('不允许使用 SQL Server 的 TOP 语法，请使用 MySQL 的 LIMIT 语法');
       }
 
+      // 检查SQL子句顺序是否正确
+      this.validateClauseOrder(sql);
+
+      // 检查WHERE条件是否完整
+      this.validateWhereClause(sql);
+
       // 检查是否有无效的占位符使用
-      // 占位符 ? 应该只出现在有效的条件中，例如 column = ? 或 column > ?
-      // 检查是否有孤立的 ? 或者 WHERE ? 这样的无效语法
       if (/WHERE\s+\?/i.test(sql) || /\?\s+LIMIT/i.test(sql) || /\?\s*$/i.test(sql)) {
         throw new Error('SQL 中包含无效的占位符使用，占位符必须在有效的条件表达式中使用（如 column = ?）');
       }
@@ -437,7 +605,6 @@ ${this.describeConditions(intent.conditions)}
       // 简单检查是否包含危险的关键字
       const dangerousKeywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'TRUNCATE', 'ALTER', 'CREATE'];
       for (const keyword of dangerousKeywords) {
-        // 使用单词边界来避免误匹配（如 UPDATED_AT 字段名）
         const regex = new RegExp(`\\b${keyword}\\b`, 'i');
         if (regex.test(sql)) {
           throw new Error(`不允许的 SQL 操作: ${keyword}`);
@@ -445,7 +612,6 @@ ${this.describeConditions(intent.conditions)}
       }
 
       if (hasDbPrefix) {
-        // 如果包含数据库前缀，使用简单的正则验证就足够了
         console.log('SQL validation passed (using simple validation for database-prefixed SQL)');
         return;
       }
@@ -453,30 +619,98 @@ ${this.describeConditions(intent.conditions)}
       // 如果没有数据库前缀，尝试使用 parser 进行严格验证
       try {
         const ast = this.parser.astify(sql, { database: 'MySQL' });
-
-        // 如果是数组，取第一个
         const query = Array.isArray(ast) ? ast[0] : ast;
 
-        // 确保只是 SELECT 查询
         if (query.type !== 'select') {
           throw new Error(`不允许的 SQL 类型: ${query.type}`);
         }
 
         console.log('SQL validation passed (using AST validation)');
       } catch (parseError) {
-        // 解析失败不是致命错误，因为可能是 parser 不支持某些语法
         console.warn('SQL AST parsing failed, but basic validation passed:', (parseError as Error).message);
       }
 
     } catch (error) {
-      // 如果是我们主动抛出的错误，继续抛出
-      if ((error as Error).message.includes('不允许的 SQL')) {
+      if ((error as Error).message.includes('不允许的 SQL') ||
+          (error as Error).message.includes('WHERE条件') ||
+          (error as Error).message.includes('子句顺序')) {
         throw error;
       }
 
-      // 其他错误：记录但不阻止
       console.warn('SQL structure validation encountered an error:', (error as Error).message);
       throw new Error(`SQL 结构验证失败: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * 验证SQL子句顺序
+   */
+  private validateClauseOrder(sql: string): void {
+    // 检测错误的子句顺序
+    const invalidOrders = [
+      { pattern: /\bLIMIT\s+\d+\s+WHERE\b/i, error: 'LIMIT 不能在 WHERE 之前' },
+      { pattern: /\bLIMIT\s+\d+\s+ORDER\s+BY\b/i, error: 'LIMIT 不能在 ORDER BY 之前' },
+      { pattern: /\bLIMIT\s+\d+\s+GROUP\s+BY\b/i, error: 'LIMIT 不能在 GROUP BY 之前' },
+      { pattern: /\bGROUP\s+BY\b.*?\bWHERE\b/i, error: 'GROUP BY 不能在 WHERE 之前' },
+      { pattern: /\bORDER\s+BY\b.*?\bWHERE\b/i, error: 'ORDER BY 不能在 WHERE 之前' },
+      { pattern: /\bHAVING\b.*?\bWHERE\b/i, error: 'HAVING 不能在 WHERE 之前' },
+    ];
+
+    for (const { pattern, error } of invalidOrders) {
+      if (pattern.test(sql)) {
+        throw new Error(`SQL子句顺序错误: ${error}。正确顺序应为: SELECT ... FROM ... WHERE ... GROUP BY ... HAVING ... ORDER BY ... LIMIT`);
+      }
+    }
+  }
+
+  /**
+   * 验证WHERE条件是否完整
+   */
+  private validateWhereClause(sql: string): void {
+    // 提取WHERE子句
+    const whereMatch = sql.match(/\bWHERE\s+(.+?)(?:\s+(?:GROUP|ORDER|LIMIT|$))/i);
+    if (!whereMatch) {
+      return; // 没有WHERE子句，跳过验证
+    }
+
+    const whereClause = whereMatch[1].trim();
+
+    // 检测不完整的WHERE条件（只有字段名，没有运算符和值）
+    // 例如：WHERE field_name 或 WHERE `field_name`
+    const incompleteConditions = [
+      // 只有字段名（可能带反引号），后面没有运算符
+      /^`?\w+`?$/,
+      // 只有字段名后跟AND/OR（没有完整条件）
+      /^`?\w+`?\s+(?:AND|OR)\b/i,
+      // WHERE field AND field2 这种模式（字段作为布尔值使用）
+      /^`?\w+`?(?:\s+(?:AND|OR)\s+`?\w+`?)+$/i,
+    ];
+
+    for (const pattern of incompleteConditions) {
+      if (pattern.test(whereClause)) {
+        throw new Error(
+          `WHERE条件不完整: "${whereClause}"。` +
+          `WHERE条件必须包含完整的表达式，如: WHERE field = value, WHERE field > 10, WHERE field IS NOT NULL 等`
+        );
+      }
+    }
+
+    // 检测常见的错误模式
+    const invalidPatterns = [
+      {
+        pattern: /WHERE\s+`?\w+`?\s+AND\s+`?\w+`?\s*[<>=]/i,
+        error: '似乎缺少第一个条件的运算符和值'
+      },
+      {
+        pattern: /WHERE\s+(?:TRUE|FALSE|1|0)\s*$/i,
+        error: 'WHERE条件不应该是常量布尔值'
+      },
+    ];
+
+    for (const { pattern, error } of invalidPatterns) {
+      if (pattern.test(`WHERE ${whereClause}`)) {
+        throw new Error(`WHERE条件错误: ${error}。当前条件: "${whereClause}"`);
+      }
     }
   }
 
@@ -488,6 +722,16 @@ ${this.describeConditions(intent.conditions)}
     context: MetadataContext
   ): { isValid: boolean; errors: string[] } {
     const errors: string[] = [];
+
+    // 常见的SQL聚合函数和函数名（不应该被当作字段验证）
+    const SQL_FUNCTIONS = new Set([
+      'COUNT', 'SUM', 'AVG', 'MAX', 'MIN',
+      'DISTINCT', 'GROUP_CONCAT',
+      'CONCAT', 'UPPER', 'LOWER', 'SUBSTRING', 'TRIM',
+      'NOW', 'CURDATE', 'CURTIME', 'DATE', 'TIMESTAMP',
+      'YEAR', 'MONTH', 'DAY', 'HOUR', 'MINUTE', 'SECOND',
+      'COALESCE', 'IFNULL', 'NULLIF', 'IF', 'CASE'
+    ]);
 
     // 收集所有有效字段
     const allValidColumns = new Set<string>();
@@ -504,6 +748,18 @@ ${this.describeConditions(intent.conditions)}
     for (const column of usedColumns) {
       if (column === '*') {
         continue; // SELECT * 是允许的
+      }
+
+      // 跳过SQL函数
+      if (SQL_FUNCTIONS.has(column.toUpperCase())) {
+        console.log(`[SQLGenerator] 跳过SQL函数: ${column}`);
+        continue;
+      }
+
+      // 跳过包含函数调用的表达式（如 COUNT(*)）
+      if (/^[A-Z_]+\s*\(/i.test(column)) {
+        console.log(`[SQLGenerator] 跳过函数表达式: ${column}`);
+        continue;
       }
 
       if (!allValidColumns.has(column)) {
@@ -655,18 +911,52 @@ ${this.describeConditions(intent.conditions)}
   private fixCommonSQLErrors(sql: string, context: MetadataContext): string {
     let fixedSQL = sql;
 
-    // 修正错误的反引号格式：`database.table` -> `database`.`table`
-    // 例如：`db_live.tb_chatroom_relation` -> `db_live`.`tb_chatroom_relation`
+    // 1. 修正SQL子句顺序错误：LIMIT ... WHERE ... -> WHERE ... LIMIT ...
+    fixedSQL = this.fixClauseOrder(fixedSQL);
+
+    // 2. 修正错误的反引号格式：`database.table` -> `database`.`table`
     context.tables.forEach(table => {
       const wrongFormat = new RegExp(`\`${table.databaseName}\\.${table.tableName}\``, 'g');
       const correctFormat = `\`${table.databaseName}\`.\`${table.tableName}\``;
       fixedSQL = fixedSQL.replace(wrongFormat, correctFormat);
     });
 
-    // 不再进行表名前缀猜测和替换（如 db_ -> tb_），因为：
-    // 1. 表名可能本身就是 db_ 开头的
-    // 2. 这种替换会导致误修正
-    // 3. 应该让元数据验证来捕获真正的表名错误
+    // 3. 检测并修正错误的表名
+    const tablePattern = /(?:FROM|JOIN)\s+(?:`([^`]+)`\.)?`([^`]+)`/gi;
+    let match;
+    const replacements: Array<{ wrong: string; correct: string; }> = [];
+
+    while ((match = tablePattern.exec(sql)) !== null) {
+      const dbName = match[1]; // 数据库名（可能为空）
+      const tableName = match[2]; // 表名
+
+      // 检查表名是否在元数据中
+      const tableExists = context.tables.some(t => {
+        if (dbName) {
+          return t.databaseName === dbName && t.tableName === tableName;
+        }
+        return t.tableName === tableName;
+      });
+
+      if (!tableExists) {
+        // 表名不存在，尝试找到最相似的表名
+        const similarTable = this.findSimilarTable(tableName, dbName, context);
+        if (similarTable) {
+          const wrongRef = dbName
+            ? `\`${dbName}\`.\`${tableName}\``
+            : `\`${tableName}\``;
+          const correctRef = `\`${similarTable.databaseName}\`.\`${similarTable.tableName}\``;
+
+          replacements.push({ wrong: wrongRef, correct: correctRef });
+          console.log(`[SQLGenerator] 检测到错误的表名: ${wrongRef}, 建议修正为: ${correctRef}`);
+        }
+      }
+    }
+
+    // 应用所有修正
+    for (const { wrong, correct } of replacements) {
+      fixedSQL = fixedSQL.replace(new RegExp(this.escapeRegExp(wrong), 'g'), correct);
+    }
 
     if (fixedSQL !== sql) {
       console.log('[SQLGenerator] 自动修正了 SQL 格式错误');
@@ -675,6 +965,156 @@ ${this.describeConditions(intent.conditions)}
     }
 
     return fixedSQL;
+  }
+
+  /**
+   * 修正SQL子句顺序错误
+   * 正确顺序：SELECT ... FROM ... WHERE ... GROUP BY ... HAVING ... ORDER BY ... LIMIT ...
+   */
+  private fixClauseOrder(sql: string): string {
+    // 检测 LIMIT ... WHERE ... 这种错误顺序
+    const limitBeforeWhere = /\bLIMIT\s+\d+\s+WHERE\b/i;
+    if (limitBeforeWhere.test(sql)) {
+      console.log('[SQLGenerator] 检测到错误的子句顺序: LIMIT 在 WHERE 之前');
+
+      // 提取各个部分
+      const match = sql.match(/^(.*?)\s+LIMIT\s+(\d+)\s+(WHERE\s+.*)$/i);
+      if (match) {
+        const [, beforeLimit, limitValue, whereClause] = match;
+        const corrected = `${beforeLimit} ${whereClause} LIMIT ${limitValue}`;
+        console.log('[SQLGenerator] 修正子句顺序:', corrected);
+        return corrected;
+      }
+    }
+
+    // 检测 LIMIT ... ORDER BY ... 这种错误顺序
+    const limitBeforeOrderBy = /\bLIMIT\s+\d+\s+ORDER\s+BY\b/i;
+    if (limitBeforeOrderBy.test(sql)) {
+      console.log('[SQLGenerator] 检测到错误的子句顺序: LIMIT 在 ORDER BY 之前');
+
+      const match = sql.match(/^(.*?)\s+LIMIT\s+(\d+)\s+(ORDER\s+BY\s+.*)$/i);
+      if (match) {
+        const [, beforeLimit, limitValue, orderByClause] = match;
+        const corrected = `${beforeLimit} ${orderByClause} LIMIT ${limitValue}`;
+        console.log('[SQLGenerator] 修正子句顺序:', corrected);
+        return corrected;
+      }
+    }
+
+    // 检测 GROUP BY ... WHERE ... 这种错误顺序
+    const groupByBeforeWhere = /\bGROUP\s+BY\b.*?\bWHERE\b/i;
+    if (groupByBeforeWhere.test(sql)) {
+      console.log('[SQLGenerator] 检测到错误的子句顺序: GROUP BY 在 WHERE 之前');
+
+      const match = sql.match(/^(.*?)\s+(GROUP\s+BY\s+[^WHERE]+?)\s+(WHERE\s+.*)$/i);
+      if (match) {
+        const [, beforeGroupBy, groupByClause, whereClause] = match;
+        const corrected = `${beforeGroupBy} ${whereClause} ${groupByClause}`;
+        console.log('[SQLGenerator] 修正子句顺序:', corrected);
+        return corrected;
+      }
+    }
+
+    return sql;
+  }
+
+  /**
+   * 查找相似的表名（用于自动修正）
+   */
+  private findSimilarTable(
+    wrongTableName: string,
+    dbName: string | undefined,
+    context: MetadataContext
+  ): TableContext | null {
+    // 优先考虑相同数据库中的表
+    const tablesInDb = dbName
+      ? context.tables.filter(t => t.databaseName === dbName)
+      : context.tables;
+
+    if (tablesInDb.length === 0) {
+      return context.tables.length === 1 ? context.tables[0] : null;
+    }
+
+    // 策略1：检查是否只是前缀错误（如 db_ vs tb_）
+    const prefixPattern = /^(db_|tb_|t_|tbl_)(.+)$/;
+    const wrongMatch = wrongTableName.match(prefixPattern);
+
+    if (wrongMatch) {
+      const [, wrongPrefix, baseName] = wrongMatch;
+
+      // 尝试所有可能的前缀
+      const possiblePrefixes = ['db_', 'tb_', 't_', 'tbl_', ''];
+      for (const prefix of possiblePrefixes) {
+        if (prefix === wrongPrefix) continue;
+
+        const candidateName = prefix + baseName;
+        const found = tablesInDb.find(t => t.tableName === candidateName);
+        if (found) {
+          console.log(`[SQLGenerator] 表名前缀错误: ${wrongTableName} → ${candidateName}`);
+          return found;
+        }
+      }
+    }
+
+    // 策略2：计算编辑距离，找到最相似的表名
+    let minDistance = Infinity;
+    let bestMatch: TableContext | null = null;
+
+    for (const table of tablesInDb) {
+      const distance = this.levenshteinDistance(
+        wrongTableName.toLowerCase(),
+        table.tableName.toLowerCase()
+      );
+
+      // 如果编辑距离小于表名长度的30%，认为是可能的匹配
+      const threshold = Math.ceil(table.tableName.length * 0.3);
+
+      if (distance < minDistance && distance <= threshold) {
+        minDistance = distance;
+        bestMatch = table;
+      }
+    }
+
+    if (bestMatch) {
+      console.log(`[SQLGenerator] 找到相似表名: ${wrongTableName} → ${bestMatch.tableName} (编辑距离: ${minDistance})`);
+    }
+
+    return bestMatch;
+  }
+
+  /**
+   * 计算两个字符串的编辑距离（Levenshtein Distance）
+   */
+  private levenshteinDistance(str1: string, str2: string): number {
+    const m = str1.length;
+    const n = str2.length;
+    const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+
+    for (let i = 0; i <= m; i++) dp[i][0] = i;
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        if (str1[i - 1] === str2[j - 1]) {
+          dp[i][j] = dp[i - 1][j - 1];
+        } else {
+          dp[i][j] = Math.min(
+            dp[i - 1][j] + 1,    // 删除
+            dp[i][j - 1] + 1,    // 插入
+            dp[i - 1][j - 1] + 1 // 替换
+          );
+        }
+      }
+    }
+
+    return dp[m][n];
+  }
+
+  /**
+   * 转义正则表达式特殊字符
+   */
+  private escapeRegExp(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   /**

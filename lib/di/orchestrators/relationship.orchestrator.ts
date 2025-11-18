@@ -181,7 +181,8 @@ export class RelationshipOrchestrator {
     minConfidence: number = 0.70,
     tableId?: number,
     depth: number = 2,
-    databaseId?: number
+    databaseId?: number,
+    includeInferred: boolean = true
   ): Promise<RelationshipGraph> {
     return this.graphService.buildRelationshipGraph(
       dataSourceId,
@@ -189,7 +190,8 @@ export class RelationshipOrchestrator {
       minConfidence,
       tableId,
       depth,
-      databaseId
+      databaseId,
+      includeInferred
     );
   }
 
