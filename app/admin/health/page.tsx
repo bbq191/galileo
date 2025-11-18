@@ -25,6 +25,9 @@ interface HealthResponse {
     multiLevelCache?: HealthCheck;
     queryCacheManager?: HealthCheck;
     cacheInvalidationService?: HealthCheck;
+    redis?: HealthCheck;
+    rateLimiter?: HealthCheck;
+    aiService?: HealthCheck;
   };
 }
 
@@ -278,14 +281,33 @@ export default function HealthPage() {
 
             {/* 服务健康状态 */}
             <div>
-              <h2 className="text-xl font-bold mb-4">服务健康状态</h2>
+              <h2 className="text-xl font-bold mb-4">核心服务状态</h2>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {renderCheckCard('数据库 (Prisma)', health.checks.prisma)}
                 {renderCheckCard('连接管理器 (ConnectionManager)', health.checks.connectionManager)}
+                {renderCheckCard('Redis 服务', health.checks.redis)}
+                {renderCheckCard('AI 服务', health.checks.aiService)}
+              </div>
+            </div>
+
+            {/* 缓存服务状态 */}
+            <div>
+              <h2 className="text-xl font-bold mb-4">缓存服务状态</h2>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {renderCheckCard('多级缓存 (MultiLevelCache)', health.checks.multiLevelCache)}
                 {renderCheckCard('查询缓存 (QueryCacheManager)', health.checks.queryCacheManager)}
                 {renderCheckCard('缓存失效服务 (CacheInvalidation)', health.checks.cacheInvalidationService)}
+              </div>
+            </div>
+
+            {/* 安全服务状态 */}
+            <div>
+              <h2 className="text-xl font-bold mb-4">安全服务状态</h2>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {renderCheckCard('速率限制器 (Rate Limiter)', health.checks.rateLimiter)}
               </div>
             </div>
 

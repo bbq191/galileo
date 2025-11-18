@@ -6,24 +6,21 @@ import RelationshipDetail from './components/RelationshipDetail';
 import VerificationPanel from './components/VerificationPanel';
 
 interface GraphNode {
-  id: number;
-  label: string;
-  type: 'table';
-  databaseId: number;
-  databaseName: string;
   tableId: number;
+  tableName: string;
+  databaseName: string;
+  outDegree: number;
+  inDegree: number;
 }
 
 interface GraphEdge {
-  id: string;
-  source: number;
-  target: number;
-  type: 'explicit' | 'inferred';
-  relationshipType: 'one-to-one' | 'one-to-many' | 'many-to-many';
-  confidence?: number;
+  sourceTableId: number;
+  targetTableId: number;
   sourceColumn: string;
   targetColumn: string;
-  isVerified?: boolean;
+  confidence: number;
+  type: 'explicit' | 'inferred' | 'verified';
+  relationshipType: 'one-to-one' | 'one-to-many' | 'many-to-many';
 }
 
 export default function RelationshipsPage() {
@@ -57,6 +54,9 @@ export default function RelationshipsPage() {
         // 先加载数据库信息获取sourceId
         await loadSourceByDatabaseId(dbId);
         setSelectedDatabaseId(dbId);
+      } else if (urlTableId) {
+        // 如果只有 tableId，根据 tableId 查询对应的数据库和数据源
+        await loadSourceByTableId(parseInt(urlTableId));
       }
 
       if (urlTableId) {
@@ -67,6 +67,7 @@ export default function RelationshipsPage() {
     };
 
     initializeFromUrl();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 根据数据库ID加载对应的数据源
@@ -81,6 +82,23 @@ export default function RelationshipsPage() {
       }
     } catch (err) {
       console.error('Error loading source by database ID:', err);
+    }
+  };
+
+  // 根据表ID加载对应的数据库和数据源
+  const loadSourceByTableId = async (tableId: number) => {
+    try {
+      const response = await fetch(`/api/metadata/tables?tableId=${tableId}`);
+      const result = await response.json();
+
+      if (result.status === 'success' && result.data && result.data.length > 0) {
+        const table = result.data[0];
+        setSelectedDatabaseId(table.databaseId);
+        // 根据数据库ID加载数据源
+        await loadSourceByDatabaseId(table.databaseId);
+      }
+    } catch (err) {
+      console.error('Error loading source by table ID:', err);
     }
   };
 
@@ -170,20 +188,15 @@ export default function RelationshipsPage() {
   };
 
   // 设置为中心表
-  const handleSetAsCenter = (tableId: number, databaseId: number) => {
+  const handleSetAsCenter = (tableId: number) => {
     setSelectedTableId(tableId);
-
-    // 如果当前数据库ID不同，需要切换数据库
-    if (selectedDatabaseId !== databaseId) {
-      setSelectedDatabaseId(databaseId);
-      // 重新加载数据源信息
-      loadSourceByDatabaseId(databaseId);
-    }
 
     // 更新URL参数
     const url = new URL(window.location.href);
     url.searchParams.set('tableId', tableId.toString());
-    url.searchParams.set('databaseId', databaseId.toString());
+    if (selectedDatabaseId) {
+      url.searchParams.set('databaseId', selectedDatabaseId.toString());
+    }
     window.history.replaceState({}, '', url.toString());
 
     // 刷新图谱
@@ -454,6 +467,7 @@ export default function RelationshipsPage() {
                     <RelationshipGraph
                       key={graphKey}
                       tableId={selectedTableId || undefined}
+                      dataSourceId={selectedSourceId || undefined}
                       databaseId={selectedDatabaseId || undefined}
                       depth={depth}
                       includeInferred={includeInferred}

@@ -61,6 +61,9 @@ export interface DataSourceUpdateOptions {
   /** 数据源 ID */
   id: number;
 
+  /** 数据源类型 */
+  type?: 'mysql' | 'mariadb' | 'postgresql' | 'oracle' | 'mssql';
+
   /** 数据源名称 */
   name?: string;
 

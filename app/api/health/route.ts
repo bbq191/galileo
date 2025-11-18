@@ -5,8 +5,23 @@
  * 综合健康检查，包括所有 DI 服务状态
  */
 
+
+/**
+ * 显式声明 Node.js Runtime
+ *
+ * API Routes 运行在 Node.js Runtime 中，支持：
+ * - Prisma ORM
+ * - ioredis
+ * - mysql2
+ * - 其他 Node.js 专有 API
+ */
+export const runtime = 'nodejs';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getService } from '@/lib/di/helpers/app-router';
+import { checkRedisHealth } from '@/lib/cache/redis-client';
+import { getRedisRateLimiterInfo } from '@/lib/security/redis-rate-limiter';
+import { getRateLimiterInfo } from '@/lib/security/distributed-rate-limiter';
 
 export async function GET(request: NextRequest) {
   const timestamp = new Date().toISOString();
@@ -100,6 +115,79 @@ export async function GET(request: NextRequest) {
       };
     } catch (error: any) {
       checks.cacheInvalidationService = { status: 'error', message: error.message };
+      overallStatus = 'degraded';
+    }
+
+    // 6. 检查 Redis 服务
+    try {
+      const redisHealthy = await checkRedisHealth();
+      const rateLimiterInfo = getRedisRateLimiterInfo();
+
+      checks.redis = {
+        status: redisHealthy ? 'ok' : 'degraded',
+        connected: redisHealthy,
+        rateLimiterType: rateLimiterInfo.type,
+        message: redisHealthy
+          ? `Redis connected, rate limiter using ${rateLimiterInfo.type}`
+          : `Redis not available, rate limiter using ${rateLimiterInfo.type}`
+      };
+
+      if (!redisHealthy && rateLimiterInfo.type === 'memory') {
+        // 内存模式在开发环境是可接受的
+        if (process.env.NODE_ENV === 'production') {
+          overallStatus = 'degraded';
+        }
+      }
+    } catch (error: any) {
+      checks.redis = { status: 'error', message: error.message };
+      overallStatus = 'degraded';
+    }
+
+    // 7. 检查速率限制配置
+    try {
+      const middlewareRateLimiterInfo = getRateLimiterInfo();
+      const apiRateLimiterInfo = getRedisRateLimiterInfo();
+
+      checks.rateLimiter = {
+        status: 'ok',
+        middlewareType: middlewareRateLimiterInfo.type,
+        apiRoutesType: apiRateLimiterInfo.type,
+        distributed: apiRateLimiterInfo.type === 'redis' || middlewareRateLimiterInfo.type === 'distributed',
+        message: `Middleware: ${middlewareRateLimiterInfo.type}, API Routes: ${apiRateLimiterInfo.type}`
+      };
+
+      if (!checks.rateLimiter.distributed && process.env.NODE_ENV === 'production') {
+        checks.rateLimiter.status = 'degraded';
+        checks.rateLimiter.message += ' (Warning: Not distributed)';
+        overallStatus = 'degraded';
+      }
+    } catch (error: any) {
+      checks.rateLimiter = { status: 'error', message: error.message };
+    }
+
+    // 8. 检查 AI 服务配置
+    try {
+      const aiConfigured = !!(
+        process.env.DEEPSEEK_API_KEY &&
+        process.env.DEEPSEEK_API_URL &&
+        process.env.DEEPSEEK_MODEL
+      );
+
+      checks.aiService = {
+        status: aiConfigured ? 'ok' : 'degraded',
+        configured: aiConfigured,
+        model: process.env.DEEPSEEK_MODEL || 'not configured',
+        apiUrl: process.env.DEEPSEEK_API_URL ? 'configured' : 'not configured',
+        message: aiConfigured
+          ? `AI service configured with ${process.env.DEEPSEEK_MODEL}`
+          : 'AI service not fully configured'
+      };
+
+      if (!aiConfigured) {
+        overallStatus = 'degraded';
+      }
+    } catch (error: any) {
+      checks.aiService = { status: 'error', message: error.message };
       overallStatus = 'degraded';
     }
 

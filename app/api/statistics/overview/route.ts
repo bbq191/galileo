@@ -8,6 +8,18 @@
  * - 计算系统健康度、性能评分、可靠性评分
  */
 
+
+/**
+ * 显式声明 Node.js Runtime
+ *
+ * API Routes 运行在 Node.js Runtime 中，支持：
+ * - Prisma ORM
+ * - ioredis
+ * - mysql2
+ * - 其他 Node.js 专有 API
+ */
+export const runtime = 'nodejs';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { resolve } from '@/lib/di/container';
 import { DI_TOKENS } from '@/lib/di/tokens';

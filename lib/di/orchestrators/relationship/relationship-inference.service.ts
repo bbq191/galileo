@@ -43,6 +43,20 @@ export interface RelationshipInferOptions {
 
   /** 自动保存的最小置信度阈值 */
   autoSaveThreshold?: number;
+
+  /**
+   * 增量推断模式
+   * - true: 只推断自 sinceTimestamp 以来变更的表/列
+   * - false: 全量推断（默认）
+   */
+  incrementalMode?: boolean;
+
+  /**
+   * 增量推断的起始时间
+   * 只推断此时间之后变更的元数据
+   * 如果未指定，则使用上次同步时间
+   */
+  sinceTimestamp?: Date;
 }
 
 /**
@@ -75,6 +89,15 @@ export interface RelationshipInferResult {
 
   /** 错误信息 */
   error?: string;
+
+  /** 是否为增量推断 */
+  isIncremental?: boolean;
+
+  /** 处理的变更数量（仅增量模式） */
+  changesProcessed?: number;
+
+  /** 清理的旧关系数量（仅增量模式） */
+  relationshipsCleanedUp?: number;
 }
 
 /**
@@ -93,6 +116,201 @@ export class RelationshipInferenceService {
   ) {}
 
   /**
+   * 获取上次同步时间
+   *
+   * @param dataSourceId - 数据源 ID
+   * @returns 上次同步时间，如果不存在则返回 null
+   * @private
+   */
+  private async getLastSyncTime(dataSourceId: number): Promise<Date | null> {
+    const database = await this.dbService.prisma.databaseMeta.findFirst({
+      where: {
+        sourceId: dataSourceId,
+        lastSyncedAt: { not: null },
+      },
+      orderBy: {
+        lastSyncedAt: 'desc',
+      },
+      select: {
+        lastSyncedAt: true,
+      },
+    });
+
+    return database?.lastSyncedAt ?? null;
+  }
+
+  /**
+   * 获取元数据变更信息（用于增量推断）
+   *
+   * @param dataSourceId - 数据源 ID
+   * @param sinceTimestamp - 起始时间
+   * @returns 变更的表 ID 和列 ID 集合
+   * @private
+   */
+  private async getMetadataChanges(
+    dataSourceId: number,
+    sinceTimestamp: Date
+  ): Promise<{
+    changedTableIds: Set<number>;
+    changedColumnIds: Set<number>;
+    deletedTableIds: Set<number>;
+    deletedColumnIds: Set<number>;
+  }> {
+    // 1. 获取该数据源的所有表和列 ID（用于过滤变更）
+    const databases = await this.dbService.prisma.databaseMeta.findMany({
+      where: { sourceId: dataSourceId },
+      include: {
+        tables: {
+          include: {
+            columns: {
+              select: { id: true },
+            },
+          },
+        },
+      },
+    });
+
+    const dataSourceTableIds = new Set<number>();
+    const dataSourceColumnIds = new Set<number>();
+
+    for (const db of databases) {
+      for (const table of db.tables) {
+        dataSourceTableIds.add(table.id);
+        for (const column of table.columns) {
+          dataSourceColumnIds.add(column.id);
+        }
+      }
+    }
+
+    console.log(`[RelationshipInferenceService] Data source has ${dataSourceTableIds.size} tables, ${dataSourceColumnIds.size} columns`);
+
+    // 2. 查询变更记录
+    const changes = await this.dbService.prisma.metadataChange.findMany({
+      where: {
+        changedAt: {
+          gte: sinceTimestamp,
+        },
+      },
+      orderBy: {
+        changedAt: 'asc',
+      },
+    });
+
+    console.log(`[RelationshipInferenceService] Found ${changes.length} total metadata changes since ${sinceTimestamp.toISOString()}`);
+
+    // 3. 过滤出属于该数据源的变更
+    const changedTableIds = new Set<number>();
+    const changedColumnIds = new Set<number>();
+    const deletedTableIds = new Set<number>();
+    const deletedColumnIds = new Set<number>();
+
+    for (const change of changes) {
+      if (change.entityType === 'table') {
+        // 只处理属于该数据源的表（包括已删除的）
+        if (dataSourceTableIds.has(change.entityId) || change.changeType === 'table_removed') {
+          if (change.changeType === 'table_removed') {
+            deletedTableIds.add(change.entityId);
+          } else {
+            changedTableIds.add(change.entityId);
+          }
+        }
+      } else if (change.entityType === 'column') {
+        // 只处理属于该数据源的列（包括已删除的）
+        if (dataSourceColumnIds.has(change.entityId) || change.changeType === 'column_removed') {
+          if (change.changeType === 'column_removed') {
+            deletedColumnIds.add(change.entityId);
+          } else {
+            changedColumnIds.add(change.entityId);
+          }
+        }
+      }
+    }
+
+    console.log(`[RelationshipInferenceService] Filtered changes for this data source: ${changedTableIds.size} tables, ${changedColumnIds.size} columns`);
+
+    return {
+      changedTableIds,
+      changedColumnIds,
+      deletedTableIds,
+      deletedColumnIds,
+    };
+  }
+
+  /**
+   * 清理已删除表/列的关系
+   *
+   * @param deletedTableIds - 已删除的表 ID
+   * @param deletedColumnIds - 已删除的列 ID
+   * @returns 清理的关系数量
+   * @private
+   */
+  private async cleanupDeletedRelationships(
+    deletedTableIds: Set<number>,
+    deletedColumnIds: Set<number>
+  ): Promise<number> {
+    let cleanedCount = 0;
+
+    // 清理已删除表的关系
+    if (deletedTableIds.size > 0) {
+      const tableIdsArray = Array.from(deletedTableIds);
+      const result = await this.dbService.prisma.inferredRelationship.deleteMany({
+        where: {
+          OR: [
+            { sourceTableId: { in: tableIdsArray } },
+            { targetTableId: { in: tableIdsArray } },
+          ],
+        },
+      });
+      cleanedCount += result.count;
+      console.log(`[RelationshipInferenceService] Cleaned up ${result.count} relationships for deleted tables`);
+    }
+
+    // 清理已删除列的关系
+    if (deletedColumnIds.size > 0) {
+      const columnIdsArray = Array.from(deletedColumnIds);
+      const result = await this.dbService.prisma.inferredRelationship.deleteMany({
+        where: {
+          OR: [
+            { sourceColumnId: { in: columnIdsArray } },
+            { targetColumnId: { in: columnIdsArray } },
+          ],
+        },
+      });
+      cleanedCount += result.count;
+      console.log(`[RelationshipInferenceService] Cleaned up ${result.count} relationships for deleted columns`);
+    }
+
+    return cleanedCount;
+  }
+
+  /**
+   * 清理已修改列的旧关系
+   *
+   * @param modifiedColumnIds - 已修改的列 ID
+   * @returns 清理的关系数量
+   * @private
+   */
+  private async cleanupModifiedColumnRelationships(modifiedColumnIds: Set<number>): Promise<number> {
+    if (modifiedColumnIds.size === 0) {
+      return 0;
+    }
+
+    const columnIdsArray = Array.from(modifiedColumnIds);
+    const result = await this.dbService.prisma.inferredRelationship.deleteMany({
+      where: {
+        OR: [
+          { sourceColumnId: { in: columnIdsArray } },
+          { targetColumnId: { in: columnIdsArray } },
+        ],
+        isVerified: false, // 只删除未验证的关系
+      },
+    });
+
+    console.log(`[RelationshipInferenceService] Cleaned up ${result.count} relationships for modified columns`);
+    return result.count;
+  }
+
+  /**
    * 推断表关系
    *
    * @param options - 推断选项
@@ -102,13 +320,72 @@ export class RelationshipInferenceService {
     const startTime = Date.now();
 
     try {
-      console.log(`[RelationshipInferenceService] Starting relationship inference for data source ${options.dataSourceId}...`);
+      const isIncremental = options.incrementalMode ?? false;
+      console.log(`[RelationshipInferenceService] Starting ${isIncremental ? 'incremental' : 'full'} relationship inference for data source ${options.dataSourceId}...`);
+
+      // 增量模式：处理变更
+      let changesInfo: {
+        changedTableIds: Set<number>;
+        changedColumnIds: Set<number>;
+        deletedTableIds: Set<number>;
+        deletedColumnIds: Set<number>;
+      } | undefined;
+
+      let relationshipsCleanedUp = 0;
+
+      if (isIncremental) {
+        // 确定起始时间
+        const sinceTimestamp = options.sinceTimestamp ?? await this.getLastSyncTime(options.dataSourceId);
+
+        if (!sinceTimestamp) {
+          console.log(`[RelationshipInferenceService] No sync timestamp found, falling back to full inference`);
+          // 没有同步时间，回退到全量推断
+          options.incrementalMode = false;
+        } else {
+          console.log(`[RelationshipInferenceService] Incremental mode: processing changes since ${sinceTimestamp.toISOString()}`);
+
+          // 获取变更信息
+          changesInfo = await this.getMetadataChanges(options.dataSourceId, sinceTimestamp);
+
+          // 清理已删除的关系
+          relationshipsCleanedUp += await this.cleanupDeletedRelationships(
+            changesInfo.deletedTableIds,
+            changesInfo.deletedColumnIds
+          );
+
+          // 清理已修改列的旧关系
+          relationshipsCleanedUp += await this.cleanupModifiedColumnRelationships(changesInfo.changedColumnIds);
+
+          console.log(`[RelationshipInferenceService] Total changes: ${changesInfo.changedTableIds.size} tables, ${changesInfo.changedColumnIds.size} columns`);
+
+          // 如果没有变更，直接返回
+          if (changesInfo.changedTableIds.size === 0 && changesInfo.changedColumnIds.size === 0) {
+            console.log(`[RelationshipInferenceService] No changes detected, skipping inference`);
+            return {
+              success: true,
+              inferredCount: 0,
+              highConfidenceCount: 0,
+              mediumConfidenceCount: 0,
+              lowConfidenceCount: 0,
+              duration: Date.now() - startTime,
+              isIncremental: true,
+              changesProcessed: 0,
+              relationshipsCleanedUp,
+            };
+          }
+        }
+      }
 
       // 1. 获取元数据
+      // 注意：如果 options.databases 是空数组，不添加 in 条件（空数组会导致 IN () 查询失败）
+      const hasValidDatabases = options.databases && options.databases.length > 0;
+      console.log(`[RelationshipInferenceService] Querying databases with filter: ${hasValidDatabases ? options.databases?.join(', ') : 'all'}`);
+
+      // 增量模式：需要加载所有表（源表需要与所有目标表进行推断）
       const databases = await this.dbService.prisma.databaseMeta.findMany({
         where: {
           sourceId: options.dataSourceId,
-          ...(options.databases && { databaseName: { in: options.databases } }),
+          ...(hasValidDatabases && { databaseName: { in: options.databases } }),
         },
         include: {
           tables: {
@@ -119,7 +396,13 @@ export class RelationshipInferenceService {
         },
       });
 
+      console.log(`[RelationshipInferenceService] Found ${databases.length} databases`);
+
       if (databases.length === 0) {
+        const errorMsg = hasValidDatabases
+          ? `No databases found matching: ${options.databases?.join(', ')}`
+          : 'No databases found for the specified data source';
+        console.log(`[RelationshipInferenceService] ${errorMsg}`);
         return {
           success: false,
           inferredCount: 0,
@@ -127,7 +410,7 @@ export class RelationshipInferenceService {
           mediumConfidenceCount: 0,
           lowConfidenceCount: 0,
           duration: Date.now() - startTime,
-          error: 'No databases found for the specified data source',
+          error: errorMsg,
         };
       }
 
@@ -140,49 +423,53 @@ export class RelationshipInferenceService {
 
       const inferencer = new RelationshipInferencer(config);
 
-      // 3. 按数据库推断关系
+      // 3. 推断关系
       let allRelationships: InferredRelationship[] = [];
       let savedCount = 0;
 
-      for (const db of databases) {
-        console.log(`[RelationshipInferenceService] Inferring relationships for database ${db.databaseName}...`);
+      // 增量模式：准备变更列的 ID 集合用于过滤
+      const changedColumnIdsSet = isIncremental && changesInfo
+        ? changesInfo.changedColumnIds
+        : undefined;
 
-        // 准备列信息
-        const columns: ColumnInfo[] = db.tables.flatMap(table =>
-          table.columns.map(col => ({
-            id: col.id,
-            tableName: table.tableName,
-            tableId: table.id,
-            columnName: col.columnName,
-            dataType: col.dataType,
-            columnType: col.columnType,
-            isNullable: col.isNullable,
-            columnKey: this.deriveColumnKey(col.isPrimaryKey, col.isUnique),
-            isPrimaryKey: col.isPrimaryKey,
-            isUnique: col.isUnique,
-            isForeignKey: false,
-            columnComment: col.columnComment || undefined,
-            semanticDescription: col.semanticDescription || undefined,
-            databaseName: db.databaseName,
-          }))
+      // 根据配置选择推断策略
+      if (options.crossDatabase && databases.length > 1) {
+        // 跨库推断：使用专门的跨库推断方法
+        console.log(`[RelationshipInferenceService] Using cross-database inference for ${databases.length} databases...`);
+
+        const result = await this.performCrossDatabaseInference(
+          databases,
+          inferencer,
+          changedColumnIdsSet
         );
-
-        // 执行推断
-        const result: InferenceResult = await inferencer.inferRelationships(db.databaseName, columns);
         allRelationships.push(...result.relationships);
+      } else {
+        // 单库推断：按数据库分别推断
+        console.log(`[RelationshipInferenceService] Using single-database inference for ${databases.length} database(s)...`);
 
-        // 4. （可选）自动保存高置信度关系
-        if (options.autoSave) {
-          const threshold = options.autoSaveThreshold || 0.80;
-          const highConfidenceRels = result.relationships.filter(
-            rel => rel.confidenceScore >= threshold
+        for (const db of databases) {
+          console.log(`[RelationshipInferenceService] Inferring relationships for database ${db.databaseName}...`);
+
+          // 准备列信息
+          const columns: ColumnInfo[] = this.prepareColumnInfo(db);
+
+          // 执行推断
+          const result: InferenceResult = await inferencer.inferRelationships(
+            db.databaseName,
+            columns,
+            changedColumnIdsSet
           );
-
-          for (const rel of highConfidenceRels) {
-            await this.saveInferredRelationship(rel, options.dataSourceId);
-            savedCount++;
-          }
+          allRelationships.push(...result.relationships);
         }
+      }
+
+      // 4. （可选）自动保存高置信度关系
+      if (options.autoSave) {
+        savedCount = await this.saveHighConfidenceRelationships(
+          allRelationships,
+          options.dataSourceId,
+          options.autoSaveThreshold || 0.80
+        );
       }
 
       // 5. 统计结果
@@ -214,6 +501,11 @@ export class RelationshipInferenceService {
         lowConfidenceCount,
         duration,
         relationships: allRelationships,
+        isIncremental,
+        changesProcessed: isIncremental && changesInfo
+          ? changesInfo.changedTableIds.size + changesInfo.changedColumnIds.size
+          : undefined,
+        relationshipsCleanedUp: isIncremental ? relationshipsCleanedUp : undefined,
       };
 
     } catch (error) {
@@ -442,5 +734,128 @@ export class RelationshipInferenceService {
       default:
         return 'rule'; // 默认值
     }
+  }
+
+  /**
+   * 准备列信息
+   *
+   * @param db - 数据库元数据
+   * @returns 列信息数组
+   * @private
+   */
+  private prepareColumnInfo(db: {
+    databaseName: string;
+    tables: Array<{
+      id: number;
+      tableName: string;
+      columns: Array<{
+        id: number;
+        columnName: string;
+        dataType: string;
+        columnType: string;
+        isNullable: boolean;
+        isPrimaryKey: boolean;
+        isUnique: boolean;
+        columnComment: string | null;
+        semanticDescription: string | null;
+      }>;
+    }>;
+  }): ColumnInfo[] {
+    return db.tables.flatMap(table =>
+      table.columns.map(col => ({
+        id: col.id,
+        tableName: table.tableName,
+        tableId: table.id,
+        columnName: col.columnName,
+        dataType: col.dataType,
+        columnType: col.columnType,
+        isNullable: col.isNullable,
+        columnKey: this.deriveColumnKey(col.isPrimaryKey, col.isUnique),
+        isPrimaryKey: col.isPrimaryKey,
+        isUnique: col.isUnique,
+        isForeignKey: false,
+        columnComment: col.columnComment || undefined,
+        semanticDescription: col.semanticDescription || undefined,
+        databaseName: db.databaseName,
+      }))
+    );
+  }
+
+  /**
+   * 执行跨库推断
+   *
+   * @param databases - 数据库列表
+   * @param inferencer - 推断器实例
+   * @param changedColumnIds - 变更的列 ID 集合
+   * @returns 推断结果
+   * @private
+   */
+  private async performCrossDatabaseInference(
+    databases: Array<{
+      databaseName: string;
+      tables: Array<{
+        id: number;
+        tableName: string;
+        columns: Array<{
+          id: number;
+          columnName: string;
+          dataType: string;
+          columnType: string;
+          isNullable: boolean;
+          isPrimaryKey: boolean;
+          isUnique: boolean;
+          columnComment: string | null;
+          semanticDescription: string | null;
+        }>;
+      }>;
+    }>,
+    inferencer: RelationshipInferencer,
+    changedColumnIds?: Set<number>
+  ): Promise<InferenceResult> {
+    // 准备跨库推断的数据结构
+    const databasesMap = new Map<string, ColumnInfo[]>();
+
+    for (const db of databases) {
+      const columns = this.prepareColumnInfo(db);
+      databasesMap.set(db.databaseName, columns);
+    }
+
+    // 注意：跨库推断暂不支持增量模式，因为需要考虑所有数据库的关系
+    if (changedColumnIds && changedColumnIds.size > 0) {
+      console.warn(
+        `[RelationshipInferenceService] Cross-database inference does not support incremental mode yet. ` +
+        `Falling back to full inference.`
+      );
+    }
+
+    // 执行跨库推断
+    return await inferencer.inferCrossDatabaseRelationships(databasesMap);
+  }
+
+  /**
+   * 保存高置信度关系
+   *
+   * @param relationships - 关系列表
+   * @param dataSourceId - 数据源 ID
+   * @param threshold - 置信度阈值
+   * @returns 保存的关系数量
+   * @private
+   */
+  private async saveHighConfidenceRelationships(
+    relationships: InferredRelationship[],
+    dataSourceId: number,
+    threshold: number
+  ): Promise<number> {
+    const highConfidenceRels = relationships.filter(
+      rel => rel.confidenceScore >= threshold
+    );
+
+    let savedCount = 0;
+    for (const rel of highConfidenceRels) {
+      await this.saveInferredRelationship(rel, dataSourceId);
+      savedCount++;
+    }
+
+    return savedCount;
   }
 }

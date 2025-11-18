@@ -4,6 +4,18 @@
  * GET    /api/datasources - 获取数据源列表
  */
 
+
+/**
+ * 显式声明 Node.js Runtime
+ *
+ * API Routes 运行在 Node.js Runtime 中，支持：
+ * - Prisma ORM
+ * - ioredis
+ * - mysql2
+ * - 其他 Node.js 专有 API
+ */
+export const runtime = 'nodejs';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { schemas } from '@/lib/validation/schemas';
 import { validateOrRespond } from '@/lib/validation/validator';
@@ -67,7 +79,7 @@ export async function POST(request: NextRequest) {
       password,
       databases: databases || [],
       description,
-      autoSync: body.autoSync !== false, // 默认自动同步元数据
+      autoSync: body.autoSync === true, // 默认不自动同步，创建后用户可手动触发
     });
 
     if (!result.success) {

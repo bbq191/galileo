@@ -170,14 +170,27 @@ export class RelationshipOrchestrator {
    * @param dataSourceId - 数据源 ID
    * @param databases - 可选的数据库列表
    * @param minConfidence - 最小置信度
+   * @param tableId - 可选的中心表 ID
+   * @param depth - 关系深度
+   * @param databaseId - 可选的数据库 ID
    * @returns 关系图谱
    */
   async buildRelationshipGraph(
     dataSourceId: number,
     databases?: string[],
-    minConfidence: number = 0.70
+    minConfidence: number = 0.70,
+    tableId?: number,
+    depth: number = 2,
+    databaseId?: number
   ): Promise<RelationshipGraph> {
-    return this.graphService.buildRelationshipGraph(dataSourceId, databases, minConfidence);
+    return this.graphService.buildRelationshipGraph(
+      dataSourceId,
+      databases,
+      minConfidence,
+      tableId,
+      depth,
+      databaseId
+    );
   }
 
   /**

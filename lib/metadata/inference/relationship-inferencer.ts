@@ -31,9 +31,6 @@ export interface RelationshipInferencerConfig {
   /** 是否跨数据库推断 */
   crossDatabase?: boolean;
 
-  /** 最大检查字段对数（性能优化） */
-  maxPairsToCheck?: number;
-
   /** 批量 AI 推断的批次大小 */
   aiBatchSize?: number;
 }
@@ -48,7 +45,6 @@ const DEFAULT_CONFIG: Required<RelationshipInferencerConfig> = {
   enableAIInference: true,
   aiMinConfidence: 0.75,
   crossDatabase: true,
-  maxPairsToCheck: 10000,
   aiBatchSize: 5,
 };
 
@@ -70,17 +66,27 @@ export class RelationshipInferencer {
 
   /**
    * 推断单个数据库内的关系
+   *
+   * @param databaseName - 数据库名称
+   * @param allColumns - 所有列信息
+   * @param changedColumnIds - 变更的列 ID 集合（用于增量推断），如果提供则只推断这些列作为源列
    */
   async inferRelationships(
     databaseName: string,
-    allColumns: ColumnInfo[]
+    allColumns: ColumnInfo[],
+    changedColumnIds?: Set<number>
   ): Promise<InferenceResult> {
     const startTime = Date.now();
 
+    const isIncremental = changedColumnIds !== undefined && changedColumnIds.size > 0;
+
     console.log(`\n========================================`);
-    console.log(`开始推断关系: ${databaseName}`);
+    console.log(`开始${isIncremental ? '增量' : '全量'}推断关系: ${databaseName}`);
     console.log(`========================================`);
     console.log(`总字段数: ${allColumns.length}`);
+    if (isIncremental) {
+      console.log(`变更字段数: ${changedColumnIds.size}`);
+    }
 
     const relationships: InferredRelationship[] = [];
     const rulesUsedMap = new Map<string, number>();
@@ -100,6 +106,11 @@ export class RelationshipInferencer {
 
       // 遍历源表的每个字段
       for (const sourceColumn of sourceColumns) {
+        // 增量模式：只处理变更的列作为源列
+        if (isIncremental && changedColumnIds && sourceColumn.id !== undefined && !changedColumnIds.has(sourceColumn.id)) {
+          continue;
+        }
+
         // 性能优化：跳过不太可能是外键的字段
         if (this.shouldSkipColumn(sourceColumn)) {
           continue;
@@ -192,16 +203,6 @@ export class RelationshipInferencer {
             }
           }
         }
-
-        // 限制检查数量
-        if (checkedPairs >= this.config.maxPairsToCheck) {
-          console.log(`\n⚠️  达到最大检查数量限制: ${this.config.maxPairsToCheck}`);
-          break;
-        }
-      }
-
-      if (checkedPairs >= this.config.maxPairsToCheck) {
-        break;
       }
     }
 
@@ -215,7 +216,8 @@ export class RelationshipInferencer {
         allColumns,
         columnsByTable,
         tableNames,
-        relationships
+        relationships,
+        changedColumnIds // 传递变更列 ID
       );
 
       relationships.push(...aiRelationships);
@@ -362,29 +364,10 @@ export class RelationshipInferencer {
                     }
                   }
                 }
-
-                // 限制检查数量
-                if (checkedPairs >= this.config.maxPairsToCheck) {
-                  break;
-                }
               }
             }
           }
-
-          // 限制检查数量
-          if (checkedPairs >= this.config.maxPairsToCheck) {
-            break;
-          }
         }
-
-        if (checkedPairs >= this.config.maxPairsToCheck) {
-          break;
-        }
-      }
-
-      if (checkedPairs >= this.config.maxPairsToCheck) {
-        console.log(`\n⚠️  达到最大检查数量限制: ${this.config.maxPairsToCheck}`);
-        break;
       }
     }
 
@@ -538,12 +521,19 @@ export class RelationshipInferencer {
   /**
    * 使用 AI 进行关系推断
    * 对规则引擎未覆盖或低置信度的字段对进行 AI 推断
+   *
+   * @param allColumns - 所有列信息
+   * @param columnsByTable - 按表分组的列信息
+   * @param tableNames - 表名列表
+   * @param existingRelationships - 已存在的关系
+   * @param changedColumnIds - 变更的列 ID 集合（用于增量推断）
    */
   private async performAIInference(
     allColumns: ColumnInfo[],
     columnsByTable: Record<string, ColumnInfo[]>,
     tableNames: string[],
-    existingRelationships: InferredRelationship[]
+    existingRelationships: InferredRelationship[],
+    changedColumnIds?: Set<number>
   ): Promise<InferredRelationship[]> {
     const aiRelationships: InferredRelationship[] = [];
 
@@ -562,6 +552,11 @@ export class RelationshipInferencer {
       const sourceColumns = columnsByTable[sourceTable];
 
       for (const sourceColumn of sourceColumns) {
+        // 增量模式：只处理变更的列作为源列
+        if (changedColumnIds && changedColumnIds.size > 0 && sourceColumn.id !== undefined && !changedColumnIds.has(sourceColumn.id)) {
+          continue;
+        }
+
         // 使用 AI 推断器判断是否为外键候选
         if (!this.aiInferencer.isForeignKeyCandidate(sourceColumn)) {
           continue;
@@ -593,25 +588,8 @@ export class RelationshipInferencer {
               source: sourceColumn,
               target: targetColumn,
             });
-
-            // 限制候选数量
-            if (candidatePairs.length >= 100) {
-              break;
-            }
-          }
-
-          if (candidatePairs.length >= 100) {
-            break;
           }
         }
-
-        if (candidatePairs.length >= 100) {
-          break;
-        }
-      }
-
-      if (candidatePairs.length >= 100) {
-        break;
       }
     }
 

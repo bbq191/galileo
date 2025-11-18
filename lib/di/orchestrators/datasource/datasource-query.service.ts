@@ -66,11 +66,7 @@ export class DataSourceQueryService {
             port: ds.port,
             username: ds.username,
             status: ds.status as any,
-            databases: ds.targetDatabases
-              ? Array.isArray(ds.targetDatabases)
-                ? ds.targetDatabases
-                : [ds.targetDatabases as string]
-              : [],
+            databases: this.parseTargetDatabases(ds.targetDatabases),
             lastSyncAt: ds.lastSyncAt || undefined,
             createdAt: ds.createdAt,
             updatedAt: ds.updatedAt,
@@ -127,11 +123,7 @@ export class DataSourceQueryService {
         port: dataSource.port,
         username: dataSource.username,
         status: dataSource.status as any,
-        databases: dataSource.targetDatabases
-          ? Array.isArray(dataSource.targetDatabases)
-            ? dataSource.targetDatabases
-            : [dataSource.targetDatabases as string]
-          : [],
+        databases: this.parseTargetDatabases(dataSource.targetDatabases),
         lastSyncAt: dataSource.lastSyncAt || undefined,
         createdAt: dataSource.createdAt,
         updatedAt: dataSource.updatedAt,
@@ -142,6 +134,37 @@ export class DataSourceQueryService {
     } catch (error) {
       console.error(`[DataSourceQueryService] Get data source failed:`, error);
       return null;
+    }
+  }
+
+  /**
+   * 解析目标数据库字段
+   * 数据库中存储为 JSON 字符串，需要解析为数组
+   *
+   * @param targetDatabases - 目标数据库字段值
+   * @returns 数据库名称数组
+   */
+  private parseTargetDatabases(targetDatabases: string | null): string[] {
+    if (!targetDatabases) {
+      return [];
+    }
+
+    // 如果已经是数组（理论上不会发生，但做兼容处理）
+    if (Array.isArray(targetDatabases)) {
+      return targetDatabases;
+    }
+
+    // 尝试 JSON 解析
+    try {
+      const parsed = JSON.parse(targetDatabases);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+      // 如果解析结果不是数组，当作单个数据库名
+      return [String(parsed)];
+    } catch {
+      // 解析失败，当作单个数据库名处理
+      return [targetDatabases];
     }
   }
 }

@@ -103,6 +103,11 @@ export class ColumnMetadataRepository {
     // 查询是否已存在
     const existing = await this.getColumnByName(input.tableId, input.columnName);
 
+    // 确保布尔值字段类型正确（数据库可能返回 0/1）
+    const isNullable = input.isNullable !== undefined ? Boolean(input.isNullable) : true;
+    const isPrimaryKey = input.isPrimaryKey !== undefined ? Boolean(input.isPrimaryKey) : false;
+    const isUnique = input.isUnique !== undefined ? Boolean(input.isUnique) : false;
+
     const result = await this.prisma.columnMeta.upsert({
       where: {
         tableId_columnName: {
@@ -118,9 +123,9 @@ export class ColumnMetadataRepository {
         columnComment: input.columnComment,
         semanticDescription: input.semanticDescription,
         semanticSource: input.semanticSource ?? 'rule',
-        isNullable: input.isNullable ?? true,
-        isPrimaryKey: input.isPrimaryKey ?? false,
-        isUnique: input.isUnique ?? false,
+        isNullable,
+        isPrimaryKey,
+        isUnique,
         defaultValue: input.defaultValue,
         ordinalPosition: input.ordinalPosition,
       },
@@ -130,9 +135,9 @@ export class ColumnMetadataRepository {
         columnComment: input.columnComment,
         semanticDescription: input.semanticDescription,
         semanticSource: input.semanticSource,
-        isNullable: input.isNullable,
-        isPrimaryKey: input.isPrimaryKey,
-        isUnique: input.isUnique,
+        isNullable,
+        isPrimaryKey,
+        isUnique,
         defaultValue: input.defaultValue,
         ordinalPosition: input.ordinalPosition,
       },

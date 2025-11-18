@@ -3,9 +3,21 @@
  * POST /api/datasources/:id/sync - 同步数据源的元数据
  */
 
+
+/**
+ * 显式声明 Node.js Runtime
+ *
+ * API Routes 运行在 Node.js Runtime 中，支持：
+ * - Prisma ORM
+ * - ioredis
+ * - mysql2
+ * - 其他 Node.js 专有 API
+ */
+export const runtime = 'nodejs';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { safeServerErrorResponse } from '@/lib/api/response';
-import { getMetadataOrchestrator } from '@/lib/di/setup';
+import { getMetadataOrchestrator, getPrismaClient } from '@/lib/di/setup';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -26,11 +38,30 @@ export async function POST(request: NextRequest, context: RouteContext) {
     // 解析请求体（可选参数）
     const body = await request.json().catch(() => ({}));
     const {
-      databases,
+      databases: requestDatabases,
       inferRelationships = true,
       minConfidence = 0.70,
       trackChanges = true,
     } = body;
+
+    // 获取要同步的数据库列表
+    // 优先使用请求体中的 databases，否则使用数据源配置的 targetDatabases
+    let databases = requestDatabases;
+    if (!databases || databases.length === 0) {
+      const prisma = getPrismaClient();
+      const dataSource = await prisma.dataSource.findUnique({
+        where: { id: dataSourceId },
+        select: { targetDatabases: true },
+      });
+      if (dataSource?.targetDatabases) {
+        try {
+          databases = JSON.parse(dataSource.targetDatabases);
+          console.log(`[POST /api/datasources/${id}/sync] Using configured target databases:`, databases);
+        } catch {
+          console.warn(`[POST /api/datasources/${id}/sync] Failed to parse targetDatabases, will sync all databases`);
+        }
+      }
+    }
 
     // 使用 MetadataOrchestrator 同步元数据
     const orchestrator = getMetadataOrchestrator();

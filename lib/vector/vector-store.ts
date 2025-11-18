@@ -239,7 +239,10 @@ export class VectorStore {
     for (const item of this.items.values()) {
       // 估算大小（向量 + 数据）
       sizeBytes += item.vector.length * 8; // 每个 number 8 字节
-      sizeBytes += JSON.stringify(item.data).length;
+      // 使用自定义 replacer 处理 BigInt 序列化
+      sizeBytes += JSON.stringify(item.data, (_, value) =>
+        typeof value === 'bigint' ? value.toString() : value
+      ).length;
 
       if (item.updatedAt > lastUpdated) {
         lastUpdated = item.updatedAt;
@@ -299,7 +302,11 @@ export class VectorStore {
 
     try {
       const key = `${this.redisPrefix}:item:${item.id}`;
-      await this.redis.set(key, JSON.stringify(item));
+      // 使用自定义 replacer 处理 BigInt 序列化
+      const serialized = JSON.stringify(item, (_, value) =>
+        typeof value === 'bigint' ? value.toString() : value
+      );
+      await this.redis.set(key, serialized);
     } catch (error) {
       console.error('保存向量数据到 Redis 失败:', error);
     }

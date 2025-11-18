@@ -95,21 +95,41 @@ export class RelationshipGraphService {
    * @param dataSourceId - 数据源 ID
    * @param databases - 可选的数据库列表
    * @param minConfidence - 最小置信度
+   * @param tableId - 可选的中心表 ID
+   * @param depth - 关系深度
+   * @param databaseId - 可选的数据库 ID
    * @returns 关系图谱
    */
   async buildRelationshipGraph(
     dataSourceId: number,
     databases?: string[],
-    minConfidence: number = 0.70
+    minConfidence: number = 0.70,
+    tableId?: number,
+    depth: number = 2,
+    databaseId?: number
   ): Promise<RelationshipGraph> {
     try {
-      console.log(`[RelationshipGraphService] Building relationship graph for data source ${dataSourceId}...`);
+      console.log(`[RelationshipGraphService] Building relationship graph for data source ${dataSourceId}, table ${tableId || 'all'}, depth ${depth}...`);
+
+      // 如果提供了 databaseId，则查询数据库名称
+      let databaseFilter: { databaseName?: { in: string[] } } = {};
+      if (databaseId) {
+        const db = await this.dbService.prisma.databaseMeta.findUnique({
+          where: { id: databaseId },
+          select: { databaseName: true },
+        });
+        if (db) {
+          databaseFilter = { databaseName: { in: [db.databaseName] } };
+        }
+      } else if (databases && databases.length > 0) {
+        databaseFilter = { databaseName: { in: databases } };
+      }
 
       // 获取数据库和表
       const dbMetas = await this.dbService.prisma.databaseMeta.findMany({
         where: {
           sourceId: dataSourceId,
-          ...(databases && { databaseName: { in: databases } }),
+          ...databaseFilter,
         },
         include: {
           tables: {
@@ -131,16 +151,16 @@ export class RelationshipGraphService {
         },
       });
 
-      // 构建节点
-      const nodes: RelationshipGraphNode[] = [];
-      const edges: RelationshipGraphEdge[] = [];
+      // 构建所有节点
+      const allNodes: RelationshipGraphNode[] = [];
+      const allEdges: RelationshipGraphEdge[] = [];
 
       for (const db of dbMetas) {
         for (const table of db.tables) {
           const outDegree = table.sourceRelationships.length;
           const inDegree = table.targetRelationships.length;
 
-          nodes.push({
+          allNodes.push({
             tableId: table.id,
             tableName: table.tableName,
             databaseName: db.databaseName,
@@ -150,7 +170,7 @@ export class RelationshipGraphService {
 
           // 添加显式关系边
           for (const rel of table.sourceRelationships) {
-            edges.push({
+            allEdges.push({
               sourceTableId: rel.sourceTableId,
               targetTableId: rel.targetTableId,
               sourceColumn: rel.sourceColumn.columnName,
@@ -164,12 +184,12 @@ export class RelationshipGraphService {
       }
 
       // 添加推断关系边
-      const tableIds = nodes.map(n => n.tableId);
+      const allTableIds = allNodes.map(n => n.tableId);
       const inferredRels = await this.dbService.prisma.inferredRelationship.findMany({
         where: {
           OR: [
-            { sourceTableId: { in: tableIds } },
-            { targetTableId: { in: tableIds } },
+            { sourceTableId: { in: allTableIds } },
+            { targetTableId: { in: allTableIds } },
           ],
           confidenceScore: { gte: minConfidence },
         },
@@ -180,7 +200,7 @@ export class RelationshipGraphService {
       });
 
       for (const rel of inferredRels) {
-        edges.push({
+        allEdges.push({
           sourceTableId: rel.sourceTableId,
           targetTableId: rel.targetTableId,
           sourceColumn: rel.sourceColumn.columnName,
@@ -191,17 +211,29 @@ export class RelationshipGraphService {
         });
       }
 
+      // 如果指定了中心表，则过滤出相关节点和边
+      let filteredNodes = allNodes;
+      let filteredEdges = allEdges;
+
+      if (tableId) {
+        const relatedTableIds = this.findRelatedTables(tableId, allEdges, depth);
+        filteredNodes = allNodes.filter(n => relatedTableIds.has(n.tableId));
+        filteredEdges = allEdges.filter(e =>
+          relatedTableIds.has(e.sourceTableId) && relatedTableIds.has(e.targetTableId)
+        );
+      }
+
       // 计算统计
-      const avgDegree = nodes.reduce((sum, n) => sum + n.inDegree + n.outDegree, 0) / (nodes.length || 1);
-      const maxInDegree = Math.max(...nodes.map(n => n.inDegree), 0);
-      const maxOutDegree = Math.max(...nodes.map(n => n.outDegree), 0);
+      const avgDegree = filteredNodes.reduce((sum, n) => sum + n.inDegree + n.outDegree, 0) / (filteredNodes.length || 1);
+      const maxInDegree = Math.max(...filteredNodes.map(n => n.inDegree), 0);
+      const maxOutDegree = Math.max(...filteredNodes.map(n => n.outDegree), 0);
 
       const graph: RelationshipGraph = {
-        nodes,
-        edges,
+        nodes: filteredNodes,
+        edges: filteredEdges,
         stats: {
-          nodeCount: nodes.length,
-          edgeCount: edges.length,
+          nodeCount: filteredNodes.length,
+          edgeCount: filteredEdges.length,
           avgDegree,
           maxInDegree,
           maxOutDegree,
@@ -228,6 +260,52 @@ export class RelationshipGraphService {
         },
       };
     }
+  }
+
+  /**
+   * 查找与中心表相关的所有表（使用 BFS 算法）
+   *
+   * @param centerTableId - 中心表 ID
+   * @param edges - 所有边
+   * @param maxDepth - 最大深度
+   * @returns 相关表 ID 集合
+   * @private
+   */
+  private findRelatedTables(
+    centerTableId: number,
+    edges: RelationshipGraphEdge[],
+    maxDepth: number
+  ): Set<number> {
+    const relatedTables = new Set<number>([centerTableId]);
+    const queue: { tableId: number; depth: number }[] = [{ tableId: centerTableId, depth: 0 }];
+    const visited = new Set<number>([centerTableId]);
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+
+      if (current.depth >= maxDepth) {
+        continue;
+      }
+
+      // 查找所有相关的边
+      for (const edge of edges) {
+        let nextTableId: number | null = null;
+
+        if (edge.sourceTableId === current.tableId) {
+          nextTableId = edge.targetTableId;
+        } else if (edge.targetTableId === current.tableId) {
+          nextTableId = edge.sourceTableId;
+        }
+
+        if (nextTableId !== null && !visited.has(nextTableId)) {
+          visited.add(nextTableId);
+          relatedTables.add(nextTableId);
+          queue.push({ tableId: nextTableId, depth: current.depth + 1 });
+        }
+      }
+    }
+
+    return relatedTables;
   }
 
   /**

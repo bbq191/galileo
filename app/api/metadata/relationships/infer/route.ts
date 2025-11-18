@@ -5,6 +5,18 @@
  * 重构后使用 RelationshipOrchestrator 进行关系推断
  */
 
+
+/**
+ * 显式声明 Node.js Runtime
+ *
+ * API Routes 运行在 Node.js Runtime 中，支持：
+ * - Prisma ORM
+ * - ioredis
+ * - mysql2
+ * - 其他 Node.js 专有 API
+ */
+export const runtime = 'nodejs';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getRelationshipOrchestrator } from '@/lib/di/setup';
 import { safeServerErrorResponse } from '@/lib/api/response';
@@ -69,11 +81,39 @@ export async function POST(request: NextRequest) {
 
     console.log(`[POST /api/metadata/relationships/infer] Starting inference for data source ${dataSourceId}...`);
 
+    // 如果没有传递 databases 参数，从数据源配置中读取 targetDatabases
+    let targetDatabases = databases;
+    if (!targetDatabases || targetDatabases.length === 0) {
+      const { getDatabaseService } = await import('@/lib/di/setup');
+      const { DatabaseService } = await import('@/lib/di/services/database.service');
+      const dbService = getDatabaseService() as InstanceType<typeof DatabaseService>;
+      const dataSource = await dbService.prisma.dataSource.findUnique({
+        where: { id: parseInt(dataSourceId) },
+        select: { targetDatabases: true, name: true },
+      });
+
+      if (dataSource?.targetDatabases) {
+        try {
+          const parsed = JSON.parse(dataSource.targetDatabases);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            targetDatabases = parsed;
+            console.log(`[POST /api/metadata/relationships/infer] Using targetDatabases from data source config: ${targetDatabases.join(', ')}`);
+          }
+        } catch (error) {
+          console.warn(`[POST /api/metadata/relationships/infer] Failed to parse targetDatabases:`, error);
+        }
+      }
+
+      if (!targetDatabases || targetDatabases.length === 0) {
+        console.log(`[POST /api/metadata/relationships/infer] No databases specified, will infer all databases for data source ${dataSourceId}`);
+      }
+    }
+
     // 使用 RelationshipOrchestrator 推断关系
     const orchestrator = getRelationshipOrchestrator();
     const result = await orchestrator.inferRelationships({
       dataSourceId: parseInt(dataSourceId),
-      databases,
+      databases: targetDatabases,
       minConfidence,
       enableAI,
       crossDatabase,
@@ -109,7 +149,10 @@ export async function POST(request: NextRequest) {
         mediumConfidenceCount: result.mediumConfidenceCount,
         lowConfidenceCount: result.lowConfidenceCount,
         duration,
-        databases: databases || 'all',
+        databases: targetDatabases && targetDatabases.length > 0 ? targetDatabases : 'all',
+        isIncremental: result.isIncremental,
+        changesProcessed: result.changesProcessed,
+        relationshipsCleanedUp: result.relationshipsCleanedUp,
       },
     });
 

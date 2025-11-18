@@ -5,6 +5,16 @@
  * - 安全分析
  * - 异常检测
  * - 滥用行为识别
+ *
+ * ⚠️ 重要提示：
+ * 此文件仅用于 API Routes（Node.js Runtime）
+ * 不要在 middleware.ts 中导入此文件，因为 middleware 运行在 Edge Runtime 中
+ * Edge Runtime 不支持 Prisma 和 ioredis
+ *
+ * 📝 更新说明 (2025-11-17)：
+ * middleware.ts 现在使用 distributed-rate-limiter.ts 实现分布式速率限制
+ * 支持 Upstash Redis（Edge Runtime 兼容）
+ * 此文件仍然用于 API Routes 层的日志记录和分析
  */
 
 import prisma from '@/lib/prisma/client';

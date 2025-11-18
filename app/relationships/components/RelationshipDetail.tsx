@@ -1,31 +1,28 @@
 'use client';
 
 interface GraphNode {
-  id: number;
-  label: string;
-  type: 'table';
-  databaseId: number;
-  databaseName: string;
   tableId: number;
+  tableName: string;
+  databaseName: string;
+  outDegree: number;
+  inDegree: number;
 }
 
 interface GraphEdge {
-  id: string;
-  source: number;
-  target: number;
-  type: 'explicit' | 'inferred';
-  relationshipType: 'one-to-one' | 'one-to-many' | 'many-to-many';
-  confidence?: number;
+  sourceTableId: number;
+  targetTableId: number;
   sourceColumn: string;
   targetColumn: string;
-  isVerified?: boolean;
+  confidence: number;
+  type: 'explicit' | 'inferred' | 'verified';
+  relationshipType: 'one-to-one' | 'one-to-many' | 'many-to-many';
 }
 
 interface RelationshipDetailProps {
   selectedNode?: GraphNode | null;
   selectedEdge?: GraphEdge | null;
   onClose?: () => void;
-  onSetAsCenter?: (tableId: number, databaseId: number) => void;
+  onSetAsCenter?: (tableId: number) => void;
 }
 
 export default function RelationshipDetail({
@@ -95,7 +92,7 @@ export default function RelationshipDetail({
             {/* 表名 */}
             <div>
               <div className="text-sm text-base-content/60 mb-1">表名</div>
-              <div className="text-lg font-bold">{selectedNode.label}</div>
+              <div className="text-lg font-bold">{selectedNode.tableName}</div>
             </div>
 
             {/* 数据库 */}
@@ -103,9 +100,15 @@ export default function RelationshipDetail({
               <div className="text-sm text-base-content/60 mb-1">所属数据库</div>
               <div className="flex items-center gap-2">
                 <span className="badge badge-primary">{selectedNode.databaseName}</span>
-                <span className="text-xs text-base-content/40">
-                  ID: {selectedNode.databaseId}
-                </span>
+              </div>
+            </div>
+
+            {/* 关系度数 */}
+            <div>
+              <div className="text-sm text-base-content/60 mb-1">关系统计</div>
+              <div className="flex gap-2">
+                <span className="badge badge-outline">出度: {selectedNode.outDegree}</span>
+                <span className="badge badge-outline">入度: {selectedNode.inDegree}</span>
               </div>
             </div>
 
@@ -142,7 +145,7 @@ export default function RelationshipDetail({
                 className="btn btn-outline btn-sm w-full"
                 onClick={() => {
                   if (onSetAsCenter) {
-                    onSetAsCenter(selectedNode.tableId, selectedNode.databaseId);
+                    onSetAsCenter(selectedNode.tableId);
                   }
                 }}
               >
@@ -223,7 +226,7 @@ export default function RelationshipDetail({
                   </svg>
                   显式关系 (外键)
                 </span>
-              ) : selectedEdge.isVerified ? (
+              ) : selectedEdge.type === 'verified' ? (
                 <span className="badge badge-warning gap-2">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -293,7 +296,7 @@ export default function RelationshipDetail({
             </div>
 
             {/* 置信度（仅推断关系） */}
-            {selectedEdge.type === 'inferred' && selectedEdge.confidence && (
+            {(selectedEdge.type === 'inferred' || selectedEdge.type === 'verified') && (
               <div>
                 <div className="text-sm text-base-content/60 mb-2">置信度</div>
                 <div className="flex items-center gap-2">
@@ -309,11 +312,11 @@ export default function RelationshipDetail({
               </div>
             )}
 
-            {/* 关系ID */}
+            {/* 关系信息 */}
             <div>
-              <div className="text-sm text-base-content/60 mb-1">关系 ID</div>
+              <div className="text-sm text-base-content/60 mb-1">关系信息</div>
               <div className="font-mono text-xs text-base-content/60">
-                {selectedEdge.id}
+                {selectedEdge.sourceTableId} → {selectedEdge.targetTableId}
               </div>
             </div>
           </div>

@@ -13,6 +13,21 @@ export default function DataSourcesPage() {
   const [testingConnections, setTestingConnections] = useState<Set<number>>(new Set());
   const [syncingDataSources, setSyncingDataSources] = useState<Set<number>>(new Set());
   const [inferringRelationships, setInferringRelationships] = useState<Set<number>>(new Set());
+  const [operationInProgress, setOperationInProgress] = useState<number | null>(null);
+
+  // 格式化持续时间为人类可读格式
+  const formatDuration = (ms: number): string => {
+    if (ms < 1000) {
+      return `${ms} 毫秒`;
+    } else if (ms < 60000) {
+      const seconds = (ms / 1000).toFixed(1);
+      return `${seconds} 秒`;
+    } else {
+      const minutes = Math.floor(ms / 60000);
+      const seconds = Math.floor((ms % 60000) / 1000);
+      return `${minutes} 分 ${seconds} 秒`;
+    }
+  };
 
   // 加载数据源列表
   const loadDataSources = async () => {
@@ -84,12 +99,13 @@ export default function DataSourcesPage() {
 
   // 测试连接
   const handleTestConnection = async (id: number) => {
-    // 防止重复点击
-    if (testingConnections.has(id)) {
+    // 防止重复点击和互斥操作
+    if (testingConnections.has(id) || operationInProgress !== null) {
       return;
     }
 
     try {
+      setOperationInProgress(id);
       setTestingConnections(prev => new Set(prev).add(id));
 
       const response = await fetch(`/api/datasources/${id}/test`, {
@@ -114,28 +130,41 @@ export default function DataSourcesPage() {
         newSet.delete(id);
         return newSet;
       });
+      setOperationInProgress(null);
     }
   };
 
   // 触发同步
   const handleSync = async (id: number) => {
-    // 防止重复点击
-    if (syncingDataSources.has(id)) {
+    // 防止重复点击和互斥操作
+    if (syncingDataSources.has(id) || operationInProgress !== null) {
       return;
     }
 
     try {
+      setOperationInProgress(id);
       setSyncingDataSources(prev => new Set(prev).add(id));
 
       const response = await fetch(`/api/datasources/${id}/sync`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          inferRelationships: false, // 明确禁用自动关系推断
+        }),
       });
 
       const result = await response.json();
 
       if (result.status === 'success') {
         const stats = result.data;
-        const message = `同步成功！\n\n数据库: ${stats.databasesAdded} 个新增, ${stats.databasesUpdated} 个更新\n表: ${stats.tablesAdded} 个新增, ${stats.tablesUpdated} 个更新\n列: ${stats.columnsAdded} 个新增, ${stats.columnsUpdated} 个更新\n\n耗时: ${stats.duration}ms`;
+        const changes = stats.changes || {};
+        const message = `同步成功！\n\n` +
+          `数据库: ${stats.databaseCount || 0} 个\n` +
+          `表: ${stats.tableCount || 0} 个 (新增 ${changes.tablesAdded || 0}, 修改 ${changes.tablesModified || 0}, 删除 ${changes.tablesRemoved || 0})\n` +
+          `列: ${stats.columnCount || 0} 个 (新增 ${changes.columnsAdded || 0}, 修改 ${changes.columnsModified || 0}, 删除 ${changes.columnsRemoved || 0})\n\n` +
+          `耗时: ${formatDuration(stats.duration || 0)}`;
         alert(message);
         // 刷新列表以查看更新的同步状态
         await loadDataSources();
@@ -155,23 +184,26 @@ export default function DataSourcesPage() {
         newSet.delete(id);
         return newSet;
       });
+      setOperationInProgress(null);
     }
   };
 
   // 推断关系
-  const handleInferRelationships = async (dataSource: any) => {
-    // 防止重复点击
-    if (inferringRelationships.has(dataSource.id)) {
+  const handleInferRelationships = async (dataSource: any, incrementalMode: boolean = false) => {
+    // 防止重复点击和互斥操作
+    if (inferringRelationships.has(dataSource.id) || operationInProgress !== null) {
       return;
     }
 
     try {
+      setOperationInProgress(dataSource.id);
       setInferringRelationships(prev => new Set(prev).add(dataSource.id));
 
       // 获取数据源配置的数据库列表
+      // 如果没有配置数据库列表或为空数组，不传递 databases 参数，让服务端推断所有数据库
       const databases = dataSource.databases && dataSource.databases.length > 0
         ? dataSource.databases
-        : []; // 空数组表示推断所有数据库
+        : undefined;
 
       const response = await fetch('/api/metadata/relationships/infer', {
         method: 'POST',
@@ -180,9 +212,10 @@ export default function DataSourcesPage() {
         },
         body: JSON.stringify({
           dataSourceId: dataSource.id.toString(),
-          databases: databases,
+          ...(databases && { databases }), // 只有当 databases 存在时才传递
           crossDatabase: true, // 启用跨库推断以支持跨库查询场景
           minConfidence: 0.7,
+          incrementalMode, // 增量模式
         }),
       });
 
@@ -191,35 +224,34 @@ export default function DataSourcesPage() {
       if (result.status === 'success') {
         const data = result.data;
 
-        // 处理不同的返回数据结构
-        let relationshipsCount = 0;
-        let durationMs = 0;
-        let savedCount = 0;
+        // 直接使用新的返回数据结构
+        const relationshipsCount = data.inferredCount || 0;
+        const durationMs = data.duration || 0;
+        const savedCount = data.savedCount || 0;
+        const highCount = data.highConfidenceCount || 0;
+        const mediumCount = data.mediumConfidenceCount || 0;
+        const lowCount = data.lowConfidenceCount || 0;
+        const isIncremental = data.isIncremental || false;
+        const changesProcessed = data.changesProcessed || 0;
+        const relationshipsCleanedUp = data.relationshipsCleanedUp || 0;
 
-        // 单数据库推断：data.relationships
-        if (data.relationships) {
-          relationshipsCount = data.relationships.length;
-          durationMs = data.stats?.duration || data.duration || 0;
-        }
-        // 多数据库推断：data.results
-        else if (data.results) {
-          relationshipsCount = data.results.reduce((sum: number, r: any) =>
-            sum + (r.relationships?.length || 0), 0
-          );
-          durationMs = data.results.reduce((sum: number, r: any) =>
-            sum + (r.stats?.duration || r.duration || 0), 0
-          );
-        }
-
-        // 获取保存结果
-        if (data.saveResult) {
-          savedCount = data.saveResult.successCount || 0;
-        }
-
-        const dbInfo = databases.length > 0
+        const dbInfo = databases && databases.length > 0
           ? `数据库: ${databases.join(', ')}\n`
           : '所有数据库\n';
-        const message = `关系推断完成！\n\n${dbInfo}推断出 ${relationshipsCount} 个关系\n已保存 ${savedCount} 个关系到数据库\n耗时: ${durationMs}ms`;
+
+        let message = `关系推断完成！\n\n`;
+        message += `${dbInfo}`;
+        message += `模式: ${isIncremental ? '增量推断' : '全量推断'}\n`;
+        if (isIncremental) {
+          message += `处理变更: ${changesProcessed} 项\n`;
+          message += `清理关系: ${relationshipsCleanedUp} 个\n`;
+        }
+        message += `\n推断出 ${relationshipsCount} 个关系\n` +
+          `  - 高置信度: ${highCount} 个\n` +
+          `  - 中置信度: ${mediumCount} 个\n` +
+          `  - 低置信度: ${lowCount} 个\n\n` +
+          `已保存 ${savedCount} 个关系到数据库\n` +
+          `耗时: ${formatDuration(durationMs)}`;
         alert(message);
       } else {
         alert(`关系推断失败：${result.message || result.error}`);
@@ -233,6 +265,7 @@ export default function DataSourcesPage() {
         newSet.delete(dataSource.id);
         return newSet;
       });
+      setOperationInProgress(null);
     }
   };
 
@@ -297,6 +330,7 @@ export default function DataSourcesPage() {
                 testingConnections={testingConnections}
                 syncingDataSources={syncingDataSources}
                 inferringRelationships={inferringRelationships}
+                operationInProgress={operationInProgress}
               />
             )}
 

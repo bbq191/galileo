@@ -82,7 +82,7 @@ export class DataSourceLifecycleService {
           username: options.username,
           passwordEncrypted: encryptPassword(options.password),
           targetDatabases: options.databases && options.databases.length > 0
-            ? (options.databases as any)
+            ? JSON.stringify(options.databases)
             : null,
           status: 'inactive',
         },
@@ -214,6 +214,7 @@ export class DataSourceLifecycleService {
 
       // 2. 准备更新数据
       const updateData: any = {};
+      if (options.type !== undefined) updateData.type = options.type;
       if (options.name !== undefined) updateData.name = options.name;
       if (options.host !== undefined) updateData.host = options.host;
       if (options.port !== undefined) updateData.port = options.port;
@@ -223,7 +224,7 @@ export class DataSourceLifecycleService {
       }
       if (options.databases !== undefined) {
         updateData.targetDatabases = options.databases.length > 0
-          ? (options.databases as any)
+          ? JSON.stringify(options.databases)
           : null;
       }
 

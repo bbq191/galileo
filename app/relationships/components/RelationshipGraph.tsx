@@ -16,28 +16,26 @@ import {
 import '@xyflow/react/dist/style.css';
 
 interface GraphNode {
-  id: number;
-  label: string;
-  type: 'table';
-  databaseId: number;
-  databaseName: string;
   tableId: number;
+  tableName: string;
+  databaseName: string;
+  outDegree: number;
+  inDegree: number;
 }
 
 interface GraphEdge {
-  id: string;
-  source: number;
-  target: number;
-  type: 'explicit' | 'inferred';
-  relationshipType: 'one-to-one' | 'one-to-many' | 'many-to-many';
-  confidence?: number;
+  sourceTableId: number;
+  targetTableId: number;
   sourceColumn: string;
   targetColumn: string;
-  isVerified?: boolean;
+  confidence: number;
+  type: 'explicit' | 'inferred' | 'verified';
+  relationshipType: 'one-to-one' | 'one-to-many' | 'many-to-many';
 }
 
 interface RelationshipGraphProps {
   tableId?: number;
+  dataSourceId?: number;
   databaseId?: number;
   depth?: number;
   includeInferred?: boolean;
@@ -48,6 +46,7 @@ interface RelationshipGraphProps {
 
 export default function RelationshipGraph({
   tableId,
+  dataSourceId,
   databaseId,
   depth = 2,
   includeInferred = true,
@@ -66,8 +65,8 @@ export default function RelationshipGraph({
 
   // 加载关系图谱数据
   const loadGraph = useCallback(async () => {
-    if (!tableId && !databaseId) {
-      setError('请指定 tableId 或 databaseId');
+    if (!dataSourceId) {
+      setError('请指定数据源 (dataSourceId 是必需的)');
       return;
     }
 
@@ -81,10 +80,17 @@ export default function RelationshipGraph({
         minConfidence: minConfidence.toString(),
       });
 
+      // dataSourceId 是必需的
+      params.append('dataSourceId', dataSourceId.toString());
+
+      // databaseId 是可选的，用于过滤数据库
+      if (databaseId) {
+        params.append('databaseId', databaseId.toString());
+      }
+
+      // tableId 是可选的，用于指定中心节点
       if (tableId) {
         params.append('tableId', tableId.toString());
-      } else if (databaseId) {
-        params.append('databaseId', databaseId.toString());
       }
 
       const response = await fetch(`/api/relationships/graph?${params}`);
@@ -103,7 +109,7 @@ export default function RelationshipGraph({
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tableId, databaseId, depth, includeInferred, minConfidence]);
+  }, [tableId, dataSourceId, databaseId, depth, includeInferred, minConfidence]);
 
   // 转换为 ReactFlow 数据格式
   const convertToReactFlowData = (
@@ -192,17 +198,16 @@ export default function RelationshipGraph({
     const flowNodes: Node[] = layoutNodes.map((node) => {
       const dbIndex = databaseGroups.get(node.databaseName) || 0;
       const dbColor = databaseColors[dbIndex % databaseColors.length];
-      const isCenterNode = node.id === tableId;
+      const isCenterNode = node.tableId === tableId;
 
       return {
-        id: node.id.toString(),
+        id: node.tableId.toString(),
         type: 'default',
         data: {
-          label: `${node.label}${databaseGroups.size === 1 ? `\n${node.databaseName}` : ''}`,
+          label: `${node.tableName}${databaseGroups.size === 1 ? `\n${node.databaseName}` : ''}`,
           tableId: node.tableId,
-          databaseId: node.databaseId,
           databaseName: node.databaseName,
-          tableName: node.label,
+          tableName: node.tableName,
         },
         position: node.position,
         sourcePosition: Position.Right,
@@ -228,13 +233,13 @@ export default function RelationshipGraph({
     const allNodes = [...groupBackgroundNodes, ...flowNodes];
 
     // 转换边
-    const flowEdges: Edge[] = graphEdges.map((edge) => {
+    const flowEdges: Edge[] = graphEdges.map((edge, index) => {
       const isExplicit = edge.type === 'explicit';
-      const isVerified = edge.isVerified;
+      const isVerified = edge.type === 'verified';
 
       // 判断是否为跨库关系
-      const sourceNode = graphNodes.find((n) => n.tableId === edge.source);
-      const targetNode = graphNodes.find((n) => n.tableId === edge.target);
+      const sourceNode = graphNodes.find((n) => n.tableId === edge.sourceTableId);
+      const targetNode = graphNodes.find((n) => n.tableId === edge.targetTableId);
       const isCrossDatabase = sourceNode && targetNode &&
         sourceNode.databaseName !== targetNode.databaseName;
 
@@ -249,9 +254,9 @@ export default function RelationshipGraph({
         : '#94a3b8'; // 未验证推断关系用灰色
 
       return {
-        id: edge.id,
-        source: edge.source.toString(),
-        target: edge.target.toString(),
+        id: `edge-${edge.sourceTableId}-${edge.targetTableId}-${index}`,
+        source: edge.sourceTableId.toString(),
+        target: edge.targetTableId.toString(),
         type: 'smoothstep',
         animated: isCrossDatabase || (!isExplicit && !isVerified),
         style: {
@@ -283,7 +288,7 @@ export default function RelationshipGraph({
           confidence: edge.confidence,
           sourceColumn: edge.sourceColumn,
           targetColumn: edge.targetColumn,
-          isVerified: edge.isVerified,
+          isVerified: edge.type === 'verified',
           isCrossDatabase,
         },
       };
@@ -325,9 +330,9 @@ export default function RelationshipGraph({
     if (databaseCount === 1) {
       if (tableId) {
         // 中心节点径向布局
-        const centerNodeIndex = graphNodes.findIndex((n) => n.id === tableId);
+        const centerNodeIndex = graphNodes.findIndex((n) => n.tableId === tableId);
         const centerNode = graphNodes[centerNodeIndex];
-        const otherNodes = graphNodes.filter((n) => n.id !== tableId);
+        const otherNodes = graphNodes.filter((n) => n.tableId !== tableId);
 
         const radius = 250;
         const angleStep = (2 * Math.PI) / Math.max(otherNodes.length, 1);
@@ -415,7 +420,7 @@ export default function RelationshipGraph({
   // 处理节点点击
   const handleNodeClick = useCallback(
     (event: React.MouseEvent, node: Node) => {
-      const originalNode = graphData?.nodes.find((n) => n.id.toString() === node.id);
+      const originalNode = graphData?.nodes.find((n) => n.tableId.toString() === node.id);
       if (originalNode && onNodeClick) {
         onNodeClick(originalNode);
       }
@@ -426,7 +431,12 @@ export default function RelationshipGraph({
   // 处理边点击
   const handleEdgeClick = useCallback(
     (event: React.MouseEvent, edge: Edge) => {
-      const originalEdge = graphData?.edges.find((e) => e.id === edge.id);
+      const originalEdge = graphData?.edges.find((e) => {
+        const edgeId = edge.id;
+        const match = edgeId.match(/edge-(\d+)-(\d+)-\d+/);
+        if (!match) return false;
+        return e.sourceTableId.toString() === match[1] && e.targetTableId.toString() === match[2];
+      });
       if (originalEdge && onEdgeClick) {
         onEdgeClick(originalEdge);
       }
@@ -468,6 +478,14 @@ export default function RelationshipGraph({
     );
   }
 
+  // 计算图例需要显示的内容
+  const hasExplicitRelation = edges.some(e => e.data?.type === 'explicit');
+  const hasVerifiedRelation = edges.some(e => e.data?.type === 'verified');
+  const hasInferredRelation = edges.some(e => e.data?.type === 'inferred');
+  const hasCrossDatabase = edges.some(e => e.data?.isCrossDatabase);
+  const hasCenterNode = tableId !== undefined;
+  const databaseCount = graphData ? new Set(graphData.nodes.map(n => n.databaseName)).size : 0;
+
   return (
     <div className="w-full h-full bg-base-200 rounded-lg border border-base-300">
       <ReactFlow
@@ -493,50 +511,68 @@ export default function RelationshipGraph({
         />
       </ReactFlow>
 
-      {/* 图例 */}
-      <div className="absolute bottom-4 right-4 bg-base-100 p-4 rounded-lg shadow-lg border border-base-300 max-w-xs">
-        <div className="text-sm font-bold mb-3">图例说明</div>
-        <div className="space-y-2 text-xs">
-          {/* 关系类型 */}
-          <div className="font-semibold text-xs mb-1">关系类型</div>
-          <div className="flex items-center gap-2">
-            <div className="w-12 h-0.5 bg-green-500"></div>
-            <span>显式关系 (外键)</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-12 h-0.5 bg-orange-500"></div>
-            <span>已验证推断关系</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-12 h-0.5 bg-gray-400 border-dashed border-t-2 border-gray-400"></div>
-            <span>未验证推断关系</span>
-          </div>
+      {/* 动态图例 */}
+      {(hasExplicitRelation || hasVerifiedRelation || hasInferredRelation || hasCrossDatabase || hasCenterNode) && (
+        <div className="absolute bottom-4 right-4 bg-base-100 p-4 rounded-lg shadow-lg border border-base-300 max-w-xs">
+          <div className="text-sm font-bold mb-3">图例说明</div>
+          <div className="space-y-2 text-xs">
+            {/* 关系类型 */}
+            {(hasExplicitRelation || hasVerifiedRelation || hasInferredRelation) && (
+              <>
+                <div className="font-semibold text-xs mb-1">关系类型</div>
+                {hasExplicitRelation && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-12 h-0.5 bg-green-500"></div>
+                    <span>显式关系 (外键)</span>
+                  </div>
+                )}
+                {hasVerifiedRelation && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-12 h-0.5 bg-orange-500"></div>
+                    <span>已验证推断关系</span>
+                  </div>
+                )}
+                {hasInferredRelation && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-12 h-0.5 bg-gray-400 border-dashed border-t-2 border-gray-400"></div>
+                    <span>未验证推断关系</span>
+                  </div>
+                )}
+              </>
+            )}
 
-          {/* 跨库关系 */}
-          <div className="mt-3 pt-3 border-t border-base-300">
-            <div className="font-semibold text-xs mb-1">🔗 跨库关系</div>
-            <div className="flex items-center gap-2">
-              <div className="w-12 h-0.5 bg-red-600" style={{ height: '3px' }}></div>
-              <span className="font-medium text-red-600">跨数据库连接</span>
-            </div>
-            <div className="text-xs text-gray-500 mt-1 ml-14">
-              红色粗线表示跨库关系
-            </div>
-          </div>
+            {/* 跨库关系 */}
+            {hasCrossDatabase && (
+              <div className={`${(hasExplicitRelation || hasVerifiedRelation || hasInferredRelation) ? 'mt-3 pt-3 border-t border-base-300' : ''}`}>
+                <div className="font-semibold text-xs mb-1">🔗 跨库关系</div>
+                <div className="flex items-center gap-2">
+                  <div className="w-12 h-0.5 bg-red-600" style={{ height: '3px' }}></div>
+                  <span className="font-medium text-red-600">跨数据库连接</span>
+                </div>
+                <div className="text-xs text-gray-500 mt-1 ml-14">
+                  红色粗线表示跨库关系
+                </div>
+              </div>
+            )}
 
-          {/* 节点样式 */}
-          <div className="mt-3 pt-3 border-t border-base-300">
-            <div className="font-semibold text-xs mb-1">节点样式</div>
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 bg-blue-500 rounded border-2 border-blue-500"></div>
-              <span>中心节点</span>
-            </div>
-            <div className="text-xs text-gray-500 mt-1 ml-8">
-              不同数据库用不同颜色边框
-            </div>
+            {/* 节点样式 */}
+            {hasCenterNode && (
+              <div className={`${(hasExplicitRelation || hasVerifiedRelation || hasInferredRelation || hasCrossDatabase) ? 'mt-3 pt-3 border-t border-base-300' : ''}`}>
+                <div className="font-semibold text-xs mb-1">节点样式</div>
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 bg-blue-500 rounded border-2 border-blue-500"></div>
+                  <span>中心节点</span>
+                </div>
+                {databaseCount > 1 && (
+                  <div className="text-xs text-gray-500 mt-1 ml-8">
+                    不同数据库用不同颜色边框
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

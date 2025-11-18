@@ -64,11 +64,13 @@ const RELATIONSHIP_INFERENCE_PROMPT = `请分析以下两个数据库字段之�
 
 请以 JSON 格式返回，不要包含任何其他文字：
 {
-  "hasRelationship": true/false,
+  "hasRelationship": true,
   "confidence": 0.85,
   "type": "one-to-many",
   "reasoning": "推断理由"
-}`;
+}
+
+注意：hasRelationship 必须是布尔值 true 或 false，不能是字符串 "true/false"`;
 
 /**
  * 批量关系推断 Prompt 模板
@@ -88,12 +90,14 @@ const BATCH_RELATIONSHIP_INFERENCE_PROMPT = `请分析以下多组数据库字�
 [
   {
     "pairIndex": 0,
-    "hasRelationship": true/false,
+    "hasRelationship": true,
     "confidence": 0.85,
     "type": "one-to-many",
     "reasoning": "推断理由"
   }
-]`;
+]
+
+注意：hasRelationship 必须是布尔值 true 或 false，不能是字符串 "true/false"`;
 
 /**
  * AI 推断器类
@@ -275,7 +279,10 @@ export class AIInferencer {
         // 3. 修复未加引号的值：unknown, undefined, NaN 等
         jsonStr = jsonStr.replace(/:\s*(unknown|undefined|NaN)\s*([,}\]])/gi, ': null$2');
 
-        // 4. 移除注释（如果有）
+        // 4. 修复 true/false 字面量（AI 可能返回 "hasRelationship": true/false）
+        jsonStr = jsonStr.replace(/:\s*true\/false\s*([,}\]])/gi, ': false$1');
+
+        // 5. 移除注释（如果有）
         jsonStr = jsonStr.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 
         const parsed = JSON.parse(jsonStr);
@@ -344,7 +351,10 @@ export class AIInferencer {
         // 3. 修复未加引号的值：unknown, undefined, NaN 等
         jsonStr = jsonStr.replace(/:\s*(unknown|undefined|NaN)\s*([,}\]])/gi, ': null$2');
 
-        // 4. 移除注释（如果有）
+        // 4. 修复 true/false 字面量（AI 可能返回 "hasRelationship": true/false）
+        jsonStr = jsonStr.replace(/:\s*true\/false\s*([,}\]])/gi, ': false$1');
+
+        // 5. 移除注释（如果有）
         jsonStr = jsonStr.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 
         const parsed = JSON.parse(jsonStr);
@@ -431,8 +441,19 @@ export class AIInferencer {
    * 推断字段是否为主键候选
    */
   isPrimaryKeyCandidate(column: ColumnInfo): boolean {
+    // 优先使用元数据中的主键标记
+    if (column.isPrimaryKey) {
+      return true;
+    }
+
+    // 检查 columnKey 是否为主键
+    if (column.columnKey === 'PRI') {
+      return true;
+    }
+
+    // 作为后备，检查列名是否为 'id'（但不包括 xxx_id 格式，因为那些通常是外键）
     const name = column.columnName.toLowerCase();
-    return name === 'id' || name.endsWith('_id') && name.split('_').length === 2;
+    return name === 'id';
   }
 }
 

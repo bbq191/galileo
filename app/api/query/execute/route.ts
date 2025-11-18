@@ -10,6 +10,18 @@
  * - 完整的审计日志记录
  */
 
+
+/**
+ * 显式声明 Node.js Runtime
+ *
+ * API Routes 运行在 Node.js Runtime 中，支持：
+ * - Prisma ORM
+ * - ioredis
+ * - mysql2
+ * - 其他 Node.js 专有 API
+ */
+export const runtime = 'nodejs';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getQueryOrchestrator, getAuditOrchestrator } from '@/lib/di/setup';
 import type { QueryOrchestrator } from '@/lib/di/orchestrators/query.orchestrator';
@@ -17,6 +29,7 @@ import { schemas } from '@/lib/validation/schemas';
 import { validateOrRespond } from '@/lib/validation/validator';
 import { sanitizeError, ErrorCategory } from '@/lib/security/error-sanitizer';
 import { extractColumnsFromSQL } from '@/lib/sql/parser/column-extractor';
+import { withQueryRateLimit } from '@/lib/security/api-rate-limit-middleware';
 
 /**
  * 从 SQL 提取使用的列名
@@ -73,7 +86,11 @@ export interface ExecuteQueryResponse {
   }>;
 }
 
-export async function POST(request: NextRequest) {
+/**
+ * 查询执行处理函数
+ * 包装了 Redis 分布式速率限制（10 req/min）
+ */
+export const POST = withQueryRateLimit(async (request: Request) => {
   const startTime = Date.now();
   const sessionId = request.headers.get('x-session-id') || `session-${Date.now()}`;
 
@@ -201,4 +218,4 @@ export async function POST(request: NextRequest) {
       errorId: safeError.code,
     } as ExecuteQueryResponse, { status: 500 });
   }
-}
+});

@@ -22,6 +22,8 @@
     "@types/ioredis": "^4.28.10",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node-cron": "^3.0.11",
+    "@upstash/ratelimit": "^2.0.7",
+    "@upstash/redis": "^1.35.6",
     "@xyflow/react": "^12.9.0",
     "crypto-js": "^4.2.0",
     "ioredis": "^5.8.2",
@@ -36,7 +38,9 @@
     "react-dom": "^18.3.1",
     "reactflow": "^11.11.4",
     "reflect-metadata": "^0.2.2",
+    "swagger-ui-react": "^5.30.2",
     "tsyringe": "^4.10.0",
+    "yaml": "^2.8.1",
     "zod": "^4.1.12"
   },
   "devDependencies": {
@@ -46,6 +50,7 @@
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
+    "@types/swagger-ui-react": "^5.18.0",
     "autoprefixer": "^10.4.20",
     "daisyui": "^5.3.7",
     "eslint": "^8.57.1",

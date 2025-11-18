@@ -1,5 +1,7 @@
 /**
- * 速率限制器
+ * 速率限制器（已弃用）
+ *
+ * ⚠️ 此文件已弃用，请使用 distributed-rate-limiter.ts
  *
  * 使用 Redis 实现分布式速率限制，防止 DoS 攻击和 API 滥用
  *
@@ -8,6 +10,9 @@
  * - metadata: 元数据同步 - 5 req/hour
  * - general: 一般读取操作 - 30 req/min
  * - ai: AI 调用 - 20 req/min
+ *
+ * @deprecated 使用 distributed-rate-limiter.ts 代替
+ * @see distributed-rate-limiter.ts
  */
 
 import { RateLimiterMemory } from 'rate-limiter-flexible';

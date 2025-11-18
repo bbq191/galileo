@@ -4,10 +4,23 @@
  * 提供 AI 调用成本的统计和报告功能
  */
 
+
+/**
+ * 显式声明 Node.js Runtime
+ *
+ * API Routes 运行在 Node.js Runtime 中，支持：
+ * - Prisma ORM
+ * - ioredis
+ * - mysql2
+ * - 其他 Node.js 专有 API
+ */
+export const runtime = 'nodejs';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getContainer } from '@/lib/di/container';
 import { DI_TOKENS } from '@/lib/di/tokens';
 import type { AICostTracker } from '@/lib/ai/ai-cost-tracker';
+import { withAiRateLimit } from '@/lib/security/api-rate-limit-middleware';
 
 /**
  * GET /api/ai/cost
@@ -23,7 +36,7 @@ import type { AICostTracker } from '@/lib/ai/ai-cost-tracker';
  * GET /api/ai/cost?period=day
  * GET /api/ai/cost?period=custom&start=2025-11-01&end=2025-11-11
  */
-export async function GET(request: NextRequest) {
+export const GET = withAiRateLimit(async (request: Request) => {
   try {
     const container = getContainer();
     const costTracker = container.resolve<AICostTracker>(DI_TOKENS.AICostTracker);
@@ -94,10 +107,10 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});
 
 /**
- * GET /api/ai/cost/report
+ * POST /api/ai/cost
  *
  * 生成 AI 成本报告（Markdown 格式）
  *
@@ -105,9 +118,9 @@ export async function GET(request: NextRequest) {
  * - period: 'day' | 'week' | 'month'
  *
  * @example
- * GET /api/ai/cost/report?period=week
+ * POST /api/ai/cost?period=week
  */
-export async function POST(request: NextRequest) {
+export const POST = withAiRateLimit(async (request: Request) => {
   try {
     const container = getContainer();
     const costTracker = container.resolve<AICostTracker>(DI_TOKENS.AICostTracker);
@@ -140,4 +153,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});

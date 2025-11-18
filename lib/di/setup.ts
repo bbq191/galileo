@@ -68,15 +68,7 @@ export function setupDependencyInjection(): void {
   const { SemanticCacheStats } = require('@/lib/cache/semantic-cache-stats');
   registerSingleton(DI_TOKENS.SemanticCacheStats, SemanticCacheStats);
 
-  // 注册 SemanticCacheManager（暂不注册 EmbeddingGenerator，移到 DeepseekClient 之后）
-  const { SemanticCacheManager } = require('@/lib/cache/semantic-cache-manager');
-  registerSingleton(DI_TOKENS.SemanticCacheManager, SemanticCacheManager);
-
-  // 初始化 SemanticCacheManager
-  const semanticCacheManager = container.resolve<any>(DI_TOKENS.SemanticCacheManager);
-  semanticCacheManager.initialize().catch((error: any) => {
-    console.error('[DI] SemanticCacheManager initialization failed:', error);
-  });
+  // 注意：SemanticCacheManager 依赖 EmbeddingGenerator，需要延后注册（移到 Phase 2.2）
 
   // 注册 AuditLogger
   const { AuditLogger } = require('@/lib/audit/audit-logger');
@@ -86,19 +78,7 @@ export function setupDependencyInjection(): void {
   const { WarmupAnalyzer } = require('@/lib/cache/warmup/warmup-analyzer');
   registerSingleton(DI_TOKENS.WarmupAnalyzer, WarmupAnalyzer);
 
-  // ==================== Phase 4: 统计服务 ====================
-
-  // 注册 StatisticsPersistenceService
-  const { StatisticsPersistenceService } = require('@/lib/statistics/statistics-persistence.service');
-  registerSingleton(DI_TOKENS.StatisticsPersistenceService, StatisticsPersistenceService);
-
-  // 启动持久化服务
-  const statisticsPersistence = container.resolve<any>(DI_TOKENS.StatisticsPersistenceService);
-  statisticsPersistence.start();
-
-  // 注册 StatisticsAggregationService
-  const { StatisticsAggregationService } = require('@/lib/statistics/statistics-aggregation.service');
-  registerSingleton(DI_TOKENS.StatisticsAggregationService, StatisticsAggregationService);
+  // 注意：Phase 4 统计服务依赖 QueryStatisticsTracker，需要延后注册（移到 Phase 2.3 之后）
 
   // ==================== Phase 2.2: AI 和元数据服务 ====================
 
@@ -118,6 +98,16 @@ export function setupDependencyInjection(): void {
       },
       deepseekClient
     );
+  });
+
+  // 注册 SemanticCacheManager（依赖 EmbeddingGenerator 和 Redis）
+  const { SemanticCacheManager } = require('@/lib/cache/semantic-cache-manager');
+  registerSingleton(DI_TOKENS.SemanticCacheManager, SemanticCacheManager);
+
+  // 初始化 SemanticCacheManager
+  const semanticCacheManager = container.resolve<any>(DI_TOKENS.SemanticCacheManager);
+  semanticCacheManager.initialize().catch((error: any) => {
+    console.error('[DI] SemanticCacheManager initialization failed:', error);
   });
 
   // 注册 VectorSearchService（依赖 EmbeddingGenerator 和 Redis）
@@ -225,9 +215,9 @@ export function setupDependencyInjection(): void {
   const { SQLGenerator } = require('@/lib/sql/generator/sql-generator');
   registerSingleton(DI_TOKENS.SQLGenerator, SQLGenerator);
 
-  // 注册 QueryStatisticsTracker
+  // 注册 QueryStatisticsTracker（使用工厂函数避免 config 参数注入问题）
   const { QueryStatisticsTracker } = require('@/lib/sql/executor/query-statistics-tracker');
-  registerSingleton(DI_TOKENS.QueryStatisticsTracker, QueryStatisticsTracker);
+  registerSingleton(DI_TOKENS.QueryStatisticsTracker, undefined, () => new QueryStatisticsTracker());
 
   // 注册 QueryExecutor
   const { QueryExecutor } = require('@/lib/sql/executor/query-executor');
@@ -240,6 +230,25 @@ export function setupDependencyInjection(): void {
   // 注册 SQLAutoFixer
   const { SQLAutoFixer } = require('@/lib/sql/quality/sql-auto-fixer');
   registerSingleton(DI_TOKENS.SQLAutoFixer, SQLAutoFixer);
+
+  // ==================== Phase 4: 统计服务（依赖 QueryStatisticsTracker）====================
+
+  // 注册 StatisticsPersistenceService（使用工厂函数避免 config 参数注入问题）
+  const { StatisticsPersistenceService } = require('@/lib/statistics/statistics-persistence.service');
+  registerSingleton(DI_TOKENS.StatisticsPersistenceService, undefined, () => {
+    const redis = container.resolve<any>(DI_TOKENS.RedisClient);
+    const queryStatsTracker = container.resolve<any>(DI_TOKENS.QueryStatisticsTracker);
+    const queryCacheManager = container.resolve<any>(DI_TOKENS.QueryCacheManager);
+    return new StatisticsPersistenceService(redis, queryStatsTracker, queryCacheManager);
+  });
+
+  // 启动持久化服务
+  const statisticsPersistence = container.resolve<any>(DI_TOKENS.StatisticsPersistenceService);
+  statisticsPersistence.start();
+
+  // 注册 StatisticsAggregationService
+  const { StatisticsAggregationService } = require('@/lib/statistics/statistics-aggregation.service');
+  registerSingleton(DI_TOKENS.StatisticsAggregationService, StatisticsAggregationService);
 
   // ==================== Phase 2.4: SQL 生成管道 ====================
 

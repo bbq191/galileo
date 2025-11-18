@@ -3,15 +3,13 @@
 import { useState } from 'react';
 
 interface GraphEdge {
-  id: string;
-  source: number;
-  target: number;
-  type: 'explicit' | 'inferred';
-  relationshipType: 'one-to-one' | 'one-to-many' | 'many-to-many';
-  confidence?: number;
+  sourceTableId: number;
+  targetTableId: number;
   sourceColumn: string;
   targetColumn: string;
-  isVerified?: boolean;
+  confidence: number;
+  type: 'explicit' | 'inferred' | 'verified';
+  relationshipType: 'one-to-one' | 'one-to-many' | 'many-to-many';
 }
 
 interface VerificationPanelProps {
@@ -26,13 +24,13 @@ export default function VerificationPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 如果没有选择推断关系,不显示验证面板
-  if (!selectedEdge || selectedEdge.type !== 'inferred') {
+  // 如果没有选择推断关系或已验证关系,不显示验证面板
+  if (!selectedEdge || (selectedEdge.type !== 'inferred' && selectedEdge.type !== 'verified')) {
     return null;
   }
 
-  // 已验证的关系不显示验证按钮
-  if (selectedEdge.isVerified) {
+  // 已验证的关系显示验证状态
+  if (selectedEdge.type === 'verified') {
     return (
       <div className="card bg-base-100 shadow-xl">
         <div className="card-body">
@@ -67,7 +65,10 @@ export default function VerificationPanel({
       setLoading(true);
       setError(null);
 
-      const relationshipId = parseInt(selectedEdge.id.replace('inferred-', ''));
+      // 从边的源表和目标表 ID 构造关系查询
+      // 注意：这里需要后端 API 支持通过 sourceTableId 和 targetTableId 查询
+      // 暂时使用一个占位方案，实际需要后端返回 relationshipId
+      const relationshipId = 0; // TODO: 需要后端返回真实的 relationshipId
 
       const response = await fetch('/api/relationships/verify', {
         method: 'POST',
@@ -110,7 +111,8 @@ export default function VerificationPanel({
       setLoading(true);
       setError(null);
 
-      const relationshipId = parseInt(selectedEdge.id.replace('inferred-', ''));
+      // 从边的源表和目标表 ID 构造关系查询
+      const relationshipId = 0; // TODO: 需要后端返回真实的 relationshipId
 
       const response = await fetch('/api/relationships/verify', {
         method: 'POST',
@@ -156,7 +158,8 @@ export default function VerificationPanel({
       setLoading(true);
       setError(null);
 
-      const relationshipId = parseInt(selectedEdge.id.replace('inferred-', ''));
+      // 从边的源表和目标表 ID 构造关系查询
+      const relationshipId = 0; // TODO: 需要后端返回真实的 relationshipId
 
       const response = await fetch('/api/relationships/verify', {
         method: 'POST',
@@ -217,10 +220,7 @@ export default function VerificationPanel({
           <p className="text-sm text-base-content/60">
             此关系是由 AI 推断得出的,置信度为{' '}
             <span className="font-bold text-primary">
-              {selectedEdge.confidence
-                ? (selectedEdge.confidence * 100).toFixed(0)
-                : 0}
-              %
+              {(selectedEdge.confidence * 100).toFixed(0)}%
             </span>
             。请确认此关系是否正确。
           </p>

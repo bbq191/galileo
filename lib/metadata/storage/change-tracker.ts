@@ -3,9 +3,15 @@
  * 负责检测和记录元数据变更
  */
 
-import { metadataRepository } from './metadata-repository';
+// 使用延迟导入避免循环依赖
 import type { CreateMetadataChangeInput } from './types';
 import type { DatabaseMeta, TableMeta, ColumnMeta } from '@/app/generated/prisma';
+
+// 延迟获取 metadataRepository 以避免循环依赖
+const getMetadataRepository = () => {
+  const mod = require('./metadata-repository');
+  return mod.metadataRepository;
+};
 
 /**
  * 变更类型
@@ -38,6 +44,13 @@ export interface ChangeDetail {
  */
 export class ChangeTracker {
   /**
+   * BigInt 安全的 JSON 序列化
+   */
+  private safeStringify(value: any): string {
+    return JSON.stringify(value, (_, v) => (typeof v === 'bigint' ? v.toString() : v));
+  }
+
+  /**
    * 比较两个对象，返回差异字段
    */
   private getDiff(oldObj: any, newObj: any, ignoreFields: string[] = []): Record<string, { old: any; new: any }> | null {
@@ -53,8 +66,8 @@ export class ChangeTracker {
       const oldValue = oldObj[key];
       const newValue = newObj[key];
 
-      // 比较值
-      if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
+      // 比较值（使用 BigInt 安全的序列化）
+      if (this.safeStringify(oldValue) !== this.safeStringify(newValue)) {
         diff[key] = { old: oldValue, new: newValue };
       }
     }
@@ -73,11 +86,13 @@ export class ChangeTracker {
       changeType,
       entityType: 'database',
       entityId: database.id,
-      newValue: changeType === 'database_added' ? this.serializeDatabase(database) : null,
-      oldValue: changeType === 'database_removed' ? this.serializeDatabase(database) : null,
+      newValue:
+        changeType === 'database_added' ? this.safeStringify(this.serializeDatabase(database)) : null,
+      oldValue:
+        changeType === 'database_removed' ? this.safeStringify(this.serializeDatabase(database)) : null,
     };
 
-    await metadataRepository.createMetadataChange(input);
+    await getMetadataRepository().createMetadataChange(input);
 
     console.log(`[ChangeTracker] ${changeType}: ${database.databaseName}`);
   }
@@ -90,16 +105,16 @@ export class ChangeTracker {
     table: TableMeta,
     oldTable?: TableMeta
   ): Promise<void> {
-    let oldValue = null;
-    let newValue = null;
+    let oldValue: string | null = null;
+    let newValue: string | null = null;
 
     if (changeType === 'table_added') {
-      newValue = this.serializeTable(table);
+      newValue = this.safeStringify(this.serializeTable(table));
     } else if (changeType === 'table_removed') {
-      oldValue = this.serializeTable(table);
+      oldValue = this.safeStringify(this.serializeTable(table));
     } else if (changeType === 'table_modified' && oldTable) {
-      oldValue = this.serializeTable(oldTable);
-      newValue = this.serializeTable(table);
+      oldValue = this.safeStringify(this.serializeTable(oldTable));
+      newValue = this.safeStringify(this.serializeTable(table));
     }
 
     const input: CreateMetadataChangeInput = {
@@ -110,7 +125,7 @@ export class ChangeTracker {
       newValue,
     };
 
-    await metadataRepository.createMetadataChange(input);
+    await getMetadataRepository().createMetadataChange(input);
 
     console.log(`[ChangeTracker] ${changeType}: ${table.tableName}`);
   }
@@ -123,16 +138,16 @@ export class ChangeTracker {
     column: ColumnMeta,
     oldColumn?: ColumnMeta
   ): Promise<void> {
-    let oldValue = null;
-    let newValue = null;
+    let oldValue: string | null = null;
+    let newValue: string | null = null;
 
     if (changeType === 'column_added') {
-      newValue = this.serializeColumn(column);
+      newValue = this.safeStringify(this.serializeColumn(column));
     } else if (changeType === 'column_removed') {
-      oldValue = this.serializeColumn(column);
+      oldValue = this.safeStringify(this.serializeColumn(column));
     } else if (changeType === 'column_modified' && oldColumn) {
-      oldValue = this.serializeColumn(oldColumn);
-      newValue = this.serializeColumn(column);
+      oldValue = this.safeStringify(this.serializeColumn(oldColumn));
+      newValue = this.safeStringify(this.serializeColumn(column));
     }
 
     const input: CreateMetadataChangeInput = {
@@ -143,7 +158,7 @@ export class ChangeTracker {
       newValue,
     };
 
-    await metadataRepository.createMetadataChange(input);
+    await getMetadataRepository().createMetadataChange(input);
 
     console.log(`[ChangeTracker] ${changeType}: ${column.columnName}`);
   }
