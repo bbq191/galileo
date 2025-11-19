@@ -15,9 +15,11 @@ import type { MetadataSyncService } from '@/lib/metadata/sync/metadata-sync-serv
 import type { MetadataRetriever } from '@/lib/metadata/retrieval/metadata-retriever';
 import type { MetadataRepository } from '@/lib/metadata/storage/metadata-repository';
 import type { CacheInvalidationService } from '@/lib/cache/cache-invalidation';
+import type { DatabaseService } from '../services/database.service';
 import { InvalidationEvent } from '@/lib/cache/cache-invalidation';
 import type { QueryIntent } from '@/lib/nlp/intent-recognizer';
 import type { MetadataContext } from '@/lib/metadata/types';
+import { ShardGroupService } from '@/lib/metadata/shard/shard-group.service';
 
 /**
  * 元数据同步选项
@@ -61,6 +63,12 @@ export interface MetadataSyncResult {
   /** 推断的关系数量 */
   relationshipCount?: number;
 
+  /** 识别的分表组数量 */
+  shardGroupCount?: number;
+
+  /** 分表总数 */
+  shardedTableCount?: number;
+
   /** 检测到的变更 */
   changes?: {
     added: { databases: number; tables: number; columns: number };
@@ -103,6 +111,8 @@ export interface MetadataChangeResult {
  */
 @injectable()
 export class MetadataOrchestrator {
+  private readonly shardGroupService: ShardGroupService;
+
   constructor(
     @inject(DI_TOKENS.ConnectionManager)
     private readonly connectionManager: ConnectionManager,
@@ -117,8 +127,13 @@ export class MetadataOrchestrator {
     private readonly repository: MetadataRepository,
 
     @inject(DI_TOKENS.CacheInvalidationService)
-    private readonly cacheInvalidation: CacheInvalidationService
-  ) {}
+    private readonly cacheInvalidation: CacheInvalidationService,
+
+    @inject(DI_TOKENS.DatabaseService)
+    private readonly dbService: DatabaseService
+  ) {
+    this.shardGroupService = new ShardGroupService(this.dbService.prisma);
+  }
 
   /**
    * 同步数据源元数据
@@ -157,7 +172,52 @@ export class MetadataOrchestrator {
         trackChanges: options.trackChanges ?? true,
       });
 
-      // 3. 失效相关缓存
+      // 3. 自动识别分表组
+      console.log(`[MetadataOrchestrator] Identifying shard groups...`);
+      let shardGroupCount = 0;
+      let shardedTableCount = 0;
+
+      try {
+        // 获取同步的数据库列表
+        const databases = await this.dbService.prisma.databaseMeta.findMany({
+          where: {
+            sourceId: options.dataSourceId,
+            ...(options.databases && options.databases.length > 0
+              ? { databaseName: { in: options.databases } }
+              : {}),
+          },
+          select: { id: true, databaseName: true },
+        });
+
+        // 对每个数据库识别分表组
+        for (const db of databases) {
+          const shardGroups = await this.shardGroupService.identifyAndCreateShardGroups(db.id, {
+            minShardCount: 2,
+            validateStructure: true,
+          });
+
+          shardGroupCount += shardGroups.length;
+          shardedTableCount += shardGroups.reduce((sum, g) => sum + g.tableCount, 0);
+
+          if (shardGroups.length > 0) {
+            console.log(
+              `[MetadataOrchestrator] Identified ${shardGroups.length} shard groups in ${db.databaseName} ` +
+              `(${shardGroups.reduce((sum, g) => sum + g.tableCount, 0)} tables)`
+            );
+          }
+        }
+
+        if (shardGroupCount > 0) {
+          console.log(
+            `[MetadataOrchestrator] Total: ${shardGroupCount} shard groups with ${shardedTableCount} sharded tables`
+          );
+        }
+      } catch (error) {
+        console.error(`[MetadataOrchestrator] Failed to identify shard groups:`, error);
+        // 不影响主流程，继续执行
+      }
+
+      // 4. 失效相关缓存
       console.log(`[MetadataOrchestrator] Invalidating metadata caches...`);
       await this.cacheInvalidation.invalidate(InvalidationEvent.METADATA_SYNCED, {
         reason: `Metadata synchronized for data source ${options.dataSourceId}`,
@@ -173,6 +233,8 @@ export class MetadataOrchestrator {
         tableCount: syncResult.tableCount,
         columnCount: syncResult.columnCount,
         relationshipCount: syncResult.explicitRelationshipCount + syncResult.inferredRelationshipCount,
+        shardGroupCount: shardGroupCount > 0 ? shardGroupCount : undefined,
+        shardedTableCount: shardedTableCount > 0 ? shardedTableCount : undefined,
         changes: syncResult.changes ? {
           added: {
             databases: 0,

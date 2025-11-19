@@ -42,17 +42,18 @@ model DataSource {
 }
 
 model DatabaseMeta {
-  id                  Int             @id @default(autoincrement())
-  sourceId            Int             @map("source_id")
-  databaseName        String          @map("database_name") @db.VarChar(100)
-  domainId            Int?            @map("domain_id")
-  semanticDescription String?         @map("semantic_description") @db.Text
-  lastSyncedAt        DateTime?       @map("last_synced_at")
-  createdAt           DateTime        @default(now()) @map("created_at")
-  updatedAt           DateTime        @updatedAt @map("updated_at")
-  domain              BusinessDomain? @relation(fields: [domainId], references: [id])
-  source              DataSource      @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  id                  Int               @id @default(autoincrement())
+  sourceId            Int               @map("source_id")
+  databaseName        String            @map("database_name") @db.VarChar(100)
+  domainId            Int?              @map("domain_id")
+  semanticDescription String?           @map("semantic_description") @db.Text
+  lastSyncedAt        DateTime?         @map("last_synced_at")
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+  domain              BusinessDomain?   @relation(fields: [domainId], references: [id])
+  source              DataSource        @relation(fields: [sourceId], references: [id], onDelete: Cascade)
   tables              TableMeta[]
+  shardGroups         TableShardGroup[]
 
   @@unique([sourceId, databaseName])
   @@index([sourceId])
@@ -70,6 +71,7 @@ model TableMeta {
   semanticPriority    Int                    @default(3) @map("semantic_priority") @db.TinyInt
   rowCount            BigInt                 @default(0) @map("row_count")
   structureHash       String?                @map("structure_hash") @db.Char(64)
+  shardGroupId        Int?                   @map("shard_group_id")
   createdTime         DateTime?              @map("created_time")
   updatedTime         DateTime?              @map("updated_time")
   lastSyncedAt        DateTime?              @map("last_synced_at")
@@ -82,12 +84,14 @@ model TableMeta {
   targetInferred      InferredRelationship[] @relation("InferredTargetTable")
   schemaSnapshots     SchemaSnapshot[]
   database            DatabaseMeta           @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  shardGroup          TableShardGroup?       @relation(fields: [shardGroupId], references: [id], onDelete: SetNull)
 
   @@unique([databaseId, tableName])
   @@index([databaseId])
   @@index([tableName])
   @@index([semanticPriority])
   @@index([structureHash])
+  @@index([shardGroupId])
   @@fulltext([semanticDescription])
   @@map("tables_meta")
 }
@@ -369,6 +373,29 @@ model ShardingPattern {
   @@index([usageCount])
   @@index([isEnabled])
   @@map("sharding_patterns")
+}
+
+/// 分表组表
+/// 用于关系推断优化，将结构相同的分表分组，只推断一次关系
+model TableShardGroup {
+  id                  Int         @id @default(autoincrement())
+  databaseId          Int         @map("database_id")
+  groupName           String      @map("group_name") @db.VarChar(100)       // 分表组名称
+  baseTablePattern    String      @map("base_table_pattern") @db.VarChar(100) // 基表模式，如 order_*
+  structureHash       String      @map("structure_hash") @db.Char(64)       // 结构哈希，用于验证分表结构一致性
+  tableCount          Int         @default(0) @map("table_count")           // 分表数量
+  description         String?     @db.Text                                   // 分组描述
+  identificationMethod String     @default("auto") @map("identification_method") @db.VarChar(20) // 识别方式：auto, manual
+  createdAt           DateTime    @default(now()) @map("created_at")
+  updatedAt           DateTime    @updatedAt @map("updated_at")
+  tables              TableMeta[]                                            // 组内的表
+  database            DatabaseMeta @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+
+  @@unique([databaseId, groupName])
+  @@index([databaseId])
+  @@index([structureHash])
+  @@index([baseTablePattern])
+  @@map("table_shard_groups")
 }
 
 /// 查询模板表

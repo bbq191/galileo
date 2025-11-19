@@ -151,9 +151,15 @@ export class ColumnExtractor {
   /**
    * 从 GROUP BY 子句提取列
    */
-  private extractFromGroupBy(groupby: any[], columnMap: Map<string, ColumnInfo>): void {
-    for (const item of groupby) {
-      if (item.type === 'column_ref') {
+  private extractFromGroupBy(groupby: any[] | any, columnMap: Map<string, ColumnInfo>): void {
+    // 确保 groupby 是可迭代的
+    if (!groupby) return;
+
+    // 如果不是数组，转换为数组
+    const items = Array.isArray(groupby) ? groupby : [groupby];
+
+    for (const item of items) {
+      if (item && item.type === 'column_ref') {
         this.addColumn(item, columnMap, 'GROUP BY');
       }
     }

@@ -430,6 +430,60 @@ ${this.describeConditions(intent.conditions)}
 - ✅ 子句顺序：FROM → ORDER BY → LIMIT
 - ❌ 不能写成：FROM → LIMIT → ORDER BY
 
+### 示例4：按月统计（时间派生字段）
+**用户查询**："查询2025年每月直播数量"
+
+**元数据提供的字段**：starttime（时间字段）, live_id
+
+**✅ 正确的SQL**：
+\`\`\`json
+{
+  "sql": "SELECT DATE_FORMAT(starttime, '%Y-%m') AS month, COUNT(*) AS count FROM \\\`db_live\\\`.\\\`tb_live_all_room\\\` WHERE YEAR(starttime) = 2025 GROUP BY month ORDER BY month ASC",
+  "explanation": "按月统计2025年的直播数量，使用DATE_FORMAT提取月份，使用YEAR函数过滤年份",
+  "confidence": 0.95,
+  "usedTables": ["tb_live_all_room"],
+  "usedColumns": ["starttime"],
+  "warnings": []
+}
+\`\`\`
+
+**关键点**：
+- ✅ 使用 DATE_FORMAT(时间字段, '%Y-%m') 提取月份
+- ✅ 使用 YEAR(时间字段) = 2025 过滤年份
+- ✅ GROUP BY month（使用 SELECT 中定义的别名）
+- ✅ ORDER BY month 按月份排序
+- ✅ usedColumns 只包含 starttime（不包含派生字段 month）
+
+**重要提示**：
+- 当用户要求"按月"、"按年"、"按日"统计时，必须使用时间函数从时间字段中提取
+- 常用时间函数：
+  - \`DATE_FORMAT(字段, '%Y-%m')\` - 提取年月
+  - \`DATE_FORMAT(字段, '%Y-%m-%d')\` - 提取年月日
+  - \`YEAR(字段)\` - 提取年份
+  - \`MONTH(字段)\` - 提取月份
+  - \`DAY(字段)\` - 提取日期
+- 在 SELECT 中使用 AS 创建别名，然后在 GROUP BY 和 ORDER BY 中引用该别名
+
+### 示例5：带时间范围的聚合查询
+**用户查询**："统计2024年1月到3月的用户数"
+
+**✅ 正确的SQL**：
+\`\`\`json
+{
+  "sql": "SELECT COUNT(DISTINCT uid) AS user_count FROM \\\`db_live\\\`.\\\`tb_live_all_room\\\` WHERE starttime >= '2024-01-01' AND starttime < '2024-04-01'",
+  "explanation": "统计2024年1月到3月的不重复用户数",
+  "confidence": 0.95,
+  "usedTables": ["tb_live_all_room"],
+  "usedColumns": ["uid", "starttime"],
+  "warnings": []
+}
+\`\`\`
+
+**关键点**：
+- ✅ 使用时间范围过滤：\`starttime >= '2024-01-01' AND starttime < '2024-04-01'\`
+- ✅ 使用 COUNT(DISTINCT uid) 统计不重复用户
+- ✅ usedColumns 包含实际使用的字段
+
 ⚠️ 请严格参考以上示例的格式和规则！
 `;
   }
@@ -446,6 +500,23 @@ ${this.describeConditions(intent.conditions)}
         break;
       case 'aggregate':
         description = `统计聚合 (${intent.aggregations?.function || 'COUNT'})`;
+
+        // 添加 GROUP BY 说明
+        if (intent.aggregations?.groupBy && intent.aggregations.groupBy.length > 0) {
+          const groupByFields = intent.aggregations.groupBy;
+          description += `，按 ${groupByFields.join(', ')} 分组`;
+
+          // 检查是否有时间派生字段
+          const timeDerivedFields = groupByFields.filter(f =>
+            ['month', 'year', 'date', 'day', 'week'].includes(f.toLowerCase())
+          );
+
+          if (timeDerivedFields.length > 0) {
+            description += `\n  ⚠️ 重要提示：需要按时间维度（${timeDerivedFields.join(', ')}）分组`;
+            description += `\n  必须使用时间函数（如 DATE_FORMAT, YEAR, MONTH 等）从时间字段中提取`;
+            description += `\n  示例：DATE_FORMAT(时间字段, '%Y-%m') AS month`;
+          }
+        }
         break;
       case 'statistics':
         description = '数据统计分析';
@@ -458,7 +529,7 @@ ${this.describeConditions(intent.conditions)}
     }
 
     if (intent.entities.tables && intent.entities.tables.length > 0) {
-      description += `，涉及表: ${intent.entities.tables.join(', ')}`;
+      description += `\n涉及表: ${intent.entities.tables.join(', ')}`;
     }
 
     return description;
@@ -473,7 +544,14 @@ ${this.describeConditions(intent.conditions)}
     const parts: string[] = [];
 
     if (conditions.timeRange) {
-      parts.push(`时间范围: ${conditions.timeRange.relative || '自定义'}`);
+      const timeRangeDesc = conditions.timeRange.relative || '自定义';
+      parts.push(`时间范围: ${timeRangeDesc}`);
+
+      // 如果是年份查询，添加特殊说明
+      if (timeRangeDesc && timeRangeDesc.includes('year') || timeRangeDesc.includes('2025')) {
+        parts.push(`  ⚠️ 注意：这是年份查询，需要使用 YEAR() 函数过滤时间字段`);
+        parts.push(`  示例：WHERE YEAR(时间字段) = 2025`);
+      }
     }
 
     if (conditions.filters && conditions.filters.length > 0) {
@@ -484,7 +562,13 @@ ${this.describeConditions(intent.conditions)}
     }
 
     if (conditions.orderBy) {
-      parts.push(`排序: ${conditions.orderBy.column} ${conditions.orderBy.direction}`);
+      const orderByCol = conditions.orderBy.column;
+      parts.push(`排序: ${orderByCol} ${conditions.orderBy.direction}`);
+
+      // 如果是时间派生字段，添加说明
+      if (['month', 'year', 'date', 'day', 'week'].includes(orderByCol.toLowerCase())) {
+        parts.push(`  ⚠️ 注意："${orderByCol}" 是派生字段，需要在 SELECT 中使用时间函数生成`);
+      }
     }
 
     if (conditions.limit) {

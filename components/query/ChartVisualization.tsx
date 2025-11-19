@@ -32,14 +32,23 @@ export default function ChartVisualization({
     const categorical: string[] = [];
 
     columns.forEach((col) => {
-      const type = col.type.toLowerCase();
-      if (
-        type.includes('int') ||
-        type.includes('float') ||
-        type.includes('double') ||
-        type.includes('decimal') ||
-        type.includes('numeric')
-      ) {
+      const type = col.type.toUpperCase(); // 统一转为大写便于比较
+
+      // MySQL 数值类型（包括所有常见类型）
+      const isNumeric =
+        type.includes('INT') ||        // TINYINT, SMALLINT, INT, BIGINT
+        type.includes('FLOAT') ||      // FLOAT
+        type.includes('DOUBLE') ||     // DOUBLE
+        type.includes('DECIMAL') ||    // DECIMAL, NUMERIC
+        type.includes('NUMERIC') ||
+        type === 'TINY' ||            // MySQL 类型代码 1
+        type === 'SHORT' ||           // MySQL 类型代码 2
+        type === 'LONG' ||            // MySQL 类型代码 3
+        type === 'LONGLONG' ||        // MySQL 类型代码 8（COUNT(*) 的返回类型）
+        type === 'INT24' ||           // MySQL 类型代码 9
+        type === 'NEWDECIMAL';        // MySQL 类型代码 246
+
+      if (isNumeric) {
         numeric.push(col.name);
       } else {
         categorical.push(col.name);
@@ -49,13 +58,24 @@ export default function ChartVisualization({
     return { numericColumns: numeric, categoricalColumns: categorical };
   }, [columns]);
 
-  // 自动选择默认轴
+  // 自动选择默认轴（当数据变化时重新选择）
   useMemo(() => {
-    if (!xAxis && categoricalColumns.length > 0) {
+    // 检查当前选择的轴是否仍然有效
+    const isXAxisValid = xAxis && categoricalColumns.includes(xAxis);
+    const isYAxisValid = yAxis && numericColumns.includes(yAxis);
+
+    // X 轴：如果当前选择无效或为空，自动选择第一个分类列
+    if (!isXAxisValid && categoricalColumns.length > 0) {
       setXAxis(categoricalColumns[0]);
+    } else if (!isXAxisValid) {
+      setXAxis(''); // 清空无效选择
     }
-    if (!yAxis && numericColumns.length > 0) {
+
+    // Y 轴：如果当前选择无效或为空，自动选择第一个数值列
+    if (!isYAxisValid && numericColumns.length > 0) {
       setYAxis(numericColumns[0]);
+    } else if (!isYAxisValid) {
+      setYAxis(''); // 清空无效选择
     }
   }, [categoricalColumns, numericColumns, xAxis, yAxis]);
 
@@ -93,12 +113,67 @@ export default function ChartVisualization({
   const maxValue = Math.max(...chartData.map((d) => d.value), 1);
   const total = chartData.reduce((sum, d) => sum + d.value, 0);
 
+  // 数据为空
   if (data.length === 0) {
     return (
       <div className="card bg-base-100 shadow-xl">
         <div className="card-body p-4 md:p-6">
           <div className="text-center py-12">
             <p className="text-base-content/60">暂无数据可视化</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 特殊情况：只有单一聚合值（没有分组维度）
+  if (categoricalColumns.length === 0 && numericColumns.length > 0) {
+    const firstRow = data[0];
+    return (
+      <div className="card bg-base-100 shadow-xl">
+        <div className="card-body p-4 md:p-6">
+          <h2 className="card-title text-lg md:text-xl mb-4">统计结果</h2>
+          <div className="alert alert-info mb-4">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              className="stroke-current shrink-0 w-6 h-6"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <span>查询返回单一聚合值，无法生成分组图表。如需可视化，请使用&ldquo;按XX统计&rdquo;或&ldquo;每个XX&rdquo;等分组查询。</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {numericColumns.map((col) => (
+              <div key={col} className="stat bg-base-200 rounded-lg">
+                <div className="stat-figure text-primary">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    className="inline-block w-8 h-8 stroke-current"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                    />
+                  </svg>
+                </div>
+                <div className="stat-title">{col}</div>
+                <div className="stat-value text-primary">
+                  {Number(firstRow[col]).toLocaleString()}
+                </div>
+                <div className="stat-desc">聚合结果</div>
+              </div>
+            ))}
           </div>
         </div>
       </div>

@@ -381,7 +381,134 @@ export class IntentRecognizer {
   }
 
   /**
-   * 验证字段是否存在于表中
+   * 智能搜索相似字段
+   */
+  private findSimilarColumn(
+    targetColumn: string,
+    availableColumns: Array<{ columnName: string; columnComment?: string; semanticDescription?: string; dataType: string }>
+  ): { columnName: string; confidence: number } | null {
+    // 时间字段的别名
+    const timeFieldAliases: Record<string, string[]> = {
+      create_time: ['starttime', 'opentime', 'createtime', 'created_at', 'create_time'],
+      update_time: ['endtime', 'updatetime', 'updated_at', 'update_time'],
+      time: ['starttime', 'opentime', 'endtime', 'createtime', 'time'],
+    };
+
+    // ID 字段的别名
+    const idFieldAliases: Record<string, string[]> = {
+      room_id: ['live_id', 'uid', 'id', 'room_id'],
+      user_id: ['uid', 'userid', 'user_id'],
+      id: ['uid', 'id', 'live_id'],
+    };
+
+    const lowerTarget = targetColumn.toLowerCase();
+
+    // 1. 精确匹配（不区分大小写）
+    const exactMatch = availableColumns.find(col => col.columnName.toLowerCase() === lowerTarget);
+    if (exactMatch) {
+      return { columnName: exactMatch.columnName, confidence: 1.0 };
+    }
+
+    // 2. 检查时间字段别名
+    for (const [alias, candidates] of Object.entries(timeFieldAliases)) {
+      if (lowerTarget.includes(alias) || alias.includes(lowerTarget)) {
+        const match = availableColumns.find(col =>
+          candidates.some(c => col.columnName.toLowerCase() === c.toLowerCase())
+        );
+        if (match) {
+          return { columnName: match.columnName, confidence: 0.85 };
+        }
+      }
+    }
+
+    // 3. 检查 ID 字段别名
+    for (const [alias, candidates] of Object.entries(idFieldAliases)) {
+      if (lowerTarget.includes(alias) || alias.includes(lowerTarget)) {
+        const match = availableColumns.find(col =>
+          candidates.some(c => col.columnName.toLowerCase() === c.toLowerCase())
+        );
+        if (match) {
+          return { columnName: match.columnName, confidence: 0.85 };
+        }
+      }
+    }
+
+    // 4. 基于数据类型的推断
+    if (lowerTarget.includes('time') || lowerTarget.includes('date')) {
+      // 寻找时间类型字段
+      const timeColumn = availableColumns.find(col =>
+        col.dataType.toLowerCase().includes('time') ||
+        col.dataType.toLowerCase().includes('date')
+      );
+      if (timeColumn) {
+        return { columnName: timeColumn.columnName, confidence: 0.7 };
+      }
+    }
+
+    // 5. 模糊匹配（Levenshtein 距离）
+    const fuzzyMatch = availableColumns
+      .map(col => ({
+        ...col,
+        similarity: this.calculateSimilarity(lowerTarget, col.columnName.toLowerCase()),
+      }))
+      .filter(col => col.similarity > 0.6)
+      .sort((a, b) => b.similarity - a.similarity)[0];
+
+    if (fuzzyMatch) {
+      return { columnName: fuzzyMatch.columnName, confidence: fuzzyMatch.similarity };
+    }
+
+    return null;
+  }
+
+  /**
+   * 计算字符串相似度（简单的 Levenshtein 距离）
+   */
+  private calculateSimilarity(str1: string, str2: string): number {
+    const longer = str1.length > str2.length ? str1 : str2;
+    const shorter = str1.length > str2.length ? str2 : str1;
+
+    if (longer.length === 0) {
+      return 1.0;
+    }
+
+    const editDistance = this.levenshteinDistance(longer, shorter);
+    return (longer.length - editDistance) / longer.length;
+  }
+
+  /**
+   * Levenshtein 距离算法
+   */
+  private levenshteinDistance(str1: string, str2: string): number {
+    const matrix: number[][] = [];
+
+    for (let i = 0; i <= str2.length; i++) {
+      matrix[i] = [i];
+    }
+
+    for (let j = 0; j <= str1.length; j++) {
+      matrix[0][j] = j;
+    }
+
+    for (let i = 1; i <= str2.length; i++) {
+      for (let j = 1; j <= str1.length; j++) {
+        if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j - 1] + 1,
+            matrix[i][j - 1] + 1,
+            matrix[i - 1][j] + 1
+          );
+        }
+      }
+    }
+
+    return matrix[str2.length][str1.length];
+  }
+
+  /**
+   * 验证字段是否存在于表中（增强版，支持智能匹配）
    */
   private async validateColumns(
     tables: string[],
@@ -416,51 +543,104 @@ export class IntentRecognizer {
       };
     }
 
-    // 收集所有有效字段
-    const allValidColumns = new Set<string>();
+    // 收集所有有效字段（包含完整元数据）
+    const allColumns: Array<{ columnName: string; columnComment?: string; semanticDescription?: string; dataType: string }> = [];
     tableMetas.forEach((table: any) => {
       table.columns.forEach((col: any) => {
-        allValidColumns.add(col.columnName);
+        allColumns.push({
+          columnName: col.columnName,
+          columnComment: col.columnComment,
+          semanticDescription: col.semanticDescription,
+          dataType: col.dataType,
+        });
       });
     });
 
-    console.log('[IntentRecognizer] 表中的有效字段:', Array.from(allValidColumns));
+    const allValidColumnNames = new Set<string>(allColumns.map(c => c.columnName));
 
-    // 验证 SELECT 字段
-    const validSelectColumns = selectColumns.filter(col => {
-      if (!allValidColumns.has(col)) {
-        warnings.push(`字段"${col}"不存在于表中，已忽略`);
-        return false;
+    console.log('[IntentRecognizer] 表中的有效字段:', Array.from(allValidColumnNames));
+
+    // 验证 SELECT 字段（支持智能匹配）
+    const validSelectColumns = selectColumns.map(col => {
+      if (allValidColumnNames.has(col)) {
+        return col;
       }
-      return true;
-    });
 
-    // 验证聚合字段
+      // 尝试智能匹配
+      const similar = this.findSimilarColumn(col, allColumns);
+      if (similar && similar.confidence > 0.7) {
+        warnings.push(`字段"${col}"不存在，已自动替换为"${similar.columnName}"（相似度: ${(similar.confidence * 100).toFixed(0)}%）`);
+        return similar.columnName;
+      }
+
+      warnings.push(`字段"${col}"不存在且无法找到替代字段，已忽略`);
+      return null;
+    }).filter((col): col is string => col !== null);
+
+    // 验证聚合字段（支持智能匹配）
     let validAggregation = true;
+    const validAggregationColumns: string[] = [];
     if (aggregationColumns.length > 0) {
-      const invalidAggCols = aggregationColumns.filter(col => !allValidColumns.has(col));
-      if (invalidAggCols.length > 0) {
-        warnings.push(`聚合字段"${invalidAggCols.join(', ')}"不存在，已移除聚合操作`);
-        validAggregation = false;
+      for (const col of aggregationColumns) {
+        if (allValidColumnNames.has(col)) {
+          validAggregationColumns.push(col);
+          continue;
+        }
+
+        // 尝试智能匹配
+        const similar = this.findSimilarColumn(col, allColumns);
+        if (similar && similar.confidence > 0.7) {
+          warnings.push(`聚合字段"${col}"不存在，已自动替换为"${similar.columnName}"（相似度: ${(similar.confidence * 100).toFixed(0)}%）`);
+          validAggregationColumns.push(similar.columnName);
+        } else {
+          warnings.push(`聚合字段"${col}"不存在且无法找到替代字段，已移除聚合操作`);
+          validAggregation = false;
+        }
       }
     }
 
-    // 验证 GROUP BY 字段
+    // 验证 GROUP BY 字段（特殊处理：month 等派生字段标记为需要生成）
     if (groupByColumns.length > 0) {
-      const invalidGroupByCols = groupByColumns.filter(col => !allValidColumns.has(col));
-      if (invalidGroupByCols.length > 0) {
-        warnings.push(`GROUP BY 字段"${invalidGroupByCols.join(', ')}"不存在，已移除聚合操作`);
-        validAggregation = false;
+      for (const col of groupByColumns) {
+        // 特殊处理：month, year, date 等派生字段
+        if (['month', 'year', 'date', 'day', 'week'].includes(col.toLowerCase())) {
+          warnings.push(`GROUP BY 字段"${col}"是时间派生字段，SQL 生成时需要使用时间函数`);
+          // 不影响 validAggregation
+          continue;
+        }
+
+        if (allValidColumnNames.has(col)) {
+          continue;
+        }
+
+        // 尝试智能匹配
+        const similar = this.findSimilarColumn(col, allColumns);
+        if (!similar || similar.confidence < 0.7) {
+          warnings.push(`GROUP BY 字段"${col}"不存在且无法找到替代字段，已移除聚合操作`);
+          validAggregation = false;
+        }
       }
     }
 
     // 验证 ORDER BY 字段
     let validOrderBy = true;
     if (orderByColumns.length > 0) {
-      const invalidOrderByCols = orderByColumns.filter(col => !allValidColumns.has(col));
-      if (invalidOrderByCols.length > 0) {
-        warnings.push(`排序字段"${invalidOrderByCols.join(', ')}"不存在，已移除排序`);
-        validOrderBy = false;
+      for (const col of orderByColumns) {
+        // 特殊处理派生字段
+        if (['month', 'year', 'date', 'day', 'week'].includes(col.toLowerCase())) {
+          warnings.push(`排序字段"${col}"是时间派生字段，SQL 生成时需要使用时间函数`);
+          continue;
+        }
+
+        if (allValidColumnNames.has(col)) {
+          continue;
+        }
+
+        const similar = this.findSimilarColumn(col, allColumns);
+        if (!similar || similar.confidence < 0.7) {
+          warnings.push(`排序字段"${col}"不存在且无法找到替代字段，已移除排序`);
+          validOrderBy = false;
+        }
       }
     }
 

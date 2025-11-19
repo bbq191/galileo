@@ -76,6 +76,9 @@ export class CacheBreakthroughGuard {
     lockTTL: 30, // 锁超时 30 秒（防止死锁）
   };
 
+  // Lua 脚本支持检测
+  private luaScriptSupported: boolean | null = null;
+
   constructor(@inject(DI_TOKENS.RedisClient) private redis: Redis) {}
 
   /**
@@ -183,9 +186,50 @@ export class CacheBreakthroughGuard {
   }
 
   /**
+   * 检测 Redis 是否支持 Lua 脚本
+   */
+  private async checkLuaScriptSupport(): Promise<boolean> {
+    if (this.luaScriptSupported !== null) {
+      return this.luaScriptSupported;
+    }
+
+    try {
+      // 尝试执行一个简单的 Lua 脚本
+      const testScript = 'return "OK"';
+      await this.redis.eval(testScript, 0);
+      this.luaScriptSupported = true;
+      console.log('[CacheBreakthroughGuard] Redis 支持 Lua 脚本');
+    } catch (error: any) {
+      this.luaScriptSupported = false;
+      console.warn(
+        '[CacheBreakthroughGuard] Redis 不支持 Lua 脚本，使用降级策略:',
+        error.message
+      );
+    }
+
+    return this.luaScriptSupported;
+  }
+
+  /**
    * 释放分布式锁（使用 Lua 脚本确保原子性）
+   * 如果 Redis 不支持 Lua 脚本，则使用降级策略
    */
   private async releaseLock(lockKey: string, lockValue: string): Promise<void> {
+    const luaSupported = await this.checkLuaScriptSupport();
+
+    if (luaSupported) {
+      // 策略 1：使用 Lua 脚本（原子操作）
+      await this.releaseLockWithLua(lockKey, lockValue);
+    } else {
+      // 策略 2：使用 GET-DEL 两步操作（非原子，但可接受）
+      await this.releaseLockWithGetDel(lockKey, lockValue);
+    }
+  }
+
+  /**
+   * 使用 Lua 脚本释放锁（原子操作）
+   */
+  private async releaseLockWithLua(lockKey: string, lockValue: string): Promise<void> {
     try {
       // Lua 脚本：只有持有锁的进程才能释放
       const script = `
@@ -197,7 +241,25 @@ export class CacheBreakthroughGuard {
       `;
       await this.redis.eval(script, 1, lockKey, lockValue);
     } catch (error) {
-      console.error('[CacheBreakthroughGuard] 释放锁失败:', error);
+      console.error('[CacheBreakthroughGuard] 使用 Lua 脚本释放锁失败:', error);
+    }
+  }
+
+  /**
+   * 使用 GET-DEL 两步操作释放锁（非原子，降级策略）
+   * 虽然不是原子操作，但由于锁有 TTL，风险可控
+   */
+  private async releaseLockWithGetDel(lockKey: string, lockValue: string): Promise<void> {
+    try {
+      // 第 1 步：检查锁值是否匹配
+      const currentValue = await this.redis.get(lockKey);
+      if (currentValue === lockValue) {
+        // 第 2 步：删除锁
+        // 注意：这里存在竞态条件，但由于锁有 TTL，影响有限
+        await this.redis.del(lockKey);
+      }
+    } catch (error) {
+      console.error('[CacheBreakthroughGuard] 使用 GET-DEL 释放锁失败:', error);
     }
   }
 

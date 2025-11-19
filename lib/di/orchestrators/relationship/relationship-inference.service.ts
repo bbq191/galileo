@@ -16,6 +16,12 @@ import {
   RelationshipInferencer,
   type RelationshipInferencerConfig,
 } from '@/lib/metadata/inference/relationship-inferencer';
+import {
+  ShardAwareRelationshipInferencer,
+  type ShardAwareInferencerConfig,
+  type ShardGroupMeta,
+} from '@/lib/metadata/inference/shard-aware-relationship-inferencer';
+import { ShardGroupService } from '@/lib/metadata/shard/shard-group.service';
 import type { InferredRelationship, InferenceResult } from '@/lib/metadata/inference/types';
 import type { ColumnInfo } from '@/lib/metadata/types';
 
@@ -57,6 +63,18 @@ export interface RelationshipInferOptions {
    * 如果未指定，则使用上次同步时间
    */
   sinceTimestamp?: Date;
+
+  /**
+   * 是否启用分表优化
+   * 启用后会自动识别分表组并优化推断性能
+   */
+  enableShardOptimization?: boolean;
+
+  /**
+   * 是否自动识别分表组
+   * 在推断前自动识别和创建分表组
+   */
+  autoDetectShardGroups?: boolean;
 }
 
 /**
@@ -98,6 +116,15 @@ export interface RelationshipInferResult {
 
   /** 清理的旧关系数量（仅增量模式） */
   relationshipsCleanedUp?: number;
+
+  /** 处理的分表组数量（仅分表优化模式） */
+  shardGroupsProcessed?: number;
+
+  /** 因分表优化跳过的表数量 */
+  tablesSkippedDueToSharding?: number;
+
+  /** 复制到分表的关系数量 */
+  relationshipsReplicatedToShards?: number;
 }
 
 /**
@@ -107,13 +134,17 @@ export interface RelationshipInferResult {
  */
 @injectable()
 export class RelationshipInferenceService {
+  private readonly shardGroupService: ShardGroupService;
+
   constructor(
     @inject(DI_TOKENS.DatabaseService)
     private readonly dbService: DatabaseService,
 
     @inject(DI_TOKENS.CacheInvalidationService)
     private readonly cacheInvalidation: CacheInvalidationService
-  ) {}
+  ) {
+    this.shardGroupService = new ShardGroupService(this.dbService.prisma);
+  }
 
   /**
    * 获取上次同步时间
@@ -414,18 +445,57 @@ export class RelationshipInferenceService {
         };
       }
 
-      // 2. 准备推断器配置
-      const config: RelationshipInferencerConfig = {
+      // 2. 准备分表组信息（如果启用分表优化）
+      const enableShardOptimization = options.enableShardOptimization ?? true;
+      const autoDetectShardGroups = options.autoDetectShardGroups ?? false; // 默认关闭，因为同步时已自动识别
+
+      let shardGroupsByDatabase: Map<string, ShardGroupMeta[]> | undefined;
+
+      if (enableShardOptimization) {
+        shardGroupsByDatabase = new Map();
+
+        for (const db of databases) {
+          // 自动识别分表组
+          if (autoDetectShardGroups) {
+            await this.shardGroupService.identifyAndCreateShardGroups(db.id, {
+              minShardCount: 2,
+              validateStructure: true,
+            });
+          }
+
+          // 获取分表组信息
+          const shardGroups = await this.shardGroupService.getShardGroups(db.id);
+
+          if (shardGroups.length > 0) {
+            const shardGroupMetas: ShardGroupMeta[] = shardGroups.map((group) => ({
+              groupId: group.id,
+              groupName: group.groupName,
+              tableIds: group.tables.map((t) => t.id),
+              representativeTableId: group.tables[0]?.id || 0, // 使用第一个表作为代表
+            }));
+
+            shardGroupsByDatabase.set(db.databaseName, shardGroupMetas);
+            console.log(`[RelationshipInferenceService] Found ${shardGroupMetas.length} shard groups in ${db.databaseName}`);
+          }
+        }
+      }
+
+      // 3. 准备推断器配置
+      const config: ShardAwareInferencerConfig = {
         minConfidence: options.minConfidence || 0.70,
         enableAIInference: options.enableAI ?? true,
         crossDatabase: options.crossDatabase ?? true,
+        enableShardOptimization,
       };
 
-      const inferencer = new RelationshipInferencer(config);
+      const inferencer = new ShardAwareRelationshipInferencer(config);
 
-      // 3. 推断关系
+      // 4. 推断关系
       let allRelationships: InferredRelationship[] = [];
       let savedCount = 0;
+      let totalShardGroupsProcessed = 0;
+      let totalTablesSkipped = 0;
+      let totalRelationshipsReplicated = 0;
 
       // 增量模式：准备变更列的 ID 集合用于过滤
       const changedColumnIdsSet = isIncremental && changesInfo
@@ -437,12 +507,17 @@ export class RelationshipInferenceService {
         // 跨库推断：使用专门的跨库推断方法
         console.log(`[RelationshipInferenceService] Using cross-database inference for ${databases.length} databases...`);
 
-        const result = await this.performCrossDatabaseInference(
+        const result = await this.performCrossDatabaseInferenceWithShards(
           databases,
           inferencer,
+          shardGroupsByDatabase,
           changedColumnIdsSet
         );
+
         allRelationships.push(...result.relationships);
+        totalShardGroupsProcessed = result.shardGroupsProcessed || 0;
+        totalTablesSkipped = result.tablesSkippedDueToSharding || 0;
+        totalRelationshipsReplicated = result.relationshipsReplicatedToShards || 0;
       } else {
         // 单库推断：按数据库分别推断
         console.log(`[RelationshipInferenceService] Using single-database inference for ${databases.length} database(s)...`);
@@ -453,13 +528,21 @@ export class RelationshipInferenceService {
           // 准备列信息
           const columns: ColumnInfo[] = this.prepareColumnInfo(db);
 
+          // 获取该数据库的分表组
+          const dbShardGroups = shardGroupsByDatabase?.get(db.databaseName);
+
           // 执行推断
-          const result: InferenceResult = await inferencer.inferRelationships(
+          const result = await inferencer.inferRelationships(
             db.databaseName,
             columns,
+            dbShardGroups,
             changedColumnIdsSet
           );
+
           allRelationships.push(...result.relationships);
+          totalShardGroupsProcessed += result.shardGroupsProcessed || 0;
+          totalTablesSkipped += result.tablesSkippedDueToSharding || 0;
+          totalRelationshipsReplicated += result.relationshipsReplicatedToShards || 0;
         }
       }
 
@@ -506,6 +589,9 @@ export class RelationshipInferenceService {
           ? changesInfo.changedTableIds.size + changesInfo.changedColumnIds.size
           : undefined,
         relationshipsCleanedUp: isIncremental ? relationshipsCleanedUp : undefined,
+        shardGroupsProcessed: enableShardOptimization ? totalShardGroupsProcessed : undefined,
+        tablesSkippedDueToSharding: enableShardOptimization ? totalTablesSkipped : undefined,
+        relationshipsReplicatedToShards: enableShardOptimization ? totalRelationshipsReplicated : undefined,
       };
 
     } catch (error) {
@@ -790,6 +876,54 @@ export class RelationshipInferenceService {
    * @returns 推断结果
    * @private
    */
+  /**
+   * 执行支持分表优化的跨库推断
+   *
+   * @param databases - 数据库列表
+   * @param inferencer - 分表感知的推断器
+   * @param shardGroupsByDatabase - 分表组信息
+   * @param changedColumnIds - 变更的列 ID 集合
+   * @private
+   */
+  private async performCrossDatabaseInferenceWithShards(
+    databases: Array<{
+      databaseName: string;
+      tables: Array<{
+        id: number;
+        tableName: string;
+        columns: Array<{
+          id: number;
+          columnName: string;
+          dataType: string;
+          columnType: string;
+          isNullable: boolean;
+          isPrimaryKey: boolean;
+          isUnique: boolean;
+          columnComment: string | null;
+          semanticDescription: string | null;
+        }>;
+      }>;
+    }>,
+    inferencer: ShardAwareRelationshipInferencer,
+    shardGroupsByDatabase?: Map<string, ShardGroupMeta[]>,
+    changedColumnIds?: Set<number>
+  ) {
+    // 准备跨库推断的数据结构
+    const databasesMap = new Map<string, ColumnInfo[]>();
+
+    for (const db of databases) {
+      const columns = this.prepareColumnInfo(db);
+      databasesMap.set(db.databaseName, columns);
+    }
+
+    // 执行跨库推断（支持增量模式和分表优化）
+    return await inferencer.inferCrossDatabaseRelationships(
+      databasesMap,
+      shardGroupsByDatabase,
+      changedColumnIds
+    );
+  }
+
   private async performCrossDatabaseInference(
     databases: Array<{
       databaseName: string;
