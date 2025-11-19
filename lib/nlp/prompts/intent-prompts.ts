@@ -54,29 +54,52 @@ export const INTENT_SYSTEM_PROMPT = `
  */
 export function buildIntentPrompt(
   naturalLanguageQuery: string,
-  availableTables?: Array<{ name: string; description: string; database: string }>
+  availableTables?: Array<{
+    name: string;
+    description: string;
+    database: string;
+    domain?: string;
+    domainDescription?: string;
+  }>
 ): string {
-  // 构建可用表列表
+  // 构建可用表列表（按业务域分组）
   let tablesContext = '';
   if (availableTables && availableTables.length > 0) {
-    const tablesList = availableTables
-      .slice(0, 50) // 只展示前 50 个表，避免 token 过多
-      .map(t => {
-        const desc = t.description ? ` - ${t.description}` : '';
-        return `  - ${t.database}.${t.name}${desc}`;
-      })
-      .join('\n');
+    // 按业务域分组
+    const tablesByDomain = new Map<string, typeof availableTables>();
+
+    for (const table of availableTables.slice(0, 50)) {
+      const domainKey = table.domain || '未分类';
+      if (!tablesByDomain.has(domainKey)) {
+        tablesByDomain.set(domainKey, []);
+      }
+      tablesByDomain.get(domainKey)!.push(table);
+    }
+
+    // 构建分组后的表列表
+    const domainSections: string[] = [];
+    for (const [domain, tables] of tablesByDomain.entries()) {
+      const tablesList = tables
+        .map(t => {
+          const desc = t.description ? ` - ${t.description}` : '';
+          return `    - ${t.database}.${t.name}${desc}`;
+        })
+        .join('\n');
+
+      domainSections.push(`  ### ${domain}\n${tablesList}`);
+    }
 
     tablesContext = `
 
-可用的数据库表（从这些表中选择最相关的）：
-${tablesList}
+可用的数据库表（按业务域分组，从这些表中选择最相关的）：
+${domainSections.join('\n\n')}
 
 **重要说明**：
 1. 表名格式为 "database.table_name"，但在返回的 JSON 中，你应该只返回表名部分（table_name），不要包含数据库名
 2. 例如：如果看到 "db_live.tb_chatroom_relation"，你应该返回 "tb_chatroom_relation"
 3. 你必须从上述表名中选择，不要猜测或创造不存在的表名
 4. 如果用户查询与任何表都不相关，请返回空的 tables 数组
+5. 业务域信息可以帮助你更准确地识别用户查询涉及的领域
 `;
   }
 

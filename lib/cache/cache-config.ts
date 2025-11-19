@@ -132,6 +132,16 @@ export const CACHE_CONFIGS: Record<string, CacheConfig> = {
     L2: { enabled: true, ttl: 300 }, // 5分钟
     invalidateOn: ['data_updated', 'manual_sync'],
   },
+
+  // ==================== 业务域推断缓存 ====================
+
+  // 业务域推断结果（昂贵的 AI 调用，长期缓存）
+  domain_inference: {
+    key: 'domain:inference:db:{databaseId}',
+    L1: { enabled: true, ttl: 600 }, // 10分钟
+    L2: { enabled: true, ttl: 3600 }, // 1小时（可通过环境变量配置）
+    invalidateOn: ['database_structure_changed', 'domain_assigned', 'manual_sync'],
+  },
 };
 
 /**

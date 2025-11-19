@@ -85,6 +85,15 @@ export interface ColumnInfo {
   /** 数据库名 */
   databaseName: string;
 
+  /** 数据库 ID（可选，用于关系推断） */
+  databaseId?: number;
+
+  /** 业务域 ID（可选，用于关系推断） */
+  domainId?: number | null;
+
+  /** 业务域名称（可选，用于关系推断） */
+  domainName?: string | null;
+
   /** 数据类型（如 int, varchar） */
   dataType: string;
 

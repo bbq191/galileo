@@ -145,14 +145,24 @@ export class IntentRecognizer {
   }
 
   /**
-   * 获取数据库中所有可用的表
+   * 获取数据库中所有可用的表（包含业务域信息）
    */
-  private async getAvailableTables(): Promise<Array<{ name: string; description: string; database: string }>> {
+  private async getAvailableTables(): Promise<Array<{
+    name: string;
+    description: string;
+    database: string;
+    domain?: string;
+    domainDescription?: string;
+  }>> {
     try {
       const tables = await this.prisma.tableMeta.findMany({
         take: 100, // 限制返回前 100 个表
         include: {
-          database: true,
+          database: {
+            include: {
+              domain: true, // 包含业务域信息
+            },
+          },
         },
         orderBy: {
           id: 'asc',
@@ -163,6 +173,8 @@ export class IntentRecognizer {
         name: table.tableName,
         description: table.semanticDescription || table.tableComment || '',
         database: table.database.databaseName,
+        domain: table.database.domain?.name, // 业务域名称
+        domainDescription: table.database.domain?.description || undefined, // 业务域描述
       }));
     } catch (error) {
       console.error('[IntentRecognizer] 获取可用表失败:', error);

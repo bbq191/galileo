@@ -47,6 +47,7 @@ export const DI_TOKENS = {
   MetadataSyncService: Symbol.for('MetadataSyncService'),
   MetadataRetriever: Symbol.for('MetadataRetriever'),
   MetadataCollector: Symbol.for('MetadataCollector'),
+  DomainInferencer: Symbol.for('DomainInferencer'),
 
   // SQL 处理
   IntentRecognizer: Symbol.for('IntentRecognizer'),

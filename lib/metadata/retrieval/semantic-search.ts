@@ -134,7 +134,7 @@ export class SemanticSearch {
 
     try {
       // 1. 精确匹配（优先级最高）
-      const exactMatches = await this.findExactTableMatches(query, limit);
+      const exactMatches = await this.findExactTableMatches(query, limit, options);
       if (exactMatches.length > 0) {
         this.saveToCache(this.searchCache, cacheKey, exactMatches);
         return exactMatches;
@@ -142,8 +142,8 @@ export class SemanticSearch {
 
       // 2. 并行执行关键词搜索和向量搜索
       const [keywordResults, vectorResults] = await Promise.all([
-        this.findFuzzyTableMatches(query, limit),
-        this.findVectorTableMatches(query, limit),
+        this.findFuzzyTableMatches(query, limit, options),
+        this.findVectorTableMatches(query, limit, options),
       ]);
 
       // 3. 合并结果
@@ -174,20 +174,37 @@ export class SemanticSearch {
    */
   private async findExactTableMatches(
     query: string,
-    limit: number
+    limit: number,
+    options: SearchOptions = {}
   ): Promise<TableSearchResult[]> {
+    // 构建 where 条件
+    const whereCondition: any = {
+      OR: [
+        { tableName: { equals: query } },
+        { tableName: { equals: query.toLowerCase() } },
+        { tableName: { equals: query.toUpperCase() } },
+      ],
+    };
+
+    // 如果指定了业务域，添加过滤条件
+    if (options.domainIds && options.domainIds.length > 0) {
+      whereCondition.database = {
+        domainId: {
+          in: options.domainIds,
+        },
+      };
+    }
+
     const tables = await this.prisma.tableMeta.findMany({
-      where: {
-        OR: [
-          { tableName: { equals: query } },
-          { tableName: { equals: query.toLowerCase() } },
-          { tableName: { equals: query.toUpperCase() } },
-        ],
-      },
+      where: whereCondition,
       // 懒加载优化：只加载数据库信息，不加载列数据
       // 列数据会在 context-builder 中按需加载
       include: {
-        database: true,
+        database: {
+          include: {
+            domain: true, // 包含业务域信息
+          },
+        },
       },
       take: limit,
     });
@@ -204,19 +221,34 @@ export class SemanticSearch {
    */
   private async findFuzzyTableMatches(
     query: string,
-    limit: number
+    limit: number,
+    options: SearchOptions = {}
   ): Promise<TableSearchResult[]> {
+    // 构建 where 条件
+    const whereCondition: any = {
+      OR: [
+        { tableName: { contains: query } },
+        { tableComment: { contains: query } },
+        { semanticDescription: { contains: query } },
+      ],
+    };
+
+    // 如果指定了业务域，添加过滤条件
+    if (options.domainIds && options.domainIds.length > 0) {
+      whereCondition.AND = [
+        { database: { domainId: { in: options.domainIds } } },
+      ];
+    }
+
     const tables = await this.prisma.tableMeta.findMany({
-      where: {
-        OR: [
-          { tableName: { contains: query } },
-          { tableComment: { contains: query } },
-          { semanticDescription: { contains: query } },
-        ],
-      },
+      where: whereCondition,
       // 懒加载优化：只加载数据库信息，不加载列数据
       include: {
-        database: true,
+        database: {
+          include: {
+            domain: true, // 包含业务域信息
+          },
+        },
       },
       take: limit * 2, // 多获取一些，后续过滤
     });
@@ -384,7 +416,8 @@ export class SemanticSearch {
    */
   private async findVectorTableMatches(
     query: string,
-    limit: number
+    limit: number,
+    options: SearchOptions = {}
   ): Promise<TableSearchResult[]> {
     if (!this.useVectorSearch || !this.vectorSearch) {
       return [];
@@ -401,12 +434,28 @@ export class SemanticSearch {
         .map(r => r.item.id)
         .filter(id => id !== undefined);
 
+      // 构建 where 条件
+      const whereCondition: any = {
+        id: { in: tableIds },
+      };
+
+      // 如果指定了业务域，添加过滤条件
+      if (options.domainIds && options.domainIds.length > 0) {
+        whereCondition.database = {
+          domainId: {
+            in: options.domainIds,
+          },
+        };
+      }
+
       const tables = await this.prisma.tableMeta.findMany({
-        where: {
-          id: { in: tableIds },
-        },
+        where: whereCondition,
         include: {
-          database: true,
+          database: {
+            include: {
+              domain: true, // 包含业务域信息
+            },
+          },
         },
       });
 

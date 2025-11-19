@@ -50,11 +50,18 @@ export default function Home() {
         {/* 高级功能区 */}
         <div className="mb-8">
           <h2 className="text-2xl font-semibold mb-4 text-center">高级功能</h2>
-          <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <a href="/relationships" className="card bg-base-100 shadow-xl hover:shadow-2xl transition-all">
               <div className="card-body">
                 <h3 className="card-title">关系图谱</h3>
                 <p className="text-sm opacity-70">可视化查看表关系和数据结构</p>
+              </div>
+            </a>
+
+            <a href="/metadata/domains" className="card bg-base-100 shadow-xl hover:shadow-2xl transition-all">
+              <div className="card-body">
+                <h3 className="card-title">业务域分配</h3>
+                <p className="text-sm opacity-70">为数据库智能分配业务域</p>
               </div>
             </a>
           </div>
@@ -96,6 +103,13 @@ export default function Home() {
               <div className="card-body">
                 <h3 className="card-title">系统健康</h3>
                 <p className="text-sm opacity-90">实时健康状态监控</p>
+              </div>
+            </a>
+
+            <a href="/admin/domains" className="card bg-gradient-to-br from-purple-500 to-purple-700 text-white shadow-xl hover:shadow-2xl transition-all">
+              <div className="card-body">
+                <h3 className="card-title">业务域管理</h3>
+                <p className="text-sm opacity-90">管理和配置业务域</p>
               </div>
             </a>
           </div>

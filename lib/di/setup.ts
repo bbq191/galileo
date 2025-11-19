@@ -189,6 +189,10 @@ export function setupDependencyInjection(): void {
   const { MetadataSyncService } = require('@/lib/metadata/sync/metadata-sync-service');
   registerSingleton(DI_TOKENS.MetadataSyncService, MetadataSyncService);
 
+  // 注册 DomainInferencer（业务域推断器）
+  const { DomainInferencer } = require('@/lib/metadata/inference/domain-inferencer');
+  registerSingleton(DI_TOKENS.DomainInferencer, DomainInferencer);
+
   // ==================== Phase 2.3: SQL 处理服务 ====================
 
   // 注册 ResultFormatter

@@ -103,6 +103,8 @@ export interface SearchOptions {
   includeSampleData?: boolean;
   /** 是否包含索引信息 */
   includeIndexes?: boolean;
+  /** 业务域过滤（按业务域 ID 列表） */
+  domainIds?: number[];
 }
 
 /**
