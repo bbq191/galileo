@@ -23,45 +23,7 @@ export const runtime = 'nodejs';
 import { NextRequest, NextResponse } from 'next/server';
 import { getQueryOrchestrator } from '@/lib/di/setup';
 import type { QueryOrchestrator } from '@/lib/di/orchestrators/query.orchestrator';
-
-export interface PreviewQueryRequest {
-  query: string;  // 自然语言查询
-}
-
-export interface PreviewQueryResponse {
-  success: boolean;
-  sql?: string;
-  explanation?: string;
-  confidence?: number;
-  intent?: {
-    type: string;
-    entities: any;
-  };
-  validation?: {
-    isValid: boolean;
-    errors?: Array<{
-      type: string;
-      message: string;
-    }>;
-    warnings?: Array<{
-      type: string;
-      message: string;
-    }>;
-    optimizationSuggestions?: Array<{
-      type: string;
-      message: string;
-      impact: string;
-    }>;
-    estimatedCost?: {
-      complexity: string;
-      rowsScanned?: number;
-      executionTimeMs?: number;
-    };
-  };
-  usedTables?: string[];
-  usedColumns?: string[];
-  error?: string;
-}
+import type { PreviewQueryRequest, PreviewQueryResponse } from '@/lib/api/types';
 
 export async function POST(request: NextRequest) {
   try {

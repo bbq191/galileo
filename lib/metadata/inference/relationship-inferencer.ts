@@ -33,6 +33,15 @@ export interface RelationshipInferencerConfig {
 
   /** 批量 AI 推断的批次大小 */
   aiBatchSize?: number;
+
+  /** 是否启用业务域约束 */
+  enableDomainConstraint?: boolean;
+
+  /** 是否允许跨业务域推断 */
+  crossDomain?: boolean;
+
+  /** 跨业务域推断的置信度惩罚系数 (0-1，值越小惩罚越大) */
+  crossDomainPenalty?: number;
 }
 
 /**
@@ -46,6 +55,9 @@ const DEFAULT_CONFIG: Required<RelationshipInferencerConfig> = {
   aiMinConfidence: 0.75,
   crossDatabase: true,
   aiBatchSize: 5,
+  enableDomainConstraint: true,
+  crossDomain: false,
+  crossDomainPenalty: 0.7,
 };
 
 /**
@@ -130,16 +142,28 @@ export class RelationshipInferencer {
             if (targetColumn) {
               checkedPairs++;
 
+              // 检查业务域约束
+              if (!this.checkDomainConstraint(sourceColumn, targetColumn)) {
+                continue;
+              }
+
               // 使用规则引擎验证
               const evaluation = this.config.enableRulesEngine
                 ? this.rulesEngine.evaluate(sourceColumn, targetColumn)
                 : { isRelated: true, confidence: analysis.confidence, reasoning: [], matchedRules: [] };
 
-              if (evaluation.isRelated && evaluation.confidence >= this.config.minConfidence) {
+              // 应用业务域置信度调整
+              const adjustedConfidence = this.applyDomainConfidenceAdjustment(
+                sourceColumn,
+                targetColumn,
+                evaluation.confidence
+              );
+
+              if (evaluation.isRelated && adjustedConfidence >= this.config.minConfidence) {
                 const relationship = this.createInferredRelationship(
                   sourceColumn,
                   targetColumn,
-                  evaluation.confidence,
+                  adjustedConfidence,
                   analysis.pattern?.description || '自引用关系',
                   'rule'
                 );
@@ -153,7 +177,7 @@ export class RelationshipInferencer {
                 });
 
                 console.log(
-                  `✓ 发现关系: ${sourceColumn.tableName}.${sourceColumn.columnName} → ${targetColumn.tableName}.${targetColumn.columnName} (自引用, 置信度: ${evaluation.confidence})`
+                  `✓ 发现关系: ${sourceColumn.tableName}.${sourceColumn.columnName} → ${targetColumn.tableName}.${targetColumn.columnName} (自引用, 置信度: ${adjustedConfidence.toFixed(2)})`
                 );
               }
             }
@@ -173,16 +197,28 @@ export class RelationshipInferencer {
               if (targetColumn) {
                 checkedPairs++;
 
+                // 检查业务域约束
+                if (!this.checkDomainConstraint(sourceColumn, targetColumn)) {
+                  continue;
+                }
+
                 // 使用规则引擎验证
                 const evaluation = this.config.enableRulesEngine
                   ? this.rulesEngine.evaluate(sourceColumn, targetColumn)
                   : { isRelated: true, confidence: analysis.confidence, reasoning: [], matchedRules: [] };
 
-                if (evaluation.isRelated && evaluation.confidence >= this.config.minConfidence) {
+                // 应用业务域置信度调整
+                const adjustedConfidence = this.applyDomainConfidenceAdjustment(
+                  sourceColumn,
+                  targetColumn,
+                  evaluation.confidence
+                );
+
+                if (evaluation.isRelated && adjustedConfidence >= this.config.minConfidence) {
                   const relationship = this.createInferredRelationship(
                     sourceColumn,
                     targetColumn,
-                    evaluation.confidence,
+                    adjustedConfidence,
                     analysis.pattern?.description || '命名模式匹配',
                     'rule'
                   );
@@ -196,7 +232,7 @@ export class RelationshipInferencer {
                   });
 
                   console.log(
-                    `✓ 发现关系: ${sourceColumn.tableName}.${sourceColumn.columnName} → ${targetColumn.tableName}.${targetColumn.columnName} (置信度: ${evaluation.confidence})`
+                    `✓ 发现关系: ${sourceColumn.tableName}.${sourceColumn.columnName} → ${targetColumn.tableName}.${targetColumn.columnName} (置信度: ${adjustedConfidence.toFixed(2)})`
                   );
                 }
               }
@@ -360,16 +396,28 @@ export class RelationshipInferencer {
                   if (targetColumn) {
                     checkedPairs++;
 
+                    // 检查业务域约束
+                    if (!this.checkDomainConstraint(sourceColumn, targetColumn)) {
+                      continue;
+                    }
+
                     // 使用规则引擎验证
                     const evaluation = this.config.enableRulesEngine
                       ? this.rulesEngine.evaluate(sourceColumn, targetColumn)
                       : { isRelated: true, confidence: analysis.confidence, reasoning: [], matchedRules: [] };
 
-                    if (evaluation.isRelated && evaluation.confidence >= this.config.minConfidence) {
+                    // 应用业务域置信度调整
+                    const adjustedConfidence = this.applyDomainConfidenceAdjustment(
+                      sourceColumn,
+                      targetColumn,
+                      evaluation.confidence
+                    );
+
+                    if (evaluation.isRelated && adjustedConfidence >= this.config.minConfidence) {
                       const relationship = this.createInferredRelationship(
                         sourceColumn,
                         targetColumn,
-                        evaluation.confidence,
+                        adjustedConfidence,
                         analysis.pattern?.description || '跨库命名模式匹配',
                         'rule'
                       );
@@ -382,7 +430,7 @@ export class RelationshipInferencer {
                       });
 
                       console.log(
-                        `✓ 跨库关系: ${sourceDbName}.${sourceColumn.tableName}.${sourceColumn.columnName} → ${targetDbName}.${targetColumn.tableName}.${targetColumn.columnName} (置信度: ${evaluation.confidence})`
+                        `✓ 跨库关系: ${sourceDbName}.${sourceColumn.tableName}.${sourceColumn.columnName} → ${targetDbName}.${targetColumn.tableName}.${targetColumn.columnName} (置信度: ${adjustedConfidence.toFixed(2)})`
                       );
                     }
                   }
@@ -540,6 +588,90 @@ export class RelationshipInferencer {
     ];
 
     return nonForeignKeyPatterns.some((pattern) => pattern.test(column.columnName));
+  }
+
+  /**
+   * 检查两个字段是否满足业务域约束
+   *
+   * @param sourceColumn - 源字段
+   * @param targetColumn - 目标字段
+   * @returns 如果满足约束返回 true，否则返回 false
+   */
+  private checkDomainConstraint(sourceColumn: ColumnInfo, targetColumn: ColumnInfo): boolean {
+    // 如果未启用业务域约束，直接返回 true
+    if (!this.config.enableDomainConstraint) {
+      return true;
+    }
+
+    // 如果字段没有业务域信息，允许推断（假设未分配业务域的数据库可以与任何域关联）
+    if (sourceColumn.domainId === undefined || targetColumn.domainId === undefined) {
+      return true;
+    }
+
+    // 如果两个字段都没有分配业务域（domainId 为 null），允许推断
+    if (sourceColumn.domainId === null && targetColumn.domainId === null) {
+      return true;
+    }
+
+    // 检查是否在同一业务域
+    const isSameDomain = sourceColumn.domainId === targetColumn.domainId;
+
+    // 如果在同一业务域，允许推断
+    if (isSameDomain) {
+      return true;
+    }
+
+    // 如果不在同一业务域，根据 crossDomain 配置决定
+    return this.config.crossDomain;
+  }
+
+  /**
+   * 应用业务域约束的置信度调整
+   *
+   * @param sourceColumn - 源字段
+   * @param targetColumn - 目标字段
+   * @param originalConfidence - 原始置信度
+   * @returns 调整后的置信度
+   */
+  private applyDomainConfidenceAdjustment(
+    sourceColumn: ColumnInfo,
+    targetColumn: ColumnInfo,
+    originalConfidence: number
+  ): number {
+    // 如果未启用业务域约束，返回原始置信度
+    if (!this.config.enableDomainConstraint) {
+      return originalConfidence;
+    }
+
+    // 如果字段没有业务域信息，返回原始置信度
+    if (sourceColumn.domainId === undefined || targetColumn.domainId === undefined) {
+      return originalConfidence;
+    }
+
+    // 如果两个字段都没有分配业务域，返回原始置信度
+    if (sourceColumn.domainId === null && targetColumn.domainId === null) {
+      return originalConfidence;
+    }
+
+    // 检查是否在同一业务域
+    const isSameDomain = sourceColumn.domainId === targetColumn.domainId;
+
+    // 如果在同一业务域，返回原始置信度
+    if (isSameDomain) {
+      return originalConfidence;
+    }
+
+    // 跨业务域：应用惩罚系数
+    if (this.config.crossDomain) {
+      const adjustedConfidence = originalConfidence * this.config.crossDomainPenalty;
+      console.log(
+        `  跨域惩罚: ${sourceColumn.domainName || sourceColumn.domainId} -> ${targetColumn.domainName || targetColumn.domainId}, 置信度 ${originalConfidence.toFixed(2)} -> ${adjustedConfidence.toFixed(2)}`
+      );
+      return adjustedConfidence;
+    }
+
+    // 不允许跨域且不在同一域，返回 0（这种情况不应该发生，因为 checkDomainConstraint 已经过滤了）
+    return 0;
   }
 
   /**

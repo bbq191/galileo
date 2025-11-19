@@ -98,34 +98,51 @@ export interface GetRelationshipGraphResponse {
   metadata: GraphMetadata;
 }
 
+/**
+ * 关系图谱节点
+ */
 export interface GraphNode {
-  id: number;
-  label: string;
-  type: 'table';
-  databaseId: number;
-  databaseName: string;
+  /** 表 ID */
   tableId: number;
+  /** 表名 */
+  tableName: string;
+  /** 数据库名 */
+  databaseName: string;
+  /** 出度（指向其他表的关系数） */
+  outDegree: number;
+  /** 入度（被其他表指向的关系数） */
+  inDegree: number;
 }
 
+/**
+ * 关系图谱边
+ */
 export interface GraphEdge {
-  id: string;
-  source: number;
-  target: number;
-  type: 'explicit' | 'inferred';
-  relationshipType: 'one-to-one' | 'one-to-many' | 'many-to-many';
-  confidence?: number;
+  /** 源表 ID */
+  sourceTableId: number;
+  /** 目标表 ID */
+  targetTableId: number;
+  /** 源字段 */
   sourceColumn: string;
+  /** 目标字段 */
   targetColumn: string;
-  isVerified?: boolean;
+  /** 置信度 */
+  confidence: number;
+  /** 关系类型 */
+  type: 'explicit' | 'inferred' | 'verified';
+  /** 关系模式 */
+  relationshipType: 'one-to-one' | 'one-to-many' | 'many-to-many';
 }
 
+/**
+ * 关系图谱元数据
+ */
 export interface GraphMetadata {
   nodeCount: number;
   edgeCount: number;
-  explicitEdgeCount: number;
-  inferredEdgeCount: number;
-  depth: number;
-  centerTableId: number | null;
+  avgDegree: number;
+  maxInDegree: number;
+  maxOutDegree: number;
 }
 
 /**
@@ -136,4 +153,215 @@ export interface VerifyRelationshipRequest {
   verified: boolean;
   verifiedBy?: string;
   action?: 'verify' | 'reject' | 'convert';
+}
+
+// ==================== 查询相关类型 ====================
+
+/**
+ * 查询执行请求
+ */
+export interface ExecuteQueryRequest {
+  query: string;  // 自然语言查询
+  options?: {
+    enableCache?: boolean;
+    maxRows?: number;
+    timeout?: number;
+  };
+}
+
+/**
+ * 查询执行响应
+ */
+export interface ExecuteQueryResponse {
+  success: boolean;
+  data?: any[];
+  metadata?: {
+    generatedSQL: string;
+    explanation: string;
+    rowCount: number;
+    executionTime: number;
+    fromCache: boolean;
+    columns: Array<{
+      name: string;
+      type: string;
+    }>;
+  };
+  warnings?: string[];
+  optimizationSuggestions?: Array<{
+    type: string;
+    message: string;
+    impact: string;
+  }>;
+  error?: string;
+  errors?: Array<{
+    type: string;
+    message: string;
+  }>;
+}
+
+/**
+ * SQL 预览请求
+ */
+export interface PreviewQueryRequest {
+  query: string;  // 自然语言查询
+}
+
+/**
+ * SQL 预览响应
+ */
+export interface PreviewQueryResponse {
+  success: boolean;
+  sql?: string;
+  explanation?: string;
+  confidence?: number;
+  intent?: {
+    type: string;
+    entities: any;
+  };
+  validation?: {
+    isValid: boolean;
+    errors?: Array<{
+      type: string;
+      message: string;
+    }>;
+    warnings?: Array<{
+      type: string;
+      message: string;
+    }>;
+    optimizationSuggestions?: Array<{
+      type: string;
+      message: string;
+      impact: string;
+    }>;
+    estimatedCost?: {
+      complexity: string;
+      rowsScanned?: number;
+      executionTimeMs?: number;
+    };
+  };
+  usedTables?: string[];
+  usedColumns?: string[];
+  error?: string;
+}
+
+/**
+ * 查询历史响应
+ */
+export interface QueryHistoryResponse {
+  success: boolean;
+  data?: Array<{
+    id: number;
+    naturalLanguageQuery: string;
+    generatedSQL: string;
+    executionSuccess: boolean;
+    rowCount?: number;
+    executionTime: number;
+    timestamp: string;
+  }>;
+  pagination?: {
+    page: number;
+    limit: number;
+    totalCount: number;
+    totalPages: number;
+  };
+  error?: string;
+}
+
+/**
+ * 查询详情响应
+ */
+export interface QueryDetailResponse {
+  success: boolean;
+  data?: {
+    id: number;
+    userId?: string;
+    userName?: string;
+    sessionId: string;
+    naturalLanguageQuery: string;
+    intent: any;
+    generatedSQL: string;
+    executionResult: {
+      success: boolean;
+      rowCount?: number;
+      error?: string;
+    };
+    metadata: {
+      usedDatabases: string[];
+      usedTables: string[];
+      usedColumns: string[];
+    };
+    performance: {
+      intentRecognitionTime: number;
+      sqlGenerationTime: number;
+      validationTime: number;
+      executionTime: number;
+      totalTime: number;
+    };
+    timestamp: string;
+    ipAddress?: string;
+    userAgent?: string;
+  };
+  error?: string;
+}
+
+// ==================== 审计相关类型 ====================
+
+/**
+ * 审计日志响应
+ */
+export interface AuditLogsResponse {
+  success: boolean;
+  data?: Array<{
+    id: number;
+    userId?: string;
+    userName?: string;
+    sessionId: string;
+    naturalLanguageQuery: string;
+    generatedSQL: string;
+    executionSuccess: boolean;
+    executionError?: string;
+    rowCount?: number;
+    usedDatabases: string[];
+    usedTables: string[];
+    performance: {
+      intentRecognitionTime: number;
+      sqlGenerationTime: number;
+      validationTime: number;
+      executionTime: number;
+      totalTime: number;
+    };
+    timestamp: string;
+    ipAddress?: string;
+  }>;
+  pagination?: {
+    page: number;
+    limit: number;
+    totalCount: number;
+    totalPages: number;
+  };
+  error?: string;
+}
+
+/**
+ * 审计统计响应
+ */
+export interface AuditStatsResponse {
+  success: boolean;
+  data?: {
+    overview: {
+      totalQueries: number;
+      successQueries: number;
+      failedQueries: number;
+      successRate: number;
+      avgExecutionTime: number;
+    };
+    anomalies?: Array<{
+      type: string;
+      severity: string;
+      description: string;
+      count: number;
+      details?: any;
+    }>;
+  };
+  error?: string;
 }

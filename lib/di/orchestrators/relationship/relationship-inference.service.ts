@@ -486,6 +486,10 @@ export class RelationshipInferenceService {
         enableAIInference: options.enableAI ?? true,
         crossDatabase: options.crossDatabase ?? true,
         enableShardOptimization,
+        // 业务域约束配置
+        enableDomainConstraint: process.env.ENABLE_DOMAIN_CONSTRAINT !== 'false', // 默认启用
+        crossDomain: process.env.ALLOW_CROSS_DOMAIN_INFERENCE === 'true', // 默认关闭
+        crossDomainPenalty: parseFloat(process.env.CROSS_DOMAIN_PENALTY || '0.7'),
       };
 
       const inferencer = new ShardAwareRelationshipInferencer(config);

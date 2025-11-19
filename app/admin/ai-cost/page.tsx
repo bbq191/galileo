@@ -3,35 +3,50 @@
 import { useState, useEffect } from 'react';
 
 /**
- * AI成本统计数据类型
+ * AI成本统计数据类型（匹配后端返回结构）
  */
 interface AICostStatistics {
-  totalCost: number;
-  totalTokens: number;
-  totalRequests: number;
-  avgCostPerRequest: number;
-  avgTokensPerRequest: number;
-  providerBreakdown?: Array<{
-    provider: string;
-    model: string;
-    requests: number;
-    inputTokens: number;
-    outputTokens: number;
+  period: {
+    start: Date;
+    end: Date;
+  };
+  totalCalls: number;
+  successCalls: number;
+  failedCalls: number;
+  cachedCalls: number;
+  cacheHitRate: number;
+  tokens: {
+    totalPromptTokens: number;
+    totalCompletionTokens: number;
     totalTokens: number;
+  };
+  costs: {
+    totalPromptCost: number;
+    totalCompletionCost: number;
+    totalCost: number;
+  };
+  byType: Record<string, {
+    calls: number;
+    tokens: number;
     cost: number;
   }>;
+  avgLatency: number;
 }
 
 /**
- * Prompt缓存统计类型
+ * Prompt缓存统计类型（匹配后端返回结构）
  */
 interface PromptCacheStats {
   totalEntries: number;
-  totalSize: number;
+  byType: Record<string, {
+    count: number;
+    hits: number;
+    tokensSaved: number;
+  }>;
+  totalTokensSaved: number;
   hitRate: number;
-  avgSimilarity: number;
-  recentHits?: number;
-  recentMisses?: number;
+  sizeBytes: number;
+  lastUpdated: string;
 }
 
 /**
@@ -308,57 +323,51 @@ export default function AICostPage() {
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mt-4">
                   <div className="stat bg-base-200 rounded-lg">
                     <div className="stat-title">总成本</div>
-                    <div className="stat-value text-primary text-2xl">{formatCurrency(costStats.totalCost)}</div>
+                    <div className="stat-value text-primary text-2xl">{formatCurrency(costStats.costs.totalCost)}</div>
                   </div>
                   <div className="stat bg-base-200 rounded-lg">
                     <div className="stat-title">总Token数</div>
-                    <div className="stat-value text-2xl">{formatNumber(costStats.totalTokens)}</div>
+                    <div className="stat-value text-2xl">{formatNumber(costStats.tokens.totalTokens)}</div>
                   </div>
                   <div className="stat bg-base-200 rounded-lg">
                     <div className="stat-title">总请求数</div>
-                    <div className="stat-value text-2xl">{costStats.totalRequests}</div>
+                    <div className="stat-value text-2xl">{costStats.totalCalls}</div>
                   </div>
                   <div className="stat bg-base-200 rounded-lg">
                     <div className="stat-title">平均每请求成本</div>
-                    <div className="stat-value text-sm">{formatCurrency(costStats.avgCostPerRequest)}</div>
+                    <div className="stat-value text-sm">{formatCurrency(costStats.totalCalls > 0 ? costStats.costs.totalCost / costStats.totalCalls : 0)}</div>
                   </div>
                   <div className="stat bg-base-200 rounded-lg">
                     <div className="stat-title">平均每请求Token</div>
-                    <div className="stat-value text-2xl">{formatNumber(costStats.avgTokensPerRequest)}</div>
+                    <div className="stat-value text-2xl">{formatNumber(costStats.totalCalls > 0 ? costStats.tokens.totalTokens / costStats.totalCalls : 0)}</div>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* 供应商分解 */}
-            {costStats.providerBreakdown && costStats.providerBreakdown.length > 0 && (
+            {/* 按类型统计 */}
+            {costStats.byType && Object.keys(costStats.byType).length > 0 && (
               <div className="card bg-base-100 shadow-xl">
                 <div className="card-body">
-                  <h2 className="card-title">模型使用详情</h2>
+                  <h2 className="card-title">AI调用类型详情</h2>
 
                   <div className="overflow-x-auto mt-4">
                     <table className="table table-zebra">
                       <thead>
                         <tr>
-                          <th>供应商</th>
-                          <th>模型</th>
-                          <th>请求数</th>
-                          <th>输入Token</th>
-                          <th>输出Token</th>
+                          <th>类型</th>
+                          <th>调用次数</th>
                           <th>总Token</th>
                           <th>成本</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {costStats.providerBreakdown.map((item, index) => (
-                          <tr key={index}>
-                            <td>{item.provider}</td>
-                            <td className="font-mono text-xs">{item.model}</td>
-                            <td>{item.requests}</td>
-                            <td>{formatNumber(item.inputTokens)}</td>
-                            <td>{formatNumber(item.outputTokens)}</td>
-                            <td className="font-bold">{formatNumber(item.totalTokens)}</td>
-                            <td className="text-primary font-bold">{formatCurrency(item.cost)}</td>
+                        {Object.entries(costStats.byType).map(([type, stats]) => (
+                          <tr key={type}>
+                            <td className="font-mono text-xs">{type}</td>
+                            <td>{stats.calls}</td>
+                            <td className="font-bold">{formatNumber(stats.tokens)}</td>
+                            <td className="text-primary font-bold">{formatCurrency(stats.cost)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -402,7 +411,7 @@ export default function AICostPage() {
                 <div className="stat bg-base-200 rounded-lg">
                   <div className="stat-title">总大小</div>
                   <div className="stat-value text-2xl">
-                    {(promptCacheStats.totalSize / 1024).toFixed(2)}KB
+                    {(promptCacheStats.sizeBytes / 1024).toFixed(2)}KB
                   </div>
                 </div>
                 <div className="stat bg-base-200 rounded-lg">
@@ -412,9 +421,9 @@ export default function AICostPage() {
                   </div>
                 </div>
                 <div className="stat bg-base-200 rounded-lg">
-                  <div className="stat-title">平均相似度</div>
+                  <div className="stat-title">节省Token数</div>
                   <div className="stat-value text-2xl">
-                    {(promptCacheStats.avgSimilarity * 100).toFixed(1)}%
+                    {formatNumber(promptCacheStats.totalTokensSaved)}
                   </div>
                 </div>
               </div>

@@ -17,9 +17,18 @@
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getContainer } from '@/lib/di/container';
-import { DI_TOKENS } from '@/lib/di/tokens';
 import type { PromptCacheManager } from '@/lib/ai/prompt-cache-manager';
+
+// 延迟导入以避免循环依赖
+function getService(): PromptCacheManager {
+  const { getContainer } = require('@/lib/di/container');
+  const { DI_TOKENS } = require('@/lib/di/tokens');
+  // 确保 DI 容器已初始化
+  require('@/lib/di/setup');
+
+  const container = getContainer();
+  return container.resolve(DI_TOKENS.PromptCacheManager) as PromptCacheManager;
+}
 
 /**
  * GET /api/ai/prompt-cache
@@ -31,8 +40,7 @@ import type { PromptCacheManager } from '@/lib/ai/prompt-cache-manager';
  */
 export async function GET(request: NextRequest) {
   try {
-    const container = getContainer();
-    const promptCache = container.resolve<PromptCacheManager>(DI_TOKENS.PromptCacheManager);
+    const promptCache = getService();
 
     const stats = await promptCache.getStats();
     const runtimeStats = promptCache.getRuntimeStats();
@@ -72,8 +80,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const container = getContainer();
-    const promptCache = container.resolve<PromptCacheManager>(DI_TOKENS.PromptCacheManager);
+    const promptCache = getService();
 
     const body = await request.json();
     const { minAccessCount, maxAge, minSimilarity } = body;
@@ -112,8 +119,7 @@ export async function POST(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const container = getContainer();
-    const promptCache = container.resolve<PromptCacheManager>(DI_TOKENS.PromptCacheManager);
+    const promptCache = getService();
 
     await promptCache.clear();
 

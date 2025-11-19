@@ -17,10 +17,19 @@
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getContainer } from '@/lib/di/container';
-import { DI_TOKENS } from '@/lib/di/tokens';
 import type { AICostTracker } from '@/lib/ai/ai-cost-tracker';
 import { withAiRateLimit } from '@/lib/security/api-rate-limit-middleware';
+
+// 延迟导入以避免循环依赖
+function getService(): AICostTracker {
+  const { getContainer } = require('@/lib/di/container');
+  const { DI_TOKENS } = require('@/lib/di/tokens');
+  // 确保 DI 容器已初始化
+  require('@/lib/di/setup');
+
+  const container = getContainer();
+  return container.resolve(DI_TOKENS.AICostTracker) as AICostTracker;
+}
 
 /**
  * GET /api/ai/cost
@@ -38,8 +47,7 @@ import { withAiRateLimit } from '@/lib/security/api-rate-limit-middleware';
  */
 export const GET = withAiRateLimit(async (request: Request) => {
   try {
-    const container = getContainer();
-    const costTracker = container.resolve<AICostTracker>(DI_TOKENS.AICostTracker);
+    const costTracker = getService();
 
     const { searchParams } = new URL(request.url);
     const period = searchParams.get('period') || 'day';
@@ -122,8 +130,7 @@ export const GET = withAiRateLimit(async (request: Request) => {
  */
 export const POST = withAiRateLimit(async (request: Request) => {
   try {
-    const container = getContainer();
-    const costTracker = container.resolve<AICostTracker>(DI_TOKENS.AICostTracker);
+    const costTracker = getService();
 
     const { searchParams } = new URL(request.url);
     const period = searchParams.get('period') as 'day' | 'week' | 'month';

@@ -30,6 +30,7 @@ import { validateOrRespond } from '@/lib/validation/validator';
 import { sanitizeError, ErrorCategory } from '@/lib/security/error-sanitizer';
 import { extractColumnsFromSQL } from '@/lib/sql/parser/column-extractor';
 import { withQueryRateLimit } from '@/lib/security/api-rate-limit-middleware';
+import type { ExecuteQueryRequest, ExecuteQueryResponse } from '@/lib/api/types';
 
 /**
  * 从 SQL 提取使用的列名
@@ -48,42 +49,6 @@ async function extractUsedColumns(sql: string): Promise<string[]> {
     console.warn('[extractUsedColumns] 提取失败:', error);
     return [];
   }
-}
-
-export interface ExecuteQueryRequest {
-  query: string;  // 自然语言查询
-  options?: {
-    enableCache?: boolean;
-    maxRows?: number;
-    timeout?: number;
-  };
-}
-
-export interface ExecuteQueryResponse {
-  success: boolean;
-  data?: any[];
-  metadata?: {
-    generatedSQL: string;
-    explanation: string;
-    rowCount: number;
-    executionTime: number;
-    fromCache: boolean;
-    columns: Array<{
-      name: string;
-      type: string;
-    }>;
-  };
-  warnings?: string[];
-  optimizationSuggestions?: Array<{
-    type: string;
-    message: string;
-    impact: string;
-  }>;
-  error?: string;
-  errors?: Array<{
-    type: string;
-    message: string;
-  }>;
 }
 
 /**

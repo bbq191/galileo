@@ -24,29 +24,12 @@ export const runtime = 'nodejs';
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuditOrchestrator } from '@/lib/di/setup';
 import { safeServerErrorResponse } from '@/lib/api/response';
-
-export interface QueryHistoryResponse {
-  success: boolean;
-  data?: Array<{
-    id: number;
-    naturalLanguageQuery: string;
-    generatedSQL: string;
-    executionSuccess: boolean;
-    rowCount?: number;
-    executionTime: number;
-    timestamp: string;
-  }>;
-  pagination?: {
-    page: number;
-    limit: number;
-    totalCount: number;
-    totalPages: number;
-  };
-  error?: string;
-}
+import type { QueryHistoryResponse } from '@/lib/api/types';
 
 export async function GET(request: NextRequest) {
   try {
+    console.log('[Query History] API called');
+
     // 解析查询参数
     const searchParams = request.nextUrl.searchParams;
     const userId = searchParams.get('userId');
@@ -59,7 +42,15 @@ export async function GET(request: NextRequest) {
     console.log(`[Query History] Fetching history: page=${page}, limit=${limit}`);
 
     // 使用 AuditOrchestrator 获取查询历史
-    const auditOrchestrator = getAuditOrchestrator();
+    let auditOrchestrator;
+    try {
+      auditOrchestrator = getAuditOrchestrator();
+      console.log(`[Query History] AuditOrchestrator obtained:`, !!auditOrchestrator);
+    } catch (diError: any) {
+      console.error('[Query History] Failed to get AuditOrchestrator:', diError);
+      throw new Error(`DI 容器初始化失败: ${diError.message}`);
+    }
+
     const result = await auditOrchestrator.getQueryHistory({
       userId: userId || undefined,
       page,
@@ -69,16 +60,25 @@ export async function GET(request: NextRequest) {
       endDate: endDate ? new Date(endDate) : undefined,
     });
 
-    // 格式化返回数据
-    const formattedData = result.data.map(log => ({
-      id: log.id || 0,
-      naturalLanguageQuery: log.naturalLanguageQuery,
-      generatedSQL: log.generatedSQL,
-      executionSuccess: log.executionResult.success,
-      rowCount: log.executionResult.rowCount,
-      executionTime: log.performance.executionTime,
-      timestamp: log.timestamp.toISOString(),
-    }));
+    console.log(`[Query History] Result obtained, data length:`, result.data.length);
+
+    // 格式化返回数据 - 增加安全检查
+    const formattedData = result.data.map(log => {
+      // 确保 timestamp 是 Date 对象
+      const timestamp = log.timestamp instanceof Date
+        ? log.timestamp
+        : new Date(log.timestamp);
+
+      return {
+        id: log.id || 0,
+        naturalLanguageQuery: log.naturalLanguageQuery,
+        generatedSQL: log.generatedSQL,
+        executionSuccess: log.executionResult.success,
+        rowCount: log.executionResult.rowCount,
+        executionTime: log.performance.executionTime,
+        timestamp: timestamp.toISOString(),
+      };
+    });
 
     console.log(`[Query History] Retrieved ${formattedData.length} history entries`);
 
@@ -90,12 +90,17 @@ export async function GET(request: NextRequest) {
 
   } catch (error: any) {
     console.error('[Query History] Error:', error);
+    console.error('[Query History] Error stack:', error?.stack);
 
     return safeServerErrorResponse(
       error instanceof Error ? error : new Error('获取查询历史失败'),
       {
         context: 'query-history-get',
-        metadata: { operation: 'get_query_history' },
+        metadata: {
+          operation: 'get_query_history',
+          errorMessage: error?.message,
+          errorName: error?.name,
+        },
       }
     );
   }

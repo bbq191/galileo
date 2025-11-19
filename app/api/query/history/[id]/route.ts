@@ -19,47 +19,17 @@
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma/client';
-
-export interface QueryDetailResponse {
-  success: boolean;
-  data?: {
-    id: number;
-    userId?: string;
-    userName?: string;
-    sessionId: string;
-    naturalLanguageQuery: string;
-    intent: any;
-    generatedSQL: string;
-    executionResult: {
-      success: boolean;
-      rowCount?: number;
-      error?: string;
-    };
-    metadata: {
-      usedDatabases: string[];
-      usedTables: string[];
-      usedColumns: string[];
-    };
-    performance: {
-      intentRecognitionTime: number;
-      sqlGenerationTime: number;
-      validationTime: number;
-      executionTime: number;
-      totalTime: number;
-    };
-    timestamp: string;
-    ipAddress?: string;
-    userAgent?: string;
-  };
-  error?: string;
-}
+import { getPrismaClient } from '@/lib/di/setup';
+import { safeServerErrorResponse } from '@/lib/api/response';
+import type { QueryDetailResponse } from '@/lib/api/types';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
+    console.log('[Query Detail] API called with ID:', params.id);
+
     const id = parseInt(params.id, 10);
 
     if (isNaN(id)) {
@@ -71,10 +41,16 @@ export async function GET(
 
     console.log(`[Query Detail] Fetching detail for ID: ${id}`);
 
+    // 获取 Prisma 客户端
+    const prisma = getPrismaClient();
+    console.log('[Query Detail] Prisma client obtained:', !!prisma);
+
     // 查询审计日志
     const log = await prisma.queryAuditLog.findUnique({
       where: { id: BigInt(id) },
     });
+
+    console.log('[Query Detail] Query result:', !!log);
 
     if (!log) {
       return NextResponse.json({
@@ -83,7 +59,7 @@ export async function GET(
       } as QueryDetailResponse, { status: 404 });
     }
 
-    // 格式化返回数据
+    // 格式化返回数据 - 添加安全检查
     const data = {
       id: Number(log.id),
       userId: log.userId || undefined,
@@ -109,10 +85,12 @@ export async function GET(
         executionTime: log.executionTime,
         totalTime: log.totalTime,
       },
-      timestamp: log.timestamp.toISOString(),
+      timestamp: (log.timestamp instanceof Date ? log.timestamp : new Date(log.timestamp)).toISOString(),
       ipAddress: log.ipAddress || undefined,
       userAgent: log.userAgent || undefined,
     };
+
+    console.log('[Query Detail] Successfully formatted data for ID:', id);
 
     return NextResponse.json({
       success: true,
@@ -121,10 +99,19 @@ export async function GET(
 
   } catch (error: any) {
     console.error('[Query Detail] Error:', error);
+    console.error('[Query Detail] Error stack:', error?.stack);
 
-    return NextResponse.json({
-      success: false,
-      error: error.message || '获取查询详情失败',
-    } as QueryDetailResponse, { status: 500 });
+    return safeServerErrorResponse(
+      error instanceof Error ? error : new Error('获取查询详情失败'),
+      {
+        context: 'query-detail-get',
+        metadata: {
+          operation: 'get_query_detail',
+          errorMessage: error?.message,
+          errorName: error?.name,
+          id: params.id,
+        },
+      }
+    );
   }
 }

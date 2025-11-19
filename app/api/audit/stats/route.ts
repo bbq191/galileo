@@ -22,27 +22,7 @@ export const runtime = 'nodejs';
 import { NextRequest, NextResponse } from 'next/server';
 import { safeServerErrorResponse } from '@/lib/api/response';
 import { getAuditOrchestrator } from '@/lib/di/setup';
-
-export interface AuditStatsResponse {
-  success: boolean;
-  data?: {
-    overview: {
-      totalQueries: number;
-      successQueries: number;
-      failedQueries: number;
-      successRate: number;
-      avgExecutionTime: number;
-    };
-    anomalies?: Array<{
-      type: string;
-      severity: string;
-      description: string;
-      count: number;
-      details?: any;
-    }>;
-  };
-  error?: string;
-}
+import type { AuditStatsResponse } from '@/lib/api/types';
 
 export async function GET(request: NextRequest) {
   try {
