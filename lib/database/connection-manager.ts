@@ -229,11 +229,18 @@ class ConnectionManager {
     await pool.close();
     this.pools.delete(id);
 
-    // 更新数据库状态
-    await this.prisma.dataSource.update({
-      where: { id: parseInt(id) },
-      data: { status: 'inactive' },
+    // 检查数据源记录是否存在后再更新状态
+    const dataSourceId = parseInt(id);
+    const dataSource = await this.prisma.dataSource.findUnique({
+      where: { id: dataSourceId },
     });
+
+    if (dataSource) {
+      await this.prisma.dataSource.update({
+        where: { id: dataSourceId },
+        data: { status: 'inactive' },
+      });
+    }
 
     console.log(`✓ 连接 ${id} 已关闭`);
   }
@@ -342,10 +349,24 @@ class ConnectionManager {
         try {
           const health = await pool.healthCheck();
 
+          // 检查数据源记录是否存在
+          const dataSourceId = parseInt(id);
+          const dataSource = await this.prisma.dataSource.findUnique({
+            where: { id: dataSourceId },
+          });
+
+          if (!dataSource) {
+            // 数据源记录已被删除，从连接池中移除
+            this.logger.warn(`数据源 ${id} 已不存在，正在移除连接池`);
+            await pool.close();
+            this.pools.delete(id);
+            continue;
+          }
+
           // 更新数据库状态
           const status = health.healthy ? 'active' : 'error';
           await this.prisma.dataSource.update({
-            where: { id: parseInt(id) },
+            where: { id: dataSourceId },
             data: { status },
           });
 

@@ -60,7 +60,9 @@ export class AIGenerator extends BasePipelineStage {
 
     if (!prompt) {
       this.log(context, "未找到预构建的 Prompt，重新构建...", "info");
-      prompt = this.buildSQLGenerationPrompt(intent, metadata);
+      // 🆕 获取业务域推断结果（如果有）
+      const domainInference = context.additionalData.domainInference;
+      prompt = this.buildSQLGenerationPrompt(intent, metadata, domainInference);
       context.additionalData.sqlGenerationPrompt = prompt;
     }
 
@@ -166,10 +168,18 @@ export class AIGenerator extends BasePipelineStage {
 
   /**
    * 构建 SQL 生成 Prompt（简化版本，与 PromptCacheChecker 保持一致）
+   *
+   * @author xusy
    */
   private buildSQLGenerationPrompt(
     intent: PipelineContext["intent"],
-    metadata: PipelineContext["metadata"]
+    metadata: PipelineContext["metadata"],
+    domainInference?: {
+      domainId: number;
+      domainName: string;
+      confidence: number;
+      matchedKeywords: string[];
+    }
   ): string {
     // 构建表结构描述
     const tableSchemas = metadata.tables
@@ -218,11 +228,16 @@ ${t.columns
     // 描述查询条件
     const conditionsDesc = this.describeConditions(intent.conditions);
 
+    // 🆕 构建业务域上下文（如果有）
+    const { buildDomainContextSection } = require('../../prompts/sql-prompts');
+    const domainContext = buildDomainContextSection(domainInference);
+
     return `
 ## 用户查询意图
 
 ${intentDesc}
 
+${domainContext ? `\n${domainContext}\n` : ''}
 ## 可用的数据库表和字段
 
 ${tableSchemas}

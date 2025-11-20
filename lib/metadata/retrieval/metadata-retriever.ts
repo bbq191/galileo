@@ -52,7 +52,16 @@ export class MetadataRetriever {
       throw new Error('未找到相关的表');
     }
 
-    // 2. 构建元数据上下文
+    // 2. 🆕 如果有业务域推断结果，应用业务域加权
+    if (options.domainInference) {
+      console.log(`应用业务域加权: ${options.domainInference.domainName}`);
+      this.applyDomainBoost(tables, options.domainInference);
+
+      // 重新排序
+      tables.sort((a, b) => b.score - a.score);
+    }
+
+    // 3. 构建元数据上下文
     const context = await this.contextBuilder.buildMetadataContext(
       tables.map(r => r.table),
       {
@@ -289,6 +298,40 @@ export class MetadataRetriever {
         };
       }
     );
+  }
+
+  /**
+   * 🆕 应用业务域加权
+   *
+   * 为匹配业务域的表提升得分，优化表选择准确性
+   *
+   * @author xusy
+   */
+  private applyDomainBoost(
+    tables: Array<{ table: any; score: number }>,
+    domainInference: { domainId: number; domainName: string; confidence: number }
+  ): void {
+    for (const result of tables) {
+      // 如果表属于推断的业务域，提升得分
+      if (result.table.database?.domainId === domainInference.domainId) {
+        const boost = 0.3 * domainInference.confidence;
+        result.score += boost;
+
+        console.log(
+          `[MetadataRetriever] 表 ${result.table.tableName} 业务域匹配，得分 +${boost.toFixed(2)} (${(result.score - boost).toFixed(2)} → ${result.score.toFixed(2)})`
+        );
+      }
+
+      // 如果表有高优先级，额外加分
+      if (result.table.semanticPriority && result.table.semanticPriority >= 4) {
+        const priorityBoost = 0.1;
+        result.score += priorityBoost;
+
+        console.log(
+          `[MetadataRetriever] 表 ${result.table.tableName} 高优先级 (${result.table.semanticPriority})，得分 +${priorityBoost.toFixed(2)}`
+        );
+      }
+    }
   }
 
   /**

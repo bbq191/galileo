@@ -9,16 +9,34 @@ datasource db {
 }
 
 model BusinessDomain {
-  id          Int            @id @default(autoincrement())
-  name        String         @unique @db.VarChar(100)
-  description String?        @db.Text
-  ownerTeam   String?        @map("owner_team") @db.VarChar(100)
-  createdAt   DateTime       @default(now()) @map("created_at")
-  updatedAt   DateTime       @updatedAt @map("updated_at")
+  id          Int                     @id @default(autoincrement())
+  name        String                  @unique @db.VarChar(100)
+  description String?                 @db.Text
+  ownerTeam   String?                 @map("owner_team") @db.VarChar(100)
+  createdAt   DateTime                @default(now()) @map("created_at")
+  updatedAt   DateTime                @updatedAt @map("updated_at")
   databases   DatabaseMeta[]
+  keywords    BusinessDomainKeyword[]
 
   @@index([name])
   @@map("business_domains")
+}
+
+/// 业务域关键词配置表
+/// 用于查询业务域推断时的关键词匹配
+model BusinessDomainKeyword {
+  id        Int            @id @default(autoincrement())
+  domainId  Int            @map("domain_id")
+  keyword   String         @db.VarChar(50)
+  weight    Float          @default(1.0) @db.Float
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+  domain    BusinessDomain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@unique([domainId, keyword])
+  @@index([domainId])
+  @@index([keyword])
+  @@map("business_domain_keywords")
 }
 
 model DataSource {

@@ -48,11 +48,13 @@ export const DI_TOKENS = {
   MetadataRetriever: Symbol.for('MetadataRetriever'),
   MetadataCollector: Symbol.for('MetadataCollector'),
   DomainInferencer: Symbol.for('DomainInferencer'),
+  DomainDiscoverer: Symbol.for('DomainDiscoverer'),
 
   // SQL 处理
   IntentRecognizer: Symbol.for('IntentRecognizer'),
   EntityResolver: Symbol.for('EntityResolver'),
   TimeParser: Symbol.for('TimeParser'),
+  QueryDomainInferencer: Symbol.for('QueryDomainInferencer'),
   SQLGenerator: Symbol.for('SQLGenerator'),
   CrossDatabaseHandler: Symbol.for('CrossDatabaseHandler'),
   SQLValidator: Symbol.for('SQLValidator'),

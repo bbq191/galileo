@@ -490,3 +490,35 @@ ${pattern.tableList.map(t => `- \`${t}\``).join('\n')}
 
   return SHARDING_TABLE_PROMPT_ADDITION + '\n\n' + shardingInfo;
 }
+
+/**
+ * 🆕 构建业务域上下文部分
+ *
+ * @author xusy
+ */
+export function buildDomainContextSection(domainInference?: {
+  domainId: number;
+  domainName: string;
+  confidence: number;
+  matchedKeywords: string[];
+}): string {
+  if (!domainInference) {
+    return '';
+  }
+
+  return `
+## 业务上下文
+
+当前查询推断属于 **"${domainInference.domainName}"** 业务域 (置信度: ${(domainInference.confidence * 100).toFixed(0)}%)。
+
+**重要提示**:
+- 优先使用属于 "${domainInference.domainName}" 业务域的表
+- 如果有多个候选表，优先选择业务域匹配的表
+- 匹配关键词: ${domainInference.matchedKeywords.join(', ')}
+
+**业务域约束**:
+- 当有多个语义相似的表时，必须选择与业务域匹配的表
+- 例如：如果查询属于"直播业务"域，应优先使用 live_* 表而非 sys_* 表
+- 业务域匹配度会直接影响 SQL 生成的准确性
+`.trim();
+}

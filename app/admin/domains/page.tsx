@@ -3,6 +3,14 @@
 import { useState, useEffect } from 'react';
 
 /**
+ * 业务域关键词
+ */
+interface DomainKeyword {
+  keyword: string;
+  weight: number;
+}
+
+/**
  * 业务域数据类型
  */
 interface BusinessDomain {
@@ -13,6 +21,10 @@ interface BusinessDomain {
   createdAt: string;
   updatedAt: string;
   databaseCount?: number;
+  keywords?: DomainKeyword[];
+  _count?: {
+    keywords: number;
+  };
 }
 
 /**
@@ -21,7 +33,11 @@ interface BusinessDomain {
  * 功能：
  * - 查看所有业务域
  * - 新建、编辑、删除业务域
+ * - 🆕 管理业务域关键词（添加、删除、调整权重）
+ * - 🆕 自动发现业务域
  * - 查看每个业务域关联的数据库数量
+ *
+ * @author xusy
  */
 export default function DomainsPage() {
   const [domains, setDomains] = useState<BusinessDomain[]>([]);
@@ -35,6 +51,18 @@ export default function DomainsPage() {
     ownerTeam: '',
   });
 
+  // 🆕 关键词管理状态
+  const [keywords, setKeywords] = useState<DomainKeyword[]>([]);
+  const [newKeyword, setNewKeyword] = useState('');
+  const [newKeywordWeight, setNewKeywordWeight] = useState(1.0);
+  const [loadingKeywords, setLoadingKeywords] = useState(false);
+
+  // 🆕 自动发现状态
+  const [discovering, setDiscovering] = useState(false);
+  const [showDiscoverModal, setShowDiscoverModal] = useState(false);
+  const [dataSources, setDataSources] = useState<Array<{ id: number; name: string }>>([]);
+  const [selectedDataSourceId, setSelectedDataSourceId] = useState<number | null>(null);
+
   /**
    * 加载业务域列表
    */
@@ -43,7 +71,7 @@ export default function DomainsPage() {
       setLoading(true);
       setError(null);
 
-      const response = await fetch('/api/metadata/domains?includeStats=true');
+      const response = await fetch('/api/domains');
       const result = await response.json();
 
       if (result.success) {
@@ -61,7 +89,43 @@ export default function DomainsPage() {
 
   useEffect(() => {
     loadDomains();
+    loadDataSources();
   }, []);
+
+  /**
+   * 🆕 加载数据源列表
+   */
+  const loadDataSources = async () => {
+    try {
+      const response = await fetch('/api/datasources');
+      const result = await response.json();
+
+      if (result.success) {
+        setDataSources(result.data || []);
+      }
+    } catch (err) {
+      console.error('加载数据源列表失败:', err);
+    }
+  };
+
+  /**
+   * 🆕 加载业务域关键词
+   */
+  const loadKeywords = async (domainId: number) => {
+    try {
+      setLoadingKeywords(true);
+      const response = await fetch(`/api/domains/${domainId}/keywords`);
+      const result = await response.json();
+
+      if (result.success) {
+        setKeywords(result.data || []);
+      }
+    } catch (err) {
+      console.error('加载关键词失败:', err);
+    } finally {
+      setLoadingKeywords(false);
+    }
+  };
 
   /**
    * 打开新建模态框
@@ -69,13 +133,14 @@ export default function DomainsPage() {
   const handleAdd = () => {
     setEditingDomain(null);
     setFormData({ name: '', description: '', ownerTeam: '' });
+    setKeywords([]);
     setShowModal(true);
   };
 
   /**
    * 打开编辑模态框
    */
-  const handleEdit = (domain: BusinessDomain) => {
+  const handleEdit = async (domain: BusinessDomain) => {
     setEditingDomain(domain);
     setFormData({
       name: domain.name,
@@ -83,6 +148,9 @@ export default function DomainsPage() {
       ownerTeam: domain.ownerTeam || '',
     });
     setShowModal(true);
+
+    // 🆕 加载关键词
+    await loadKeywords(domain.id);
   };
 
   /**
@@ -97,8 +165,8 @@ export default function DomainsPage() {
       }
 
       const url = editingDomain
-        ? `/api/metadata/domains/${editingDomain.id}`
-        : '/api/metadata/domains';
+        ? `/api/domains/${editingDomain.id}`
+        : '/api/domains';
 
       const method = editingDomain ? 'PUT' : 'POST';
 
@@ -115,6 +183,17 @@ export default function DomainsPage() {
       const result = await response.json();
 
       if (result.success) {
+        const domainId = editingDomain?.id || result.data.id;
+
+        // 🆕 保存关键词
+        if (keywords.length > 0) {
+          await fetch(`/api/domains/${domainId}/keywords`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keywords }),
+          });
+        }
+
         setShowModal(false);
         await loadDomains();
       } else {
@@ -142,7 +221,7 @@ export default function DomainsPage() {
     }
 
     try {
-      const response = await fetch(`/api/metadata/domains/${domain.id}`, {
+      const response = await fetch(`/api/domains/${domain.id}`, {
         method: 'DELETE',
       });
 
@@ -156,6 +235,84 @@ export default function DomainsPage() {
     } catch (err) {
       console.error('删除业务域失败:', err);
       alert(err instanceof Error ? err.message : '删除失败');
+    }
+  };
+
+  /**
+   * 🆕 添加关键词
+   */
+  const handleAddKeyword = () => {
+    if (!newKeyword.trim()) {
+      alert('关键词不能为空');
+      return;
+    }
+
+    if (keywords.some(k => k.keyword === newKeyword.trim())) {
+      alert('关键词已存在');
+      return;
+    }
+
+    setKeywords([...keywords, {
+      keyword: newKeyword.trim(),
+      weight: newKeywordWeight
+    }]);
+    setNewKeyword('');
+    setNewKeywordWeight(1.0);
+  };
+
+  /**
+   * 🆕 删除关键词
+   */
+  const handleRemoveKeyword = (keyword: string) => {
+    setKeywords(keywords.filter(k => k.keyword !== keyword));
+  };
+
+  /**
+   * 🆕 更新关键词权重
+   */
+  const handleUpdateKeywordWeight = (keyword: string, weight: number) => {
+    setKeywords(keywords.map(k =>
+      k.keyword === keyword ? { ...k, weight } : k
+    ));
+  };
+
+  /**
+   * 🆕 触发自动发现
+   */
+  const handleAutoDiscover = async () => {
+    if (!selectedDataSourceId) {
+      alert('请选择数据源');
+      return;
+    }
+
+    try {
+      setDiscovering(true);
+
+      const response = await fetch('/api/domains/discover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dataSourceId: selectedDataSourceId,
+          autoCreate: true,
+          minClusterSize: 2,
+          autoCreateThreshold: 0.8,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        alert(result.message || '自动发现完成');
+        setShowDiscoverModal(false);
+        await loadDomains();
+      } else {
+        throw new Error(result.error || '自动发现失败');
+      }
+    } catch (err) {
+      console.error('自动发现失败:', err);
+      alert(err instanceof Error ? err.message : '自动发现失败');
+    } finally {
+      setDiscovering(false);
     }
   };
 
@@ -194,6 +351,21 @@ export default function DomainsPage() {
             </p>
           </div>
           <div className="flex gap-2">
+            <button
+              className="btn btn-outline btn-secondary"
+              onClick={() => setShowDiscoverModal(true)}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5 mr-2"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path d="M9 9a2 2 0 114 0 2 2 0 01-4 0z" />
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a4 4 0 00-3.446 6.032l-2.261 2.26a1 1 0 101.414 1.415l2.261-2.261A4 4 0 1011 5z" clipRule="evenodd" />
+              </svg>
+              自动发现
+            </button>
             <a href="/metadata/domains" className="btn btn-outline btn-primary">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -287,6 +459,15 @@ export default function DomainsPage() {
                     </div>
                   )}
 
+                  {/* 🆕 关键词数量显示 */}
+                  {domain._count && domain._count.keywords > 0 && (
+                    <div className="mt-2">
+                      <span className="badge badge-ghost badge-sm">
+                        {domain._count.keywords} 个关键词
+                      </span>
+                    </div>
+                  )}
+
                   <div className="text-xs text-gray-400 mt-2">
                     创建于 {formatDate(domain.createdAt)}
                   </div>
@@ -333,7 +514,7 @@ export default function DomainsPage() {
       {/* 新建/编辑模态框 */}
       {showModal && (
         <div className="modal modal-open">
-          <div className="modal-box">
+          <div className="modal-box max-w-2xl">
             <h3 className="font-bold text-lg mb-4">
               {editingDomain ? '编辑业务域' : '新建业务域'}
             </h3>
@@ -383,12 +564,165 @@ export default function DomainsPage() {
               />
             </div>
 
+            {/* 🆕 关键词管理部分 */}
+            <div className="divider mt-6">查询关键词配置</div>
+
+            <div className="form-control">
+              <label className="label">
+                <span className="label-text">关键词用于自动推断查询所属的业务域</span>
+              </label>
+
+              {/* 关键词列表 */}
+              {loadingKeywords ? (
+                <div className="flex justify-center py-4">
+                  <span className="loading loading-spinner loading-sm"></span>
+                </div>
+              ) : (
+                <div className="space-y-2 mb-4">
+                  {keywords.map((kw) => (
+                    <div key={kw.keyword} className="flex items-center gap-2 bg-base-200 p-2 rounded">
+                      <span className="flex-1 font-medium">{kw.keyword}</span>
+                      <input
+                        type="number"
+                        className="input input-sm input-bordered w-20"
+                        min="0"
+                        max="10"
+                        step="0.1"
+                        value={kw.weight}
+                        onChange={(e) =>
+                          handleUpdateKeywordWeight(kw.keyword, parseFloat(e.target.value) || 1.0)
+                        }
+                      />
+                      <span className="text-xs text-gray-500">权重</span>
+                      <button
+                        className="btn btn-sm btn-ghost btn-circle text-error"
+                        onClick={() => handleRemoveKeyword(kw.keyword)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                  {keywords.length === 0 && (
+                    <p className="text-sm text-gray-500 text-center py-4">
+                      暂无关键词，添加关键词可提高查询推断准确率
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* 添加关键词 */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  className="input input-sm input-bordered flex-1"
+                  placeholder="输入关键词"
+                  value={newKeyword}
+                  onChange={(e) => setNewKeyword(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddKeyword();
+                    }
+                  }}
+                />
+                <input
+                  type="number"
+                  className="input input-sm input-bordered w-24"
+                  min="0"
+                  max="10"
+                  step="0.1"
+                  value={newKeywordWeight}
+                  onChange={(e) => setNewKeywordWeight(parseFloat(e.target.value) || 1.0)}
+                />
+                <button
+                  className="btn btn-sm btn-primary"
+                  onClick={handleAddKeyword}
+                >
+                  添加
+                </button>
+              </div>
+
+              <label className="label">
+                <span className="label-text-alt text-gray-500">
+                  提示：权重越高，匹配该关键词时置信度越高
+                </span>
+              </label>
+            </div>
+
             <div className="modal-action">
               <button className="btn" onClick={() => setShowModal(false)}>
                 取消
               </button>
               <button className="btn btn-primary" onClick={handleSave}>
                 保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🆕 自动发现模态框 */}
+      {showDiscoverModal && (
+        <div className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4">自动发现业务域</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              系统将分析所选数据源中所有数据库的表结构，自动识别业务域并创建。
+            </p>
+
+            <div className="form-control">
+              <label className="label">
+                <span className="label-text">选择数据源 *</span>
+              </label>
+              <select
+                className="select select-bordered"
+                value={selectedDataSourceId || ''}
+                onChange={(e) => setSelectedDataSourceId(Number(e.target.value))}
+              >
+                <option value="">请选择数据源</option>
+                {dataSources.map((ds) => (
+                  <option key={ds.id} value={ds.id}>
+                    {ds.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="alert alert-info mt-4">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-current shrink-0 w-6 h-6">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              <div className="text-sm">
+                <p className="font-medium mb-1">自动发现规则：</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>基于表名和字段的语义相似度聚类</li>
+                  <li>每个聚类至少包含 2 个数据库</li>
+                  <li>置信度 ≥ 0.8 的业务域将自动创建</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="modal-action">
+              <button
+                className="btn"
+                onClick={() => setShowDiscoverModal(false)}
+                disabled={discovering}
+              >
+                取消
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleAutoDiscover}
+                disabled={discovering || !selectedDataSourceId}
+              >
+                {discovering ? (
+                  <>
+                    <span className="loading loading-spinner loading-sm mr-2"></span>
+                    发现中...
+                  </>
+                ) : (
+                  '开始发现'
+                )}
               </button>
             </div>
           </div>

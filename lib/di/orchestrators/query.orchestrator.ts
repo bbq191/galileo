@@ -13,6 +13,7 @@ import { DI_TOKENS } from '../tokens';
 import type { IntentRecognizer, QueryIntent } from '@/lib/nlp/intent-recognizer';
 import type { EntityResolver } from '@/lib/nlp/entity-resolver';
 import type { TimeParser } from '@/lib/nlp/time-parser';
+import type { QueryDomainInferencer, QueryDomainInference } from '@/lib/nlp/query-domain-inferencer';
 import type { SQLGenerator } from '@/lib/sql/generator/sql-generator';
 import type { CrossDatabaseHandler } from '@/lib/sql/generator/cross-db-handler';
 import type { QueryExecutor } from '@/lib/sql/executor/query-executor';
@@ -92,6 +93,9 @@ export interface QueryResult {
     /** 意图识别耗时 */
     intentRecognitionTime: number;
 
+    /** 业务域推断耗时 */
+    domainInferenceTime?: number;
+
     /** 元数据检索耗时 */
     metadataRetrievalTime: number;
 
@@ -107,6 +111,9 @@ export interface QueryResult {
     /** 总耗时 */
     totalTime: number;
   };
+
+  /** 业务域推断结果 */
+  domainInference?: QueryDomainInference;
 
   /** 警告信息 */
   warnings?: string[];
@@ -155,6 +162,9 @@ export class QueryOrchestrator {
 
     @inject(DI_TOKENS.TimeParser)
     private readonly timeParser: TimeParser,
+
+    @inject(DI_TOKENS.QueryDomainInferencer)
+    private readonly queryDomainInferencer: QueryDomainInferencer,
 
     @inject(DI_TOKENS.SQLGenerator)
     private readonly sqlGenerator: SQLGenerator,
@@ -221,14 +231,29 @@ export class QueryOrchestrator {
       timings.intentRecognition = Date.now() - t1;
       console.log(`[QueryOrchestrator] Intent recognized: ${intent.type} (${timings.intentRecognition}ms)`);
 
+      // Step 1.5: 🆕 查询业务域推断
+      const t1_5 = Date.now();
+      const domainInference = await this.queryDomainInferencer.inferDomain(query);
+      timings.domainInference = Date.now() - t1_5;
+
+      if (domainInference) {
+        console.log(
+          `[QueryOrchestrator] Domain inferred: ${domainInference.domainName} (confidence: ${domainInference.confidence.toFixed(2)}, ${timings.domainInference}ms)`
+        );
+      } else {
+        console.log(`[QueryOrchestrator] No domain could be inferred (${timings.domainInference}ms)`);
+      }
+
       // Step 2: 实体解析和时间解析
       const t2 = Date.now();
       const resolvedIntent = await this.resolveEntities(intent, query);
       timings.entityResolution = Date.now() - t2;
 
-      // Step 3: 元数据检索
+      // Step 3: 🆕 元数据检索（传递业务域推断结果）
       const t3 = Date.now();
-      const context = await this.metadataRetriever.retrieveContext(resolvedIntent);
+      const context = await this.metadataRetriever.retrieveContext(resolvedIntent, {
+        domainInference: domainInference || undefined,
+      });
       timings.metadataRetrieval = Date.now() - t3;
       console.log(
         `[QueryOrchestrator] Metadata retrieved: ${context.tables.length} tables (${timings.metadataRetrieval}ms)`
@@ -242,11 +267,13 @@ export class QueryOrchestrator {
           error: '未找到相关的数据表，请检查查询内容',
           performance: {
             intentRecognitionTime: timings.intentRecognition,
+            domainInferenceTime: timings.domainInference,
             metadataRetrievalTime: timings.metadataRetrieval,
             sqlGenerationTime: 0,
             queryExecutionTime: 0,
             totalTime: Date.now() - startTime,
           },
+          domainInference: domainInference || undefined,
         };
       }
 
@@ -273,11 +300,13 @@ export class QueryOrchestrator {
           },
           performance: {
             intentRecognitionTime: timings.intentRecognition,
+            domainInferenceTime: timings.domainInference,
             metadataRetrievalTime: timings.metadataRetrieval,
             sqlGenerationTime: timings.sqlGeneration,
             queryExecutionTime: 0,
             totalTime: Date.now() - startTime,
           },
+          domainInference: domainInference || undefined,
         };
       }
 
@@ -308,11 +337,13 @@ export class QueryOrchestrator {
           },
           performance: {
             intentRecognitionTime: timings.intentRecognition,
+            domainInferenceTime: timings.domainInference,
             metadataRetrievalTime: timings.metadataRetrieval,
             sqlGenerationTime: timings.sqlGeneration,
             queryExecutionTime: timings.queryExecution,
             totalTime: Date.now() - startTime,
           },
+          domainInference: domainInference || undefined,
         };
       }
 
@@ -333,11 +364,13 @@ export class QueryOrchestrator {
         },
         performance: {
           intentRecognitionTime: timings.intentRecognition,
+          domainInferenceTime: timings.domainInference,
           metadataRetrievalTime: timings.metadataRetrieval,
           sqlGenerationTime: timings.sqlGeneration,
           queryExecutionTime: timings.queryExecution,
           totalTime: Date.now() - startTime,
         },
+        domainInference: domainInference || undefined,
       };
 
       // 缓存结果
@@ -355,6 +388,7 @@ export class QueryOrchestrator {
         error: error instanceof Error ? error.message : 'Unknown error occurred',
         performance: {
           intentRecognitionTime: timings.intentRecognition || 0,
+          domainInferenceTime: timings.domainInference || 0,
           metadataRetrievalTime: timings.metadataRetrieval || 0,
           sqlGenerationTime: timings.sqlGeneration || 0,
           queryExecutionTime: timings.queryExecution || 0,

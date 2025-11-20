@@ -193,6 +193,10 @@ export function setupDependencyInjection(): void {
   const { DomainInferencer } = require('@/lib/metadata/inference/domain-inferencer');
   registerSingleton(DI_TOKENS.DomainInferencer, DomainInferencer);
 
+  // 注册 DomainDiscoverer（自动业务域发现器）
+  const { DomainDiscoverer } = require('@/lib/metadata/discovery/domain-discoverer');
+  registerSingleton(DI_TOKENS.DomainDiscoverer, DomainDiscoverer);
+
   // ==================== Phase 2.3: SQL 处理服务 ====================
 
   // 注册 ResultFormatter
@@ -214,6 +218,10 @@ export function setupDependencyInjection(): void {
   // 注册 IntentRecognizer
   const { IntentRecognizer } = require('@/lib/nlp/intent-recognizer');
   registerSingleton(DI_TOKENS.IntentRecognizer, IntentRecognizer);
+
+  // 注册 QueryDomainInferencer（查询业务域推断器）
+  const { QueryDomainInferencer } = require('@/lib/nlp/query-domain-inferencer');
+  registerSingleton(DI_TOKENS.QueryDomainInferencer, QueryDomainInferencer);
 
   // 注册 SQLGenerator
   const { SQLGenerator } = require('@/lib/sql/generator/sql-generator');

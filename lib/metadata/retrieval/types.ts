@@ -105,6 +105,12 @@ export interface SearchOptions {
   includeIndexes?: boolean;
   /** 业务域过滤（按业务域 ID 列表） */
   domainIds?: number[];
+  /** 查询业务域推断结果 */
+  domainInference?: {
+    domainId: number;
+    domainName: string;
+    confidence: number;
+  };
 }
 
 /**
