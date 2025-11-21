@@ -315,6 +315,37 @@ export class AuditOrchestrator {
   }
 
   /**
+   * 获取日均审计记录数
+   *
+   * @returns 日均记录数
+   */
+  async getAvgRecordsPerDay(): Promise<number> {
+    try {
+      const [totalCount, oldestRecord] = await Promise.all([
+        this.prisma.queryAuditLog.count(),
+        this.prisma.queryAuditLog.findFirst({
+          orderBy: { timestamp: 'asc' },
+          select: { timestamp: true },
+        }),
+      ]);
+
+      if (!oldestRecord || totalCount === 0) {
+        return 0;
+      }
+
+      const daysSinceFirst = Math.max(
+        1,
+        Math.ceil((Date.now() - oldestRecord.timestamp.getTime()) / (1000 * 60 * 60 * 24))
+      );
+
+      return Math.round(totalCount / daysSinceFirst);
+    } catch (error) {
+      console.error(`[AuditOrchestrator] Failed to get avg records per day:`, error);
+      return 0;
+    }
+  }
+
+  /**
    * 检测异常模式
    *
    * 分析审计日志，检测异常行为：

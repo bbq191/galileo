@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 interface GraphEdge {
+  relationshipId: number;
   sourceTableId: number;
   targetTableId: number;
   sourceColumn: string;
@@ -65,10 +66,7 @@ export default function VerificationPanel({
       setLoading(true);
       setError(null);
 
-      // 从边的源表和目标表 ID 构造关系查询
-      // 注意：这里需要后端 API 支持通过 sourceTableId 和 targetTableId 查询
-      // 暂时使用一个占位方案，实际需要后端返回 relationshipId
-      const relationshipId = 0; // TODO: 需要后端返回真实的 relationshipId
+      const relationshipId = selectedEdge.relationshipId;
 
       const response = await fetch('/api/relationships/verify', {
         method: 'POST',
@@ -111,8 +109,7 @@ export default function VerificationPanel({
       setLoading(true);
       setError(null);
 
-      // 从边的源表和目标表 ID 构造关系查询
-      const relationshipId = 0; // TODO: 需要后端返回真实的 relationshipId
+      const relationshipId = selectedEdge.relationshipId;
 
       const response = await fetch('/api/relationships/verify', {
         method: 'POST',
@@ -158,8 +155,7 @@ export default function VerificationPanel({
       setLoading(true);
       setError(null);
 
-      // 从边的源表和目标表 ID 构造关系查询
-      const relationshipId = 0; // TODO: 需要后端返回真实的 relationshipId
+      const relationshipId = selectedEdge.relationshipId;
 
       const response = await fetch('/api/relationships/verify', {
         method: 'POST',

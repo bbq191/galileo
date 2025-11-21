@@ -24,6 +24,7 @@ interface GraphNode {
 }
 
 interface GraphEdge {
+  relationshipId: number;
   sourceTableId: number;
   targetTableId: number;
   sourceColumn: string;

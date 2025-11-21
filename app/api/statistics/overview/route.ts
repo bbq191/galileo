@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
       },
       audit: {
         totalRecords: overview.audit.totalQueriesLogged,
-        avgRecordsPerDay: 0, // TODO: 计算日均记录数
+        avgRecordsPerDay: overview.audit.avgRecordsPerDay,
         recentErrors: overview.realtime.failedQueries,
       },
     };

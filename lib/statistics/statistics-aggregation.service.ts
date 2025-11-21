@@ -45,6 +45,7 @@ export interface SystemStatisticsOverview {
     totalQueriesLogged: number;
     successRate: number;
     averageExecutionTime: number;
+    avgRecordsPerDay: number;
   };
 
   /** 综合指标 */
@@ -127,7 +128,10 @@ export class StatisticsAggregationService {
     const cacheStats = this.queryCacheManager.getStatistics();
 
     // 3. 获取审计日志统计
-    const auditStats = await this.auditOrchestrator.getStatistics({});
+    const [auditStats, avgRecordsPerDay] = await Promise.all([
+      this.auditOrchestrator.getStatistics({}),
+      this.auditOrchestrator.getAvgRecordsPerDay(),
+    ]);
 
     // 4. 计算综合指标
     const healthScore = this.calculateHealthScore(
@@ -176,6 +180,7 @@ export class StatisticsAggregationService {
         totalQueriesLogged: auditStats.totalQueries,
         successRate: auditStats.successRate,
         averageExecutionTime: auditStats.avgExecutionTime,
+        avgRecordsPerDay,
       },
       overall: {
         healthScore,

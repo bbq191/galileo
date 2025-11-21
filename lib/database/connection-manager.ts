@@ -26,7 +26,7 @@ import type { IConnectionPoolFactory } from '@/lib/di/factories/connection-pool.
 class ConnectionManager {
   private pools: Map<string, ConnectionPool> = new Map();
   private healthCheckInterval: NodeJS.Timeout | null = null;
-  private readonly HEALTH_CHECK_INTERVAL = 60000; // 60 秒
+  private readonly HEALTH_CHECK_INTERVAL = 3600000; // 60 秒
   private isInitialized = false;
   private initPromise: Promise<void> | null = null;
   private logger = createLogger('ConnectionManager');
@@ -38,7 +38,8 @@ class ConnectionManager {
 
   constructor(
     @inject(DI_TOKENS.PrismaClient) prisma?: PrismaClient,
-    @inject(DI_TOKENS.ConnectionPoolFactory) poolFactory?: IConnectionPoolFactory
+    @inject(DI_TOKENS.ConnectionPoolFactory)
+    poolFactory?: IConnectionPoolFactory
   ) {
     // 如果通过 DI 注入，使用注入的实例
     if (prisma) {
