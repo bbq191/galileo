@@ -11,6 +11,7 @@
 
 import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
+import 'swagger-ui-react/swagger-ui.css';
 
 // 动态导入 SwaggerUI 以避免 SSR 问题
 const SwaggerUI = dynamic(() => import('swagger-ui-react'), {
@@ -116,9 +117,6 @@ export default function ApiDocsPage() {
 
       {/* 自定义样式 */}
       <style jsx global>{`
-        /* 导入 Swagger UI 样式 */
-        @import 'swagger-ui-react/swagger-ui.css';
-
         /* 自定义覆盖 */
         .swagger-ui .topbar {
           display: none;

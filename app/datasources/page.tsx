@@ -277,85 +277,69 @@ export default function DataSourcesPage() {
   };
 
   return (
-    <div className="min-h-screen bg-base-200">
+    <div className="space-y-6">
       {/* 页面头部 */}
-      <div className="navbar bg-base-100 shadow-lg">
-        <div className="flex-1 min-w-0">
-          <a href="/" className="btn btn-ghost normal-case text-xl">Galileo</a>
-          <div className="breadcrumbs text-sm ml-2 md:ml-4 hidden sm:block">
-            <ul>
-              <li><a href="/">首页</a></li>
-              <li>数据源管理</li>
-            </ul>
-          </div>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">数据源管理</h1>
+          <p className="text-sm opacity-60 mt-1">管理数据库连接与元数据同步</p>
         </div>
-        <div className="flex-none gap-2">
-          <button className="btn btn-primary btn-sm md:btn-md" onClick={handleAdd}>
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 md:mr-2" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-            </svg>
-            <span className="hidden md:inline">添加数据源</span>
-          </button>
-        </div>
+        <button className="btn btn-primary" onClick={handleAdd}>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+          </svg>
+          添加数据源
+        </button>
       </div>
 
       {/* 主要内容区 */}
-      <div className="container mx-auto p-4 md:p-6">
-        <div className="card bg-base-100 shadow-xl">
-          <div className="card-body">
-            <h2 className="card-title text-2xl mb-4">
-              数据源列表
-              {loading && <span className="loading loading-spinner loading-sm"></span>}
-            </h2>
-
-            {/* 错误提示 */}
-            {error && (
-              <div className="alert alert-error mb-4">
-                <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span>{error}</span>
-              </div>
-            )}
-
-            {/* 数据源列表 */}
-            {!loading && !error && (
-              <DataSourceList
-                dataSources={dataSources}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                onTestConnection={handleTestConnection}
-                onSync={handleSync}
-                onInferRelationships={handleInferRelationships}
-                testingConnections={testingConnections}
-                syncingDataSources={syncingDataSources}
-                inferringRelationships={inferringRelationships}
-                operationInProgress={operationInProgress}
-              />
-            )}
-
-            {/* 加载状态 */}
-            {loading && (
-              <div className="flex justify-center items-center py-12">
-                <span className="loading loading-spinner loading-lg"></span>
-              </div>
-            )}
-
-            {/* 空状态 */}
-            {!loading && !error && dataSources.length === 0 && (
-              <div className="text-center py-12">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-24 w-24 mx-auto text-base-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
-                </svg>
-                <h3 className="text-lg font-bold mb-2">暂无数据源</h3>
-                <p className="text-base-content/60 mb-4">点击&ldquo;添加数据源&rdquo;按钮创建第一个数据源</p>
-                <button className="btn btn-primary" onClick={handleAdd}>
-                  添加数据源
-                </button>
-              </div>
-            )}
+      <div className="bg-base-100 border border-base-300 rounded-xl p-4 lg:p-6">
+        {/* 错误提示 */}
+        {error && (
+          <div className="alert alert-error mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>{error}</span>
           </div>
-        </div>
+        )}
+
+        {/* 数据源列表 */}
+        {!loading && !error && (
+          <DataSourceList
+            dataSources={dataSources}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            onTestConnection={handleTestConnection}
+            onSync={handleSync}
+            onInferRelationships={handleInferRelationships}
+            testingConnections={testingConnections}
+            syncingDataSources={syncingDataSources}
+            inferringRelationships={inferringRelationships}
+            operationInProgress={operationInProgress}
+          />
+        )}
+
+        {/* 加载状态 */}
+        {loading && (
+          <div className="flex justify-center items-center py-12">
+            <span className="loading loading-spinner loading-lg"></span>
+          </div>
+        )}
+
+        {/* 空状态 */}
+        {!loading && !error && dataSources.length === 0 && (
+          <div className="text-center py-12">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-24 w-24 mx-auto text-base-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+            </svg>
+            <h3 className="text-lg font-bold mb-2">暂无数据源</h3>
+            <p className="text-base-content/60 mb-4">点击&ldquo;添加数据源&rdquo;按钮创建第一个数据源</p>
+            <button className="btn btn-primary" onClick={handleAdd}>
+              添加数据源
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 数据源表单模态框 */}

@@ -136,32 +136,19 @@ export default function MetadataPage() {
   };
 
   return (
-    <div className="min-h-screen bg-base-200">
+    <div className="space-y-6">
       {/* 页面头部 */}
-      <div className="navbar bg-base-100 shadow-lg">
-        <div className="flex-1 min-w-0">
-          <a href="/" className="btn btn-ghost normal-case text-xl">Galileo</a>
-          <div className="breadcrumbs text-sm ml-2 md:ml-4 hidden sm:block">
-            <ul>
-              <li><a href="/">首页</a></li>
-              <li>元数据浏览</li>
-            </ul>
-          </div>
-        </div>
-        <div className="flex-none gap-2">
-          <a href="/datasources" className="btn btn-outline btn-sm">
-            <span className="hidden sm:inline">数据源管理</span>
-            <span className="sm:hidden">数据源</span>
-          </a>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">元数据浏览</h1>
+          <p className="text-sm opacity-60 mt-1">浏览数据库、表结构和字段信息</p>
         </div>
       </div>
 
       {/* 搜索栏 */}
-      <div className="container mx-auto p-4 md:p-6">
-        <div className="card bg-base-100 shadow-xl mb-6">
-          <div className="card-body p-4 md:p-6">
-            <div className="form-control">
-              <div className="input-group">
+      <div className="bg-base-100 border border-base-300 rounded-xl p-4">
+        <div className="form-control">
+          <div className="input-group">
                 <input
                   type="text"
                   placeholder="搜索数据库、表或字段..."
@@ -189,27 +176,25 @@ export default function MetadataPage() {
                   </svg>
                 </button>
               </div>
-              <label className="label">
-                <span className="label-text-alt text-xs">
-                  输入至少 2 个字符开始搜索，搜索范围：数据库名、表名、字段名
-                </span>
-              </label>
-            </div>
-          </div>
+          <label className="label">
+            <span className="label-text-alt text-xs">
+              输入至少 2 个字符开始搜索，搜索范围：数据库名、表名、字段名
+            </span>
+          </label>
         </div>
+      </div>
 
-        {/* 搜索结果 */}
-        {searchResults && (
-          <div className="card bg-base-100 shadow-xl mb-6">
-            <div className="card-body">
-              <h2 className="card-title">
-                搜索结果
-                <div className="badge badge-primary">
-                  {(searchResults.databases?.length || 0) +
-                    (searchResults.tables?.length || 0) +
-                    (searchResults.columns?.length || 0)} 项
-                </div>
-              </h2>
+      {/* 搜索结果 */}
+      {searchResults && (
+        <div className="bg-base-100 border border-base-300 rounded-xl p-4 lg:p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <h2 className="text-lg font-semibold">搜索结果</h2>
+            <span className="badge badge-primary">
+              {(searchResults.databases?.length || 0) +
+                (searchResults.tables?.length || 0) +
+                (searchResults.columns?.length || 0)} 项
+            </span>
+          </div>
 
               {/* 数据库结果 */}
               {searchResults.databases && searchResults.databases.length > 0 && (
@@ -315,21 +300,20 @@ export default function MetadataPage() {
                 </div>
               )}
 
-              {/* 无结果 */}
-              {(!searchResults.databases || searchResults.databases.length === 0) &&
-                (!searchResults.tables || searchResults.tables.length === 0) &&
-                (!searchResults.columns || searchResults.columns.length === 0) && (
-                  <div className="text-center py-8">
-                    <p className="text-base-content/60">未找到匹配的结果</p>
-                  </div>
-                )}
-            </div>
-          </div>
-        )}
+          {/* 无结果 */}
+          {(!searchResults.databases || searchResults.databases.length === 0) &&
+            (!searchResults.tables || searchResults.tables.length === 0) &&
+            (!searchResults.columns || searchResults.columns.length === 0) && (
+              <div className="text-center py-8">
+                <p className="text-base-content/60">未找到匹配的结果</p>
+              </div>
+            )}
+        </div>
+      )}
 
-        {/* 主要内容区 - 响应式双栏布局 */}
-        {!searchResults && (
-          <div className="flex flex-col lg:grid lg:grid-cols-3 gap-4 md:gap-6">
+      {/* 主要内容区 - 响应式双栏布局 */}
+      {!searchResults && (
+        <div className="flex flex-col lg:grid lg:grid-cols-3 gap-4 md:gap-6">
             {/* 左侧：元数据树 */}
             <div className="lg:col-span-1 order-2 lg:order-1">
               <div className="card bg-base-100 shadow-xl lg:sticky lg:top-6">
@@ -418,7 +402,6 @@ export default function MetadataPage() {
             </div>
           </div>
         )}
-      </div>
     </div>
   );
 }

@@ -205,39 +205,16 @@ export default function RelationshipsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-base-200">
+    <div className="space-y-6">
       {/* 页面头部 */}
-      <div className="navbar bg-base-100 shadow-lg">
-        <div className="flex-1 min-w-0">
-          <a href="/" className="btn btn-ghost normal-case text-xl">
-            Galileo
-          </a>
-          <div className="breadcrumbs text-sm ml-2 md:ml-4 hidden sm:block">
-            <ul>
-              <li>
-                <a href="/">首页</a>
-              </li>
-              <li>关系图谱</li>
-            </ul>
-          </div>
-        </div>
-        <div className="flex-none gap-1 md:gap-2">
-          <a href="/datasources" className="btn btn-outline btn-xs md:btn-sm">
-            <span className="hidden md:inline">数据源管理</span>
-            <span className="md:hidden">数据源</span>
-          </a>
-          <a href="/metadata" className="btn btn-outline btn-xs md:btn-sm">
-            <span className="hidden md:inline">元数据浏览</span>
-            <span className="md:hidden">元数据</span>
-          </a>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold">关系图谱</h1>
+        <p className="text-sm opacity-60 mt-1">可视化展示表之间的关联关系</p>
       </div>
 
       {/* 控制面板 */}
-      <div className="container mx-auto p-4 md:p-6">
-        <div className="card bg-base-100 shadow-xl mb-4 md:mb-6">
-          <div className="card-body p-4 md:p-6">
-            <h2 className="card-title text-lg md:text-xl">图谱配置</h2>
+      <div className="bg-base-100 border border-base-300 rounded-xl p-4 lg:p-6">
+        <h2 className="text-lg font-semibold mb-4">图谱配置</h2>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
               {/* 数据源选择 */}
@@ -426,10 +403,9 @@ export default function RelationshipsPage() {
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+      </div>
 
-        {/* 主内容区 */}
+      {/* 主内容区 */}
         {selectedDatabaseId || selectedTableId ? (
           <>
             {/* 关系推断提示 */}
@@ -533,7 +509,6 @@ export default function RelationshipsPage() {
             </div>
           </div>
         )}
-      </div>
     </div>
   );
 }

@@ -137,54 +137,7 @@ export default function QueryPage() {
   };
 
   return (
-    <div className="min-h-screen bg-base-200">
-      {/* 页面头部 */}
-      <div className="navbar bg-base-100 shadow-lg">
-        <div className="flex-1 min-w-0">
-          <a href="/" className="btn btn-ghost normal-case text-xl">
-            Galileo
-          </a>
-          <div className="breadcrumbs text-sm ml-2 md:ml-4 hidden sm:block">
-            <ul>
-              <li>
-                <a href="/">首页</a>
-              </li>
-              <li>自然语言查询</li>
-            </ul>
-          </div>
-        </div>
-        <div className="flex-none gap-2">
-          <a href="/query/history" className="btn btn-ghost btn-sm">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-4 w-4 mr-1"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-            <span className="hidden sm:inline">查询历史</span>
-            <span className="sm:hidden">历史</span>
-          </a>
-          <a href="/datasources" className="btn btn-outline btn-sm">
-            <span className="hidden sm:inline">数据源管理</span>
-            <span className="sm:hidden">数据源</span>
-          </a>
-          <a href="/metadata" className="btn btn-outline btn-sm">
-            <span className="hidden sm:inline">元数据浏览</span>
-            <span className="sm:hidden">元数据</span>
-          </a>
-        </div>
-      </div>
-
-      {/* 主要内容 */}
-      <div className="container mx-auto p-4 md:p-6 space-y-6">
+    <div className="space-y-6">
         {/* 查询输入 */}
         <QueryInput
           value={query}
@@ -348,7 +301,6 @@ export default function QueryPage() {
             </div>
           </div>
         )}
-      </div>
     </div>
   );
 }

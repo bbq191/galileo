@@ -149,85 +149,83 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-7xl mx-auto">
-        {/* 页面标题 */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">管理后台</h1>
-          <p className="mt-2 text-gray-600">Galileo 系统管理与监控中心</p>
+    <div className="space-y-6">
+      {/* 页面标题 */}
+      <div>
+        <h1 className="text-2xl font-bold">管理后台</h1>
+        <p className="text-sm opacity-60 mt-1">Galileo 系统管理与监控中心</p>
+      </div>
+
+      {/* 系统概览卡片 */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-base-100 border border-base-300 rounded-xl p-4">
+          <div className="text-sm opacity-60 mb-1">系统状态</div>
+          {loading ? (
+            <span className="loading loading-dots loading-sm" />
+          ) : (
+            <span className={`badge ${health?.status === 'ok' ? 'badge-success' : health?.status === 'degraded' ? 'badge-warning' : 'badge-error'}`}>
+              {getHealthText(health?.status)}
+            </span>
+          )}
         </div>
 
-        {/* 系统概览卡片 */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-sm text-gray-500 mb-1">系统状态</div>
-            {loading ? (
-              <div className="h-8 bg-gray-200 animate-pulse rounded" />
-            ) : (
-              <span
-                className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${getHealthStyle(health?.status)}`}
-              >
-                {getHealthText(health?.status)}
-              </span>
-            )}
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-sm text-gray-500 mb-1">健康评分</div>
-            {loading ? (
-              <div className="h-8 bg-gray-200 animate-pulse rounded" />
-            ) : (
-              <div className="text-2xl font-bold text-gray-900">
-                {overview?.system?.healthScore ?? '-'}
-                <span className="text-sm text-gray-500 ml-1">/ 100</span>
-              </div>
-            )}
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-sm text-gray-500 mb-1">查询成功率</div>
-            {loading ? (
-              <div className="h-8 bg-gray-200 animate-pulse rounded" />
-            ) : (
-              <div className="text-2xl font-bold text-gray-900">
-                {overview?.queries?.successRate != null
-                  ? `${(overview.queries.successRate * 100).toFixed(1)}%`
-                  : '-'}
-              </div>
-            )}
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-sm text-gray-500 mb-1">缓存命中率</div>
-            {loading ? (
-              <div className="h-8 bg-gray-200 animate-pulse rounded" />
-            ) : (
-              <div className="text-2xl font-bold text-gray-900">
-                {overview?.cache?.hitRate != null
-                  ? `${(overview.cache.hitRate * 100).toFixed(1)}%`
-                  : '-'}
-              </div>
-            )}
-          </div>
+        <div className="bg-base-100 border border-base-300 rounded-xl p-4">
+          <div className="text-sm opacity-60 mb-1">健康评分</div>
+          {loading ? (
+            <span className="loading loading-dots loading-sm" />
+          ) : (
+            <div className="text-2xl font-bold text-primary">
+              {overview?.system?.healthScore ?? '-'}
+              <span className="text-sm opacity-60 ml-1">/ 100</span>
+            </div>
+          )}
         </div>
 
-        {/* 功能模块导航 */}
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">功能模块</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="bg-base-100 border border-base-300 rounded-xl p-4">
+          <div className="text-sm opacity-60 mb-1">查询成功率</div>
+          {loading ? (
+            <span className="loading loading-dots loading-sm" />
+          ) : (
+            <div className="text-2xl font-bold text-secondary">
+              {overview?.queries?.successRate != null
+                ? `${(overview.queries.successRate * 100).toFixed(1)}%`
+                : '-'}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-base-100 border border-base-300 rounded-xl p-4">
+          <div className="text-sm opacity-60 mb-1">缓存命中率</div>
+          {loading ? (
+            <span className="loading loading-dots loading-sm" />
+          ) : (
+            <div className="text-2xl font-bold text-accent">
+              {overview?.cache?.hitRate != null
+                ? `${(overview.cache.hitRate * 100).toFixed(1)}%`
+                : '-'}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 功能模块导航 */}
+      <div>
+        <h2 className="text-lg font-semibold mb-4">功能模块</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {adminModules.map((module) => (
             <Link
               key={module.href}
               href={module.href}
-              className="bg-white rounded-lg shadow hover:shadow-md transition-shadow p-5 flex items-start gap-4"
+              className="card bg-base-100 border border-base-300 hover:border-primary transition-all hover:shadow-lg"
             >
-              <div
-                className={`${module.color} w-12 h-12 rounded-lg flex items-center justify-center text-2xl`}
-              >
-                {module.icon}
-              </div>
-              <div>
-                <h3 className="font-semibold text-gray-900">{module.title}</h3>
-                <p className="text-sm text-gray-500 mt-1">{module.description}</p>
+              <div className="card-body p-4 flex-row items-start gap-4">
+                <div className={`${module.color} w-12 h-12 rounded-lg flex items-center justify-center text-2xl flex-shrink-0`}>
+                  {module.icon}
+                </div>
+                <div>
+                  <h3 className="font-semibold">{module.title}</h3>
+                  <p className="text-sm opacity-60 mt-1">{module.description}</p>
+                </div>
               </div>
             </Link>
           ))}
