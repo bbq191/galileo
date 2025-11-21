@@ -10,6 +10,7 @@
 import type { ColumnInfo } from '@/lib/metadata/types';
 import type { InferredRelationship, RelationshipType } from './types';
 import { getDeepseekClient } from '@/lib/ai';
+import { inferenceConfig } from '@/lib/ai/config';
 
 /**
  * 调用 Deepseek API 的辅助函数
@@ -116,8 +117,8 @@ export class AIInferencer {
 
       // 调用 Deepseek API
       const response = await callDeepseekAPI(prompt, {
-        temperature: 0.2, // 低温度，确保输出稳定
-        max_tokens: 500,
+        temperature: inferenceConfig.temperature,
+        max_tokens: inferenceConfig.maxTokens,
       });
 
       // 解析响应
@@ -150,6 +151,9 @@ export class AIInferencer {
   /**
    * 批量推断关系
    * 性能优化：一次 API 调用处理多个字段对
+   * 支持降级策略：批量失败时自动降级为单个推断
+   *
+   * @author xusy
    */
   async inferRelationshipsBatch(
     fieldPairs: Array<{
@@ -176,8 +180,8 @@ export class AIInferencer {
 
       // 调用 Deepseek API
       const response = await callDeepseekAPI(prompt, {
-        temperature: 0.2,
-        max_tokens: 2000, // 批量处理需要更多 token
+        temperature: inferenceConfig.temperature,
+        max_tokens: inferenceConfig.maxTokens * 2, // 批量处理需要更多 token
       });
 
       // 解析批量响应
@@ -205,8 +209,24 @@ export class AIInferencer {
       });
     } catch (error) {
       console.error('批量 AI 推断失败:', error);
-      // 返回全部 null
-      return fieldPairs.map(() => null);
+
+      // 降级策略：逐个推断
+      console.warn(`降级为单个推断模式，逐个处理 ${fieldPairs.length} 个字段对...`);
+
+      const results: Array<InferredRelationship | null> = [];
+
+      for (const [index, pair] of fieldPairs.entries()) {
+        try {
+          console.log(`  处理字段对 ${index + 1}/${fieldPairs.length}...`);
+          const result = await this.inferRelationship(pair.source, pair.target);
+          results.push(result);
+        } catch (singleError) {
+          console.error(`  单个推断失败 (${index + 1}/${fieldPairs.length}):`, singleError);
+          results.push(null);
+        }
+      }
+
+      return results;
     }
   }
 

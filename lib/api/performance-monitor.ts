@@ -37,7 +37,10 @@ export interface SlowQuery {
 export class PerformanceMonitor {
   private responseTimes: number[] = [];
   private slowQueries: SlowQuery[] = [];
-  private readonly SLOW_QUERY_THRESHOLD = 1000; // 慢查询阈值（毫秒）
+  private readonly SLOW_QUERY_THRESHOLD = parseInt(
+    process.env.SLOW_QUERY_THRESHOLD || '1000',
+    10
+  ); // 慢查询阈值（毫秒）
   private readonly MAX_RESPONSE_TIMES = 10000; // 最多保留的响应时间记录
   private readonly MAX_SLOW_QUERIES = 100; // 最多保留的慢查询记录
 

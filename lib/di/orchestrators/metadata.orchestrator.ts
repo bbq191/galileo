@@ -217,7 +217,14 @@ export class MetadataOrchestrator {
         // 不影响主流程，继续执行
       }
 
-      // 4. 失效相关缓存
+      // 4. 更新数据源的最后同步时间
+      console.log(`[MetadataOrchestrator] Updating lastSyncAt...`);
+      await this.dbService.prisma.dataSource.update({
+        where: { id: options.dataSourceId },
+        data: { lastSyncAt: new Date() },
+      });
+
+      // 5. 失效相关缓存
       console.log(`[MetadataOrchestrator] Invalidating metadata caches...`);
       await this.cacheInvalidation.invalidate(InvalidationEvent.METADATA_SYNCED, {
         reason: `Metadata synchronized for data source ${options.dataSourceId}`,

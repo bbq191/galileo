@@ -8,14 +8,24 @@ import Redis from 'ioredis';
 // Redis 连接配置
 const redisConfig = {
   host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379'),
+  port: parseInt(process.env.REDIS_PORT || '6379', 10),
   password: process.env.REDIS_PASSWORD || undefined,
-  db: parseInt(process.env.REDIS_DB || '0'),
+  db: parseInt(process.env.REDIS_DB || '0', 10),
   retryStrategy: (times: number) => {
-    const delay = Math.min(times * 50, 2000);
+    const retryDelayMs = parseInt(process.env.REDIS_RETRY_DELAY_MS || '50', 10);
+    const maxRetryDelayMs = parseInt(process.env.REDIS_MAX_RETRY_DELAY_MS || '2000', 10);
+    const delay = Math.min(times * retryDelayMs, maxRetryDelayMs);
     return delay;
   },
-  maxRetriesPerRequest: 3,
+  maxRetriesPerRequest: parseInt(process.env.REDIS_MAX_RETRIES_PER_REQUEST || '3', 10),
+  // 添加命令超时配置，防止请求挂起
+  connectTimeout: parseInt(process.env.REDIS_CONNECT_TIMEOUT || '5000', 10),
+  commandTimeout: parseInt(process.env.REDIS_COMMAND_TIMEOUT || '3000', 10),
+  // 启用离线队列，防止 Redis 未启动时阻塞
+  enableOfflineQueue: false,
+  // 自动重连配置
+  lazyConnect: false,
+  enableReadyCheck: true,
 };
 
 // 创建 Redis 客户端单例

@@ -486,6 +486,10 @@ export class RelationshipInferenceService {
         enableAIInference: options.enableAI ?? true,
         crossDatabase: options.crossDatabase ?? true,
         enableShardOptimization,
+        // AI 批量推断批次大小（从环境变量读取，默认为 3 以降低超时风险）
+        aiBatchSize: process.env.AI_BATCH_SIZE
+          ? parseInt(process.env.AI_BATCH_SIZE, 10)
+          : 3,
         // 业务域约束配置
         enableDomainConstraint: process.env.ENABLE_DOMAIN_CONSTRAINT !== 'false', // 默认启用
         crossDomain: process.env.ALLOW_CROSS_DOMAIN_INFERENCE === 'true', // 默认关闭

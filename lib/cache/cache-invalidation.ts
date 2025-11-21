@@ -94,14 +94,18 @@ export class CacheInvalidationService {
         case InvalidationEvent.METADATA_SYNCED:
           // 元数据同步：失效所有查询缓存（意图和SQL）
           if (invalidateQueries) {
+            console.log('[CacheInvalidation] 开始失效查询缓存...');
             await Promise.all([
               this.queryCacheManager.invalidateIntents(),
               this.queryCacheManager.invalidateSQL(),
             ]);
+            console.log('[CacheInvalidation] 查询缓存失效完成');
           }
           // 失效元数据缓存
           if (invalidateMetadata) {
+            console.log('[CacheInvalidation] 开始失效元数据缓存...');
             await this.multiLevelCache.invalidate('metadata_synced');
+            console.log('[CacheInvalidation] 元数据缓存失效完成');
           }
           break;
 

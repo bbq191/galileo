@@ -12,10 +12,10 @@ export const MAX_PAGE_LIMIT = 100;
  * 数据库连接池配置
  */
 export const CONNECTION_POOL = {
-  MIN: 2,
-  MAX: 10,
-  IDLE_TIMEOUT: 30000, // 30 秒
-  ACQUIRE_TIMEOUT: 60000, // 60 秒
+  MIN: parseInt(process.env.DB_POOL_MIN || '2', 10),
+  MAX: parseInt(process.env.DB_POOL_MAX || '10', 10),
+  IDLE_TIMEOUT: parseInt(process.env.DB_POOL_IDLE_TIMEOUT || '30000', 10),
+  ACQUIRE_TIMEOUT: parseInt(process.env.DB_POOL_ACQUIRE_TIMEOUT || '60000', 10),
 } as const;
 
 /**
@@ -29,21 +29,22 @@ export const CONFIDENCE_THRESHOLD = {
 
 /**
  * AI 处理配置
+ * 注意：这些配置已被 lib/ai/config.ts 中的配置替代，建议使用 aiConfig 导入
  */
 export const AI_CONFIG = {
-  BATCH_SIZE: 50, // 批量处理大小
-  MAX_RETRIES: 3, // 最大重试次数
-  TIMEOUT: 30000, // 超时时间（毫秒）
+  BATCH_SIZE: parseInt(process.env.BATCH_SIZE || '50', 10),
+  MAX_RETRIES: parseInt(process.env.DEEPSEEK_MAX_RETRIES || '3', 10),
+  TIMEOUT: parseInt(process.env.DEEPSEEK_TIMEOUT || '30000', 10),
 } as const;
 
 /**
  * 缓存 TTL（秒）
  */
 export const CACHE_TTL = {
-  SHORT: 60, // 1 分钟
-  MEDIUM: 300, // 5 分钟
-  LONG: 1800, // 30 分钟
-  VERY_LONG: 86400, // 24 小时
+  SHORT: parseInt(process.env.CACHE_TTL_SHORT || '60', 10),
+  MEDIUM: parseInt(process.env.CACHE_TTL_MEDIUM || '300', 10),
+  LONG: parseInt(process.env.CACHE_TTL_LONG || '1800', 10),
+  VERY_LONG: parseInt(process.env.CACHE_TTL_VERY_LONG || '86400', 10),
 } as const;
 
 /**

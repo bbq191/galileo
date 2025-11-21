@@ -462,6 +462,8 @@ export class DeepseekClient {
 
 /**
  * 创建默认客户端实例
+ *
+ * @author xusy
  */
 export function createDeepseekClient(config?: Partial<DeepseekConfig>): DeepseekClient {
   const apiUrl = config?.apiUrl || process.env.DEEPSEEK_API_URL || 'http://localhost:11434';
@@ -474,13 +476,23 @@ export function createDeepseekClient(config?: Partial<DeepseekConfig>): Deepseek
     throw new Error('Deepseek API Key 未配置，请设置环境变量 DEEPSEEK_API_KEY');
   }
 
+  // 从环境变量读取配置
+  const timeout = config?.timeout
+    || (process.env.DEEPSEEK_TIMEOUT ? parseInt(process.env.DEEPSEEK_TIMEOUT, 10) : undefined);
+
+  const maxRetries = config?.maxRetries
+    || (process.env.DEEPSEEK_MAX_RETRIES ? parseInt(process.env.DEEPSEEK_MAX_RETRIES, 10) : undefined);
+
+  const retryDelay = config?.retryDelay
+    || (process.env.DEEPSEEK_RETRY_DELAY ? parseInt(process.env.DEEPSEEK_RETRY_DELAY, 10) : undefined);
+
   return new DeepseekClient({
     apiKey,
     apiUrl,
     model: config?.model || process.env.DEEPSEEK_MODEL || 'deepseek-r1:1.5b',
-    timeout: config?.timeout,
-    maxRetries: config?.maxRetries,
-    retryDelay: config?.retryDelay,
+    timeout,
+    maxRetries,
+    retryDelay,
   });
 }
 

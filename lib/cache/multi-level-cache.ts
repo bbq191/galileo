@@ -56,7 +56,7 @@ export class MultiLevelCache {
   private l1Cache: Map<string, L1CacheEntry<any>> = new Map();
 
   // L1 缓存最大条目数（防止内存溢出）
-  private readonly L1_MAX_ENTRIES = 1000;
+  private readonly L1_MAX_ENTRIES = parseInt(process.env.L1_CACHE_MAX_SIZE || '1000', 10);
 
   // Redis 客户端
   private redis: Redis | null = null;
@@ -87,7 +87,8 @@ export class MultiLevelCache {
    */
   startCleanup(): void {
     if (!this.cleanupInterval) {
-      this.cleanupInterval = setInterval(() => this.cleanupL1(), 60000); // 每分钟清理一次
+      const cleanupInterval = parseInt(process.env.L1_CACHE_CLEANUP_INTERVAL || '60000', 10);
+      this.cleanupInterval = setInterval(() => this.cleanupL1(), cleanupInterval);
       console.log('[MultiLevelCache] 自动清理已启动');
     }
   }
@@ -233,18 +234,22 @@ export class MultiLevelCache {
    * @param pattern 可选的模式匹配（如 'metadata:table:*'）
    */
   async invalidate(event: string, pattern?: string): Promise<void> {
+    console.log(`[Cache] MultiLevelCache.invalidate 开始: event=${event}, pattern=${pattern}`);
     cacheStats.recordInvalidation();
 
     // 查找所有受影响的缓存配置
     const affectedConfigs = Object.entries(CACHE_CONFIGS).filter(([_, config]) =>
       config.invalidateOn.includes(event)
     );
+    console.log(`[Cache] 找到 ${affectedConfigs.length} 个受影响的缓存配置`);
 
     if (affectedConfigs.length === 0) {
+      console.log('[Cache] 没有受影响的缓存配置，跳过失效');
       return;
     }
 
     // 失效 L1 缓存
+    console.log('[Cache] 开始失效 L1 缓存...');
     if (pattern) {
       this.invalidateL1Pattern(pattern);
     } else {
@@ -255,13 +260,19 @@ export class MultiLevelCache {
         }
       });
     }
+    console.log('[Cache] L1 缓存失效完成');
 
     // 失效 L2 缓存
-    for (const [_, config] of affectedConfigs) {
+    console.log('[Cache] 开始失效 L2 缓存...');
+    for (const [configKey, config] of affectedConfigs) {
       if (config.L2.enabled) {
-        await this.invalidateL2Pattern(pattern || config.key.split(':')[0] + ':*');
+        const patternToUse = pattern || config.key.split(':')[0] + ':*';
+        console.log(`[Cache] 处理配置: ${configKey}, pattern: ${patternToUse}`);
+        await this.invalidateL2Pattern(patternToUse);
       }
     }
+    console.log('[Cache] L2 缓存失效完成');
+    console.log('[Cache] MultiLevelCache.invalidate 完成');
   }
 
   /**
@@ -273,26 +284,34 @@ export class MultiLevelCache {
 
     // 清空 L2
     try {
-      const redis = this.getRedis();
+      console.log('[Cache] 开始清空 L2 缓存...');
       // 仅清空元数据相关的缓存（以 'metadata:' 或 'graph:' 开头）
-      const keys = await redis.keys('metadata:*');
-      const graphKeys = await redis.keys('graph:*');
-      const searchKeys = await redis.keys('search:*');
-      const tableKeys = await redis.keys('tables:*');
-      const dbKeys = await redis.keys('databases:*');
-      const relKeys = await redis.keys('relationships:*');
-
-      const allKeys = [
-        ...keys,
-        ...graphKeys,
-        ...searchKeys,
-        ...tableKeys,
-        ...dbKeys,
-        ...relKeys,
+      const patterns = [
+        'metadata:*',
+        'graph:*',
+        'search:*',
+        'tables:*',
+        'databases:*',
+        'relationships:*',
+        'query:*', // 添加查询缓存
       ];
 
+      const allKeys: string[] = [];
+      for (const pattern of patterns) {
+        const keys = await this.scanKeys(pattern);
+        allKeys.push(...keys);
+        console.log(`[Cache] 找到 ${keys.length} 个 ${pattern} 键`);
+      }
+
       if (allKeys.length > 0) {
-        await redis.del(...allKeys);
+        // 批量删除
+        const batchSize = 1000;
+        for (let i = 0; i < allKeys.length; i += batchSize) {
+          const batch = allKeys.slice(i, i + batchSize);
+          const redis = this.getRedis();
+          await redis.del(...batch);
+        }
+        console.log(`[Cache] 已清空 ${allKeys.length} 个 L2 缓存条目`);
       }
     } catch (error) {
       console.error('[Cache] 清空 L2 缓存失败:', error);
@@ -410,17 +429,106 @@ export class MultiLevelCache {
   /**
    * 根据模式失效 L2 缓存
    */
+  /**
+   * 超时包装器：为异步操作添加超时限制
+   * @param promise 要执行的 Promise
+   * @param timeoutMs 超时时间（毫秒）
+   * @param timeoutError 超时错误信息
+   */
+  private async withTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    timeoutError: string
+  ): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error(timeoutError)), timeoutMs)
+      ),
+    ]);
+  }
+
+  /**
+   * 使用 SCAN 命令查找匹配的键（避免阻塞）
+   * @param pattern 匹配模式
+   * @returns 匹配的键列表
+   */
+  private async scanKeys(pattern: string): Promise<string[]> {
+    const redis = this.getRedis();
+    const keys: string[] = [];
+    let cursor = '0';
+    const maxIterations = 1000; // 防止无限循环
+    let iterations = 0;
+
+    try {
+      do {
+        iterations++;
+        if (iterations > maxIterations) {
+          console.warn(`[Cache] SCAN 达到最大迭代次数 ${maxIterations}，停止扫描`);
+          break;
+        }
+
+        // SCAN 命令：每次返回部分键，不会阻塞 Redis
+        // 添加 2 秒超时保护
+        const [nextCursor, matchedKeys] = await this.withTimeout(
+          redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100),
+          2000,
+          `Redis SCAN 命令超时 (pattern: ${pattern}, iteration: ${iterations})`
+        );
+
+        cursor = nextCursor;
+        keys.push(...matchedKeys);
+
+        // 如果找到了很多键，打印进度
+        if (keys.length > 0 && keys.length % 1000 === 0) {
+          console.log(`[Cache] 已扫描 ${keys.length} 个键...`);
+        }
+      } while (cursor !== '0');
+
+      return keys;
+    } catch (error) {
+      console.error(`[Cache] scanKeys 失败:`, error);
+      // 即使失败也返回已扫描的键
+      console.warn(`[Cache] 返回已扫描的 ${keys.length} 个键`);
+      return keys;
+    }
+  }
+
   private async invalidateL2Pattern(pattern: string): Promise<void> {
     try {
+      console.log(`[Cache] 开始查找 L2 缓存键: ${pattern}`);
       const redis = this.getRedis();
-      const keys = await redis.keys(pattern);
+
+      // 使用 SCAN 代替 KEYS，避免阻塞
+      // 为整个操作添加 5 秒总超时
+      const keys = await this.withTimeout(
+        this.scanKeys(pattern),
+        5000,
+        `Redis scanKeys 总超时 (pattern: ${pattern})`
+      );
+      console.log(`[Cache] 找到 ${keys.length} 个 L2 缓存键`);
 
       if (keys.length > 0) {
-        await redis.del(...keys);
+        // 批量删除，每次最多删除 1000 个键
+        const batchSize = 1000;
+        for (let i = 0; i < keys.length; i += batchSize) {
+          const batch = keys.slice(i, i + batchSize);
+          // 为每批删除添加 2 秒超时
+          await this.withTimeout(
+            redis.del(...batch),
+            2000,
+            `Redis DEL 命令超时 (batch: ${i / batchSize + 1})`
+          );
+          console.log(`[Cache] 删除了 ${batch.length} 个缓存条目 (${i + batch.length}/${keys.length})`);
+        }
         console.log(`[Cache] L2 失效了 ${keys.length} 个缓存条目`);
+      } else {
+        console.log(`[Cache] 没有找到匹配的缓存键`);
       }
     } catch (error) {
       console.error('[Cache] L2 缓存失效失败:', error);
+      console.warn('[Cache] 跳过 L2 缓存失效，继续执行');
+      // 不抛出错误，让主流程继续
     }
   }
 
