@@ -23,9 +23,12 @@ export const runtime = 'nodejs';
 import { NextRequest, NextResponse } from 'next/server';
 import { getQueryOrchestrator } from '@/lib/di/setup';
 import type { QueryOrchestrator } from '@/lib/di/orchestrators/query.orchestrator';
+import { performanceMonitor } from '@/lib/api/performance-monitor';
 import type { PreviewQueryRequest, PreviewQueryResponse } from '@/lib/api/types';
 
 export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+
   try {
     // 解析请求体
     const body: PreviewQueryRequest = await request.json();
@@ -52,6 +55,9 @@ export async function POST(request: NextRequest) {
       } as PreviewQueryResponse, { status: result.error?.includes('未找到') ? 404 : 500 });
     }
 
+    // 记录性能指标
+    performanceMonitor.record('/api/query/preview', 'POST', Date.now() - startTime, { query: body.query });
+
     // 返回结果
     return NextResponse.json({
       success: true,
@@ -62,6 +68,9 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     console.error('[Query Preview] Error:', error);
+
+    // 记录错误请求的性能指标
+    performanceMonitor.record('/api/query/preview', 'POST', Date.now() - startTime, { error: true });
 
     return NextResponse.json({
       success: false,

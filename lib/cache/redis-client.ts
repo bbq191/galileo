@@ -71,6 +71,11 @@ export async function closeRedisClient(): Promise<void> {
 export async function checkRedisHealth(): Promise<boolean> {
   try {
     const client = getRedisClient();
+    // 检查连接是否就绪
+    if (client.status !== 'ready') {
+      console.warn('[Redis] 连接未就绪，当前状态:', client.status);
+      return false;
+    }
     const result = await client.ping();
     return result === 'PONG';
   } catch (error) {

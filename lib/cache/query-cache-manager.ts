@@ -26,27 +26,40 @@ export interface QueryCacheStatistics {
   hitRate: number;
 }
 
+// 使用 globalThis 持久化缓存统计，防止热重载丢失
+const globalForQueryCacheStats = globalThis as unknown as {
+  queryCacheStats: QueryCacheStatistics | undefined;
+};
+
 /**
  * 查询缓存管理器类
  */
 @injectable()
 export class QueryCacheManager {
-  private stats: QueryCacheStatistics = {
-    intentCacheHits: 0,
-    intentCacheMisses: 0,
-    sqlCacheHits: 0,
-    sqlCacheMisses: 0,
-    resultCacheHits: 0,
-    resultCacheMisses: 0,
-    totalHits: 0,
-    totalMisses: 0,
-    hitRate: 0,
-  };
+  private stats: QueryCacheStatistics;
 
   // 多级缓存实例
   private cache: MultiLevelCache;
 
   constructor(@inject(DI_TOKENS.MultiLevelCache) cache?: MultiLevelCache) {
+    // 从 globalThis 恢复统计数据，或初始化新的
+    this.stats = globalForQueryCacheStats.queryCacheStats ?? {
+      intentCacheHits: 0,
+      intentCacheMisses: 0,
+      sqlCacheHits: 0,
+      sqlCacheMisses: 0,
+      resultCacheHits: 0,
+      resultCacheMisses: 0,
+      totalHits: 0,
+      totalMisses: 0,
+      hitRate: 0,
+    };
+
+    // 持久化到 globalThis
+    if (process.env.NODE_ENV !== 'production') {
+      globalForQueryCacheStats.queryCacheStats = this.stats;
+    }
+
     // 如果通过 DI 注入，使用注入的实例
     if (cache) {
       this.cache = cache;
@@ -404,17 +417,15 @@ export class QueryCacheManager {
    * 重置统计信息
    */
   resetStatistics(): void {
-    this.stats = {
-      intentCacheHits: 0,
-      intentCacheMisses: 0,
-      sqlCacheHits: 0,
-      sqlCacheMisses: 0,
-      resultCacheHits: 0,
-      resultCacheMisses: 0,
-      totalHits: 0,
-      totalMisses: 0,
-      hitRate: 0,
-    };
+    this.stats.intentCacheHits = 0;
+    this.stats.intentCacheMisses = 0;
+    this.stats.sqlCacheHits = 0;
+    this.stats.sqlCacheMisses = 0;
+    this.stats.resultCacheHits = 0;
+    this.stats.resultCacheMisses = 0;
+    this.stats.totalHits = 0;
+    this.stats.totalMisses = 0;
+    this.stats.hitRate = 0;
   }
 
   /**

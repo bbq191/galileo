@@ -134,31 +134,50 @@ export class StatisticsAggregationService {
     ]);
 
     // 4. 计算综合指标
+    // 当某个维度没有数据时，使用默认满分值
+    const hasRealtimeData = realtimeStats.totalQueries > 0;
+    const hasCacheData = cacheStats.totalHits + cacheStats.totalMisses > 0;
+    const hasAuditData = auditStats.totalQueries > 0;
+
+    // 使用默认值（100%）替代无数据维度
+    // 注意：realtimeStats.successRate 已是 0-100 格式
+    // cacheStats.hitRate 和 auditStats.successRate 是 0-1 格式，需要乘以 100
+    const effectiveRealtimeSuccessRate = hasRealtimeData ? realtimeStats.successRate : 100;
+    const effectiveCacheHitRate = hasCacheData ? cacheStats.hitRate * 100 : 100;
+    const effectiveAuditSuccessRate = hasAuditData ? auditStats.successRate * 100 : 100;
+
     const healthScore = this.calculateHealthScore(
-      realtimeStats.successRate,
-      cacheStats.hitRate,
-      auditStats.successRate
+      effectiveRealtimeSuccessRate,
+      effectiveCacheHitRate,
+      effectiveAuditSuccessRate
     );
 
     const performanceScore = this.calculatePerformanceScore(
       realtimeStats.averageDuration,
       realtimeStats.p95Duration,
-      cacheStats.hitRate
+      effectiveCacheHitRate,
+      hasRealtimeData
     );
 
     const reliabilityScore = this.calculateReliabilityScore(
-      realtimeStats.successRate,
+      effectiveRealtimeSuccessRate,
       realtimeStats.timedOutQueries,
-      realtimeStats.totalQueries
+      realtimeStats.totalQueries,
+      hasRealtimeData
     );
+
+    // 优先使用审计日志的持久化数据，实时统计作为补充
+    const totalQueries = auditStats.totalQueries || realtimeStats.totalQueries;
+    const successfulQueries = Math.round(totalQueries * (auditStats.successRate || 0));
+    const failedQueries = totalQueries - successfulQueries;
 
     return {
       realtime: {
-        totalQueries: realtimeStats.totalQueries,
-        successfulQueries: realtimeStats.successfulQueries,
-        failedQueries: realtimeStats.failedQueries,
-        successRate: realtimeStats.successRate,
-        averageDuration: realtimeStats.averageDuration,
+        totalQueries,
+        successfulQueries,
+        failedQueries: failedQueries || realtimeStats.failedQueries,
+        successRate: totalQueries > 0 ? auditStats.successRate * 100 : realtimeStats.successRate,
+        averageDuration: auditStats.avgExecutionTime || realtimeStats.averageDuration,
         p95Duration: realtimeStats.p95Duration,
         p99Duration: realtimeStats.p99Duration,
       },
@@ -268,6 +287,7 @@ export class StatisticsAggregationService {
 
   /**
    * 计算系统健康度评分（0-100）
+   * 输入值应为 0-100 范围
    */
   private calculateHealthScore(
     realtimeSuccessRate: number,
@@ -287,8 +307,14 @@ export class StatisticsAggregationService {
   private calculatePerformanceScore(
     avgDuration: number,
     p95Duration: number,
-    cacheHitRate: number
+    cacheHitRate: number,
+    hasData: boolean = true
   ): number {
+    // 如果没有数据，返回默认性能分数
+    if (!hasData) {
+      return 100;
+    }
+
     // 性能目标：平均 < 500ms, P95 < 2000ms
     const avgScore = Math.max(0, 100 - (avgDuration / 500) * 50);
     const p95Score = Math.max(0, 100 - (p95Duration / 2000) * 50);
@@ -306,8 +332,14 @@ export class StatisticsAggregationService {
   private calculateReliabilityScore(
     successRate: number,
     timedOutQueries: number,
-    totalQueries: number
+    totalQueries: number,
+    hasData: boolean = true
   ): number {
+    // 如果没有数据，返回默认可靠性分数
+    if (!hasData) {
+      return 100;
+    }
+
     // 超时率惩罚
     const timeoutRate = totalQueries > 0 ? (timedOutQueries / totalQueries) * 100 : 0;
     const timeoutPenalty = Math.min(20, timeoutRate * 2); // 最多扣 20 分

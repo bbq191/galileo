@@ -30,6 +30,7 @@ import { validateOrRespond } from '@/lib/validation/validator';
 import { sanitizeError, ErrorCategory } from '@/lib/security/error-sanitizer';
 import { extractColumnsFromSQL } from '@/lib/sql/parser/column-extractor';
 import { withQueryRateLimit } from '@/lib/security/api-rate-limit-middleware';
+import { performanceMonitor } from '@/lib/api/performance-monitor';
 import type { ExecuteQueryRequest, ExecuteQueryResponse } from '@/lib/api/types';
 
 /**
@@ -127,6 +128,10 @@ export const POST = withQueryRateLimit(async (request: Request) => {
       });
     }
 
+    // 记录性能指标
+    const duration = Date.now() - startTime;
+    performanceMonitor.record('/api/query/execute', 'POST', duration, { query: naturalLanguageQuery });
+
     // 返回结果
     if (result.success) {
       return NextResponse.json({
@@ -176,6 +181,10 @@ export const POST = withQueryRateLimit(async (request: Request) => {
       category: safeError.category,
       timestamp: safeError.timestamp,
     });
+
+    // 记录错误请求的性能指标
+    const duration = Date.now() - startTime;
+    performanceMonitor.record('/api/query/execute', 'POST', duration, { query: naturalLanguageQuery, error: true });
 
     return NextResponse.json({
       success: false,

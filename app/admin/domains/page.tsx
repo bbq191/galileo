@@ -20,9 +20,9 @@ interface BusinessDomain {
   ownerTeam: string | null;
   createdAt: string;
   updatedAt: string;
-  databaseCount?: number;
   keywords?: DomainKeyword[];
   _count?: {
+    databases: number;
     keywords: number;
   };
 }
@@ -100,7 +100,7 @@ export default function DomainsPage() {
       const response = await fetch('/api/datasources');
       const result = await response.json();
 
-      if (result.success) {
+      if (result.status === 'success') {
         setDataSources(result.data || []);
       }
     } catch (err) {
@@ -209,9 +209,10 @@ export default function DomainsPage() {
    * 删除业务域
    */
   const handleDelete = async (domain: BusinessDomain) => {
-    if (domain.databaseCount && domain.databaseCount > 0) {
+    const dbCount = domain._count?.databases || 0;
+    if (dbCount > 0) {
       alert(
-        `无法删除业务域"${domain.name}"，因为有 ${domain.databaseCount} 个数据库正在使用该业务域。\n请先将这些数据库重新分配到其他业务域。`
+        `无法删除业务域"${domain.name}"，因为有 ${dbCount} 个数据库正在使用该业务域。\n请先将这些数据库重新分配到其他业务域。`
       );
       return;
     }
@@ -442,7 +443,7 @@ export default function DomainsPage() {
                   <h2 className="card-title">
                     {domain.name}
                     <div className="badge badge-primary">
-                      {domain.databaseCount || 0} 个数据库
+                      {domain._count?.databases || 0} 个数据库
                     </div>
                   </h2>
 
@@ -473,7 +474,7 @@ export default function DomainsPage() {
                   </div>
 
                   <div className="card-actions justify-end mt-4">
-                    {domain.databaseCount && domain.databaseCount > 0 && (
+                    {(domain._count?.databases || 0) > 0 && (
                       <a
                         href={`/metadata/domains?domainId=${domain.id}`}
                         className="btn btn-sm btn-ghost"
@@ -490,7 +491,7 @@ export default function DomainsPage() {
                     <button
                       className="btn btn-sm btn-ghost text-error"
                       onClick={() => handleDelete(domain)}
-                      disabled={!!domain.databaseCount && domain.databaseCount > 0}
+                      disabled={(domain._count?.databases || 0) > 0}
                     >
                       删除
                     </button>

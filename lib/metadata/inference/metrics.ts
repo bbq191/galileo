@@ -264,4 +264,14 @@ export class InferenceMetricsCollector {
 }
 
 // 全局单例（用于收集系统级指标）
-export const globalInferenceMetrics = new InferenceMetricsCollector();
+// 使用 global 对象防止 Next.js 开发模式下热重载导致指标丢失
+const globalForMetrics = globalThis as unknown as {
+  inferenceMetrics: InferenceMetricsCollector | undefined;
+};
+
+export const globalInferenceMetrics =
+  globalForMetrics.inferenceMetrics ?? new InferenceMetricsCollector();
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForMetrics.inferenceMetrics = globalInferenceMetrics;
+}

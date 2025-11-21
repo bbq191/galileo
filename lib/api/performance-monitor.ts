@@ -130,7 +130,17 @@ export class PerformanceMonitor {
 }
 
 // 全局性能监控器实例
-export const performanceMonitor = new PerformanceMonitor();
+// 使用 globalThis 防止 Next.js 开发模式热重载导致数据丢失
+const globalForPerformance = globalThis as unknown as {
+  performanceMonitor: PerformanceMonitor | undefined;
+};
+
+export const performanceMonitor =
+  globalForPerformance.performanceMonitor ?? new PerformanceMonitor();
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForPerformance.performanceMonitor = performanceMonitor;
+}
 
 /**
  * 性能监控装饰器

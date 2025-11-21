@@ -232,4 +232,14 @@ export class CacheStats {
 }
 
 // 全局缓存统计实例
-export const cacheStats = new CacheStats();
+// 使用 globalThis 防止 Next.js 开发模式热重载导致数据丢失
+const globalForCacheStats = globalThis as unknown as {
+  cacheStats: CacheStats | undefined;
+};
+
+export const cacheStats =
+  globalForCacheStats.cacheStats ?? new CacheStats();
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForCacheStats.cacheStats = cacheStats;
+}

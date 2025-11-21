@@ -67,52 +67,14 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 管理中心 */}
+        {/* 管理中心入口 */}
         <div className="mb-8">
-          <h2 className="text-2xl font-semibold mb-4 text-center">管理中心</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <a href="/admin/audit" className="card bg-gradient-to-br from-info to-info-focus text-info-content shadow-xl hover:shadow-2xl transition-all">
-              <div className="card-body">
-                <h3 className="card-title">审计日志</h3>
-                <p className="text-sm opacity-90">查询审计和异常检测</p>
-              </div>
-            </a>
-
-            <a href="/admin/performance" className="card bg-gradient-to-br from-success to-success-focus text-success-content shadow-xl hover:shadow-2xl transition-all">
-              <div className="card-body">
-                <h3 className="card-title">性能监控</h3>
-                <p className="text-sm opacity-90">API性能和缓存统计</p>
-              </div>
-            </a>
-
-            <a href="/admin/ai-cost" className="card bg-gradient-to-br from-warning to-warning-focus text-warning-content shadow-xl hover:shadow-2xl transition-all">
-              <div className="card-body">
-                <h3 className="card-title">AI成本管理</h3>
-                <p className="text-sm opacity-90">成本追踪和缓存管理</p>
-              </div>
-            </a>
-
-            <a href="/admin/statistics" className="card bg-gradient-to-br from-secondary to-secondary-focus text-secondary-content shadow-xl hover:shadow-2xl transition-all">
-              <div className="card-body">
-                <h3 className="card-title">统计分析</h3>
-                <p className="text-sm opacity-90">系统统计和热点分析</p>
-              </div>
-            </a>
-
-            <a href="/admin/health" className="card bg-gradient-to-br from-accent to-accent-focus text-accent-content shadow-xl hover:shadow-2xl transition-all">
-              <div className="card-body">
-                <h3 className="card-title">系统健康</h3>
-                <p className="text-sm opacity-90">实时健康状态监控</p>
-              </div>
-            </a>
-
-            <a href="/admin/domains" className="card bg-gradient-to-br from-purple-500 to-purple-700 text-white shadow-xl hover:shadow-2xl transition-all">
-              <div className="card-body">
-                <h3 className="card-title">业务域管理</h3>
-                <p className="text-sm opacity-90">管理和配置业务域</p>
-              </div>
-            </a>
-          </div>
+          <a href="/admin" className="card bg-gradient-to-br from-slate-700 to-slate-900 text-white shadow-xl hover:shadow-2xl transition-all">
+            <div className="card-body items-center text-center">
+              <h3 className="card-title text-2xl">管理后台</h3>
+              <p className="text-sm opacity-90">系统监控、审计日志、性能分析、AI成本管理</p>
+            </div>
+          </a>
         </div>
 
         {/* 系统状态 */}
