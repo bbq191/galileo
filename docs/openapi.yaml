@@ -1,0 +1,696 @@
+openapi: 3.1.0
+info:
+  title: Galileo API
+  description: 自然语言转 SQL 系统 API 文档
+  version: 1.0.0
+  contact:
+    name: xusy
+
+servers:
+  - url: /api
+    description: API 服务
+
+tags:
+  - name: Query
+    description: 自然语言查询相关
+  - name: Datasources
+    description: 数据源连接管理
+  - name: Metadata
+    description: 元数据浏览与管理
+  - name: Domains
+    description: 业务域管理
+  - name: Relationships
+    description: 表关系与图谱
+  - name: Statistics
+    description: 统计与分析
+  - name: AI
+    description: AI 相关功能
+  - name: Cache
+    description: 缓存管理
+  - name: Audit
+    description: 审计日志
+  - name: System
+    description: 系统健康与性能
+
+paths:
+  # ==================== Query ====================
+  /query/preview:
+    post:
+      tags: [Query]
+      summary: 预览 SQL 查询
+      description: 将自然语言转换为 SQL 查询并预览
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                  description: 自然语言查询
+                datasourceId:
+                  type: string
+                  description: 数据源 ID
+              required: [query]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sql:
+                    type: string
+                  tables:
+                    type: array
+                    items:
+                      type: string
+
+  /query/execute:
+    post:
+      tags: [Query]
+      summary: 执行 SQL 查询
+      description: 执行 SQL 查询并返回结果
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sql:
+                  type: string
+                datasourceId:
+                  type: string
+              required: [sql]
+      responses:
+        '200':
+          description: 成功
+
+  /query/history:
+    get:
+      tags: [Query]
+      summary: 获取查询历史列表
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: 成功
+
+  /query/history/{id}:
+    get:
+      tags: [Query]
+      summary: 获取查询历史详情
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+
+  # ==================== Datasources ====================
+  /datasources:
+    get:
+      tags: [Datasources]
+      summary: 获取数据源列表
+      responses:
+        '200':
+          description: 成功
+    post:
+      tags: [Datasources]
+      summary: 创建数据源
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                type:
+                  type: string
+                  enum: [mysql, postgresql, sqlserver]
+                host:
+                  type: string
+                port:
+                  type: integer
+                database:
+                  type: string
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '201':
+          description: 创建成功
+
+  /datasources/{id}:
+    get:
+      tags: [Datasources]
+      summary: 获取数据源详情
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+    put:
+      tags: [Datasources]
+      summary: 更新数据源
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+    delete:
+      tags: [Datasources]
+      summary: 删除数据源
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: 删除成功
+
+  /datasources/{id}/test:
+    post:
+      tags: [Datasources]
+      summary: 测试数据源连接
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 连接成功
+
+  /datasources/{id}/sync:
+    post:
+      tags: [Datasources]
+      summary: 同步数据源元数据
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 同步成功
+
+  # ==================== Metadata ====================
+  /metadata/databases:
+    get:
+      tags: [Metadata]
+      summary: 获取数据库列表
+      responses:
+        '200':
+          description: 成功
+
+  /metadata/tables:
+    get:
+      tags: [Metadata]
+      summary: 获取表列表
+      parameters:
+        - name: datasourceId
+          in: query
+          schema:
+            type: string
+        - name: database
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+
+  /metadata/columns:
+    get:
+      tags: [Metadata]
+      summary: 获取列信息
+      parameters:
+        - name: tableId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+
+  /metadata/search:
+    get:
+      tags: [Metadata]
+      summary: 搜索元数据
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+
+  /metadata/relationships/infer:
+    post:
+      tags: [Metadata]
+      summary: 推断表关系
+      description: 基于命名规则和数据特征推断表之间的关系
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                datasourceId:
+                  type: string
+      responses:
+        '200':
+          description: 成功
+
+  /metadata/domains:
+    get:
+      tags: [Metadata]
+      summary: 获取元数据业务域列表
+      responses:
+        '200':
+          description: 成功
+    post:
+      tags: [Metadata]
+      summary: 创建元数据业务域
+      responses:
+        '201':
+          description: 创建成功
+
+  /metadata/domains/{id}:
+    get:
+      tags: [Metadata]
+      summary: 获取元数据业务域详情
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+    put:
+      tags: [Metadata]
+      summary: 更新元数据业务域
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+    delete:
+      tags: [Metadata]
+      summary: 删除元数据业务域
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: 删除成功
+
+  /metadata/domains/infer:
+    post:
+      tags: [Metadata]
+      summary: 推断单表业务域
+      description: 使用 AI 推断表所属的业务域
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tableId:
+                  type: string
+      responses:
+        '200':
+          description: 成功
+
+  /metadata/domains/batch-infer:
+    post:
+      tags: [Metadata]
+      summary: 批量推断业务域
+      description: 批量推断多个表的业务域
+      responses:
+        '200':
+          description: 成功
+
+  /metadata/domains/apply:
+    post:
+      tags: [Metadata]
+      summary: 应用业务域分配
+      description: 将推断的业务域应用到表
+      responses:
+        '200':
+          description: 成功
+
+  /metadata/domains/metrics:
+    get:
+      tags: [Metadata]
+      summary: 获取业务域指标
+      description: 获取业务域分配的统计指标
+      responses:
+        '200':
+          description: 成功
+
+  # ==================== Domains ====================
+  /domains:
+    get:
+      tags: [Domains]
+      summary: 获取业务域列表
+      responses:
+        '200':
+          description: 成功
+    post:
+      tags: [Domains]
+      summary: 创建业务域
+      responses:
+        '201':
+          description: 创建成功
+
+  /domains/{id}:
+    get:
+      tags: [Domains]
+      summary: 获取业务域详情
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+    put:
+      tags: [Domains]
+      summary: 更新业务域
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+    delete:
+      tags: [Domains]
+      summary: 删除业务域
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: 删除成功
+
+  /domains/{id}/keywords:
+    get:
+      tags: [Domains]
+      summary: 获取业务域关键词
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+    put:
+      tags: [Domains]
+      summary: 更新业务域关键词
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+
+  /domains/discover:
+    post:
+      tags: [Domains]
+      summary: 自动发现业务域
+      description: 基于表结构和数据自动发现潜在的业务域
+      responses:
+        '200':
+          description: 成功
+
+  # ==================== Relationships ====================
+  /relationships/graph:
+    get:
+      tags: [Relationships]
+      summary: 获取关系图谱数据
+      description: 获取表之间的关系图谱，用于可视化展示
+      parameters:
+        - name: datasourceId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+
+  /relationships/verify:
+    post:
+      tags: [Relationships]
+      summary: 验证表关系
+      description: 验证推断的表关系是否正确
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                relationshipId:
+                  type: string
+                valid:
+                  type: boolean
+      responses:
+        '200':
+          description: 成功
+
+  # ==================== Statistics ====================
+  /statistics/overview:
+    get:
+      tags: [Statistics]
+      summary: 获取统计概览
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalQueries:
+                    type: integer
+                  todayQueries:
+                    type: integer
+                  avgResponseTime:
+                    type: number
+                  successRate:
+                    type: number
+
+  /statistics/hotspots:
+    get:
+      tags: [Statistics]
+      summary: 获取热点统计
+      description: 获取查询热点表和字段统计
+      responses:
+        '200':
+          description: 成功
+
+  # ==================== AI ====================
+  /ai/cost:
+    get:
+      tags: [AI]
+      summary: 获取 AI 成本统计
+      description: 获取 AI 调用的成本统计
+      parameters:
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: 成功
+
+  /ai/diagnostic:
+    get:
+      tags: [AI]
+      summary: AI 诊断信息
+      description: 获取 AI 服务的诊断信息
+      responses:
+        '200':
+          description: 成功
+
+  /ai/prompt-cache:
+    get:
+      tags: [AI]
+      summary: 获取提示词缓存状态
+      responses:
+        '200':
+          description: 成功
+    delete:
+      tags: [AI]
+      summary: 清除提示词缓存
+      responses:
+        '204':
+          description: 清除成功
+
+  # ==================== Cache ====================
+  /cache/stats:
+    get:
+      tags: [Cache]
+      summary: 获取缓存统计
+      description: 获取查询缓存的命中率等统计信息
+      responses:
+        '200':
+          description: 成功
+
+  /cache/clear:
+    post:
+      tags: [Cache]
+      summary: 清除缓存
+      description: 清除指定类型或全部缓存
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                  enum: [all, query, metadata]
+      responses:
+        '200':
+          description: 清除成功
+
+  # ==================== Audit ====================
+  /audit/logs:
+    get:
+      tags: [Audit]
+      summary: 获取审计日志
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: 成功
+
+  /audit/stats:
+    get:
+      tags: [Audit]
+      summary: 获取审计统计
+      description: 获取审计日志的统计汇总
+      responses:
+        '200':
+          description: 成功
+
+  # ==================== System ====================
+  /health:
+    get:
+      tags: [System]
+      summary: 健康检查
+      responses:
+        '200':
+          description: 系统健康
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, unhealthy]
+                  database:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                  redis:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+
+  /performance:
+    get:
+      tags: [System]
+      summary: 获取性能指标
+      description: 获取系统性能监控指标
+      responses:
+        '200':
+          description: 成功

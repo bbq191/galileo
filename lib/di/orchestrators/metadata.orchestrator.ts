@@ -42,6 +42,9 @@ export interface MetadataSyncOptions {
 
   /** 是否强制全量同步 */
   forceFullSync?: boolean;
+
+  /** 是否启用AI语义标注 */
+  enableAIAnnotation?: boolean;
 }
 
 /**
@@ -170,6 +173,7 @@ export class MetadataOrchestrator {
         inferRelationships: options.inferRelationships ?? true,
         minConfidence: options.minConfidence ?? 0.70,
         trackChanges: options.trackChanges ?? true,
+        enableAIAnnotation: options.enableAIAnnotation ?? false,
       });
 
       // 3. 自动识别分表组

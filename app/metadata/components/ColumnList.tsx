@@ -1,3 +1,14 @@
+/**
+ * 字段列表组件
+ *
+ * 功能：
+ * - 展示表的字段信息
+ * - 支持编辑字段的语义描述
+ * - 支持复制字段名和DDL
+ *
+ * @author xusy
+ */
+
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
@@ -11,6 +22,11 @@ export default function ColumnList({ tableId }: ColumnListProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedColumn, setExpandedColumn] = useState<number | null>(null);
+
+  // 编辑语义描述的状态
+  const [editingColumnId, setEditingColumnId] = useState<number | null>(null);
+  const [editingDescription, setEditingDescription] = useState('');
+  const [savingDescription, setSavingDescription] = useState(false);
 
   const loadColumns = useCallback(async () => {
     try {
@@ -39,6 +55,66 @@ export default function ColumnList({ tableId }: ColumnListProps) {
 
   const toggleColumn = (columnId: number) => {
     setExpandedColumn(expandedColumn === columnId ? null : columnId);
+  };
+
+  /**
+   * 开始编辑语义描述
+   */
+  const handleStartEdit = (column: any) => {
+    setEditingColumnId(column.id);
+    setEditingDescription(column.semanticDescription || '');
+  };
+
+  /**
+   * 取消编辑
+   */
+  const handleCancelEdit = () => {
+    setEditingColumnId(null);
+    setEditingDescription('');
+  };
+
+  /**
+   * 保存语义描述
+   */
+  const handleSaveDescription = async (columnId: number) => {
+    try {
+      setSavingDescription(true);
+
+      const response = await fetch(`/api/metadata/columns/${columnId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          semanticDescription: editingDescription,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.status === 'success') {
+        // 更新本地数据
+        setColumns((prev) =>
+          prev.map((col) =>
+            col.id === columnId
+              ? {
+                  ...col,
+                  semanticDescription: result.data.semanticDescription,
+                  semanticSource: result.data.semanticSource,
+                }
+              : col
+          )
+        );
+
+        setEditingColumnId(null);
+        setEditingDescription('');
+      } else {
+        throw new Error(result.message || '保存失败');
+      }
+    } catch (err) {
+      console.error('保存语义描述失败:', err);
+      alert(err instanceof Error ? err.message : '保存失败');
+    } finally {
+      setSavingDescription(false);
+    }
   };
 
   if (loading) {
@@ -173,37 +249,103 @@ export default function ColumnList({ tableId }: ColumnListProps) {
                     <td colSpan={7}>
                       <div className="p-4 bg-base-200 rounded-lg space-y-3">
                         {/* 语义描述 */}
-                        {column.semanticDescription && (
-                          <div className="alert alert-info">
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              className="stroke-current shrink-0 w-6 h-6"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth="2"
-                                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                              ></path>
-                            </svg>
-                            <div>
-                              <h4 className="font-bold">AI 语义描述</h4>
-                              <div className="text-sm">{column.semanticDescription}</div>
-                              {column.semanticSource && (
-                                <div className="text-xs mt-1">
-                                  来源:
-                                  <span className="badge badge-xs ml-1">
-                                    {column.semanticSource === 'rule' && '规则引擎'}
-                                    {column.semanticSource === 'ai' && 'AI 推断'}
-                                    {column.semanticSource === 'manual' && '手动标注'}
-                                  </span>
-                                </div>
+                        <div className="alert alert-info">
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            className="stroke-current shrink-0 w-6 h-6"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth="2"
+                              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                            ></path>
+                          </svg>
+                          <div className="w-full">
+                            <div className="flex justify-between items-start">
+                              <h4 className="font-bold">语义描述</h4>
+                              {editingColumnId !== column.id && (
+                                <button
+                                  className="btn btn-xs btn-ghost"
+                                  onClick={() => handleStartEdit(column)}
+                                >
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    className="h-4 w-4"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                    />
+                                  </svg>
+                                  编辑
+                                </button>
                               )}
                             </div>
+
+                            {editingColumnId === column.id ? (
+                              <div className="mt-2 space-y-2">
+                                <textarea
+                                  className="textarea textarea-bordered w-full"
+                                  rows={3}
+                                  value={editingDescription}
+                                  onChange={(e) => setEditingDescription(e.target.value)}
+                                  placeholder="请输入语义描述..."
+                                />
+                                <div className="flex gap-2">
+                                  <button
+                                    className="btn btn-primary btn-sm"
+                                    onClick={() => handleSaveDescription(column.id)}
+                                    disabled={savingDescription}
+                                  >
+                                    {savingDescription ? (
+                                      <>
+                                        <span className="loading loading-spinner loading-xs"></span>
+                                        保存中...
+                                      </>
+                                    ) : (
+                                      '保存'
+                                    )}
+                                  </button>
+                                  <button
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={handleCancelEdit}
+                                    disabled={savingDescription}
+                                  >
+                                    取消
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="text-sm mt-1">
+                                  {column.semanticDescription || (
+                                    <span className="text-base-content/40 italic">
+                                      暂无语义描述
+                                    </span>
+                                  )}
+                                </div>
+                                {column.semanticSource && (
+                                  <div className="text-xs mt-1">
+                                    来源:
+                                    <span className="badge badge-xs ml-1">
+                                      {column.semanticSource === 'rule' && '规则引擎'}
+                                      {column.semanticSource === 'ai' && 'AI 推断'}
+                                      {column.semanticSource === 'manual' && '手动标注'}
+                                    </span>
+                                  </div>
+                                )}
+                              </>
+                            )}
                           </div>
-                        )}
+                        </div>
 
                         {/* 详细信息表格 */}
                         <div className="overflow-x-auto">

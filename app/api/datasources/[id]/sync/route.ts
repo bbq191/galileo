@@ -42,6 +42,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       inferRelationships = true,
       minConfidence = 0.70,
       trackChanges = true,
+      enableAIAnnotation = false,
     } = body;
 
     // 获取要同步的数据库列表
@@ -71,6 +72,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       inferRelationships,
       minConfidence,
       trackChanges,
+      enableAIAnnotation,
     });
 
     const duration = Date.now() - startTime;

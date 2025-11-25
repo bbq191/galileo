@@ -6,12 +6,14 @@
 import { injectable, inject } from 'tsyringe';
 import { PrismaClient } from '@/app/generated/prisma';
 import { DI_TOKENS } from '@/lib/di/tokens';
+import { getService } from '@/lib/di/setup';
 import type { ConnectionManager } from "@/lib/database/connection-manager";
 import type { MetadataRepository } from "../storage/metadata-repository";
 import { CollectorFactory } from "../collectors";
 import { RelationshipInferencer } from "../inference";
 import { changeTracker } from "../storage";
 import type { ColumnInfo } from "../types";
+import { semanticConfig } from '@/lib/ai/config';
 
 /**
  * 同步选项
@@ -31,6 +33,9 @@ export interface SyncOptions {
 
   /** 是否记录变更历史 */
   trackChanges?: boolean;
+
+  /** 是否启用AI语义标注 */
+  enableAIAnnotation?: boolean;
 }
 
 /**
@@ -409,6 +414,24 @@ export class MetadataSyncService {
           await this.metadataRepository.deleteColumn(existingColumn.id);
           result.changes!.columnsRemoved++;
         }
+      }
+    }
+
+    // AI 语义标注（如果启用）
+    if (options.enableAIAnnotation && semanticConfig.enabled) {
+      try {
+        const semanticAnnotator = getService<any>(DI_TOKENS.SemanticAnnotator);
+
+        // 标注表
+        await semanticAnnotator.annotateTable(table.id);
+
+        // 标注字段
+        await semanticAnnotator.annotateColumns(table.id, { force: false });
+
+        console.log(`  ✓ ${tableName} - AI语义标注完成`);
+      } catch (error: any) {
+        console.error(`  ✗ ${tableName} - 语义标注失败:`, error.message);
+        // 语义标注失败不应阻止同步流程，仅记录错误
       }
     }
 
