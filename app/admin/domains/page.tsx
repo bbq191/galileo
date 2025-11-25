@@ -325,24 +325,7 @@ export default function DomainsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-base-200">
-      {/* 导航栏 */}
-      <div className="navbar bg-base-100 shadow-lg">
-        <div className="flex-1">
-          <a href="/" className="btn btn-ghost normal-case text-xl">
-            Galileo
-          </a>
-          <div className="breadcrumbs text-sm ml-4">
-            <ul>
-              <li><a href="/admin">管理后台</a></li>
-              <li>业务域管理</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-
-      {/* 主内容 */}
-      <div className="container mx-auto p-6">
+    <div className="space-y-6">
         {/* 页面标题和操作按钮 */}
         <div className="flex justify-between items-center mb-6">
           <div>
@@ -510,7 +493,6 @@ export default function DomainsPage() {
             )}
           </div>
         )}
-      </div>
 
       {/* 新建/编辑模态框 */}
       {showModal && (

@@ -297,30 +297,7 @@ export default function PerformancePage() {
   };
 
   return (
-    <div className="min-h-screen bg-base-200">
-      {/* 页面头部 */}
-      <div className="navbar bg-base-100 shadow-lg">
-        <div className="flex-1">
-          <a href="/" className="btn btn-ghost normal-case text-xl">
-            Galileo
-          </a>
-          <div className="breadcrumbs text-sm ml-4">
-            <ul>
-              <li><a href="/">首页</a></li>
-              <li><a href="/admin/statistics">管理中心</a></li>
-              <li>性能监控</li>
-            </ul>
-          </div>
-        </div>
-        <div className="flex-none gap-2">
-          <a href="/admin/audit" className="btn btn-ghost btn-sm">审计日志</a>
-          <a href="/admin/ai-cost" className="btn btn-ghost btn-sm">AI成本</a>
-          <a href="/admin/statistics" className="btn btn-ghost btn-sm">统计分析</a>
-          <a href="/admin/health" className="btn btn-ghost btn-sm">系统健康</a>
-        </div>
-      </div>
-
-      <div className="container mx-auto p-6 space-y-6">
+    <div className="space-y-6">
         {/* 控制面板 */}
         <div className="card bg-base-100 shadow-xl">
           <div className="card-body p-4">
@@ -711,7 +688,6 @@ export default function PerformancePage() {
             )}
           </>
         )}
-      </div>
     </div>
   );
 }

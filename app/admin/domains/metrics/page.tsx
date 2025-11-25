@@ -172,21 +172,7 @@ export default function DomainMetricsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-base-200">
-      {/* 导航栏 */}
-      <div className="navbar bg-base-100 shadow-lg">
-        <div className="flex-1">
-          <a href="/" className="btn btn-ghost normal-case text-xl">
-            Galileo
-          </a>
-          <div className="breadcrumbs text-sm ml-4">
-            <ul>
-              <li><a href="/admin">管理后台</a></li>
-              <li><a href="/admin/domains">业务域管理</a></li>
-              <li>推断监控</li>
-            </ul>
-          </div>
-        </div>
+    <div className="space-y-6">
         <div className="flex-none gap-2">
           <label className="label cursor-pointer gap-2">
             <span className="label-text">自动刷新</span>
@@ -215,13 +201,10 @@ export default function DomainMetricsPage() {
             重置指标
           </button>
         </div>
-      </div>
 
-      {/* 主内容 */}
-      <div className="container mx-auto p-6">
-        <h1 className="text-3xl font-bold mb-6">业务域推断性能监控</h1>
+      <h1 className="text-2xl font-bold mb-6">业务域推断性能监控</h1>
 
-        {/* 错误提示 */}
+      {/* 错误提示 */}
         {error && (
           <div className="alert alert-error mb-6">
             <svg
@@ -489,7 +472,6 @@ export default function DomainMetricsPage() {
             </div>
           </div>
         )}
-      </div>
     </div>
   );
 }
