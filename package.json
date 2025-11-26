@@ -48,7 +48,7 @@
     "reactflow": "^11.11.4",
     "redux": "^5.0.1",
     "reflect-metadata": "^0.2.2",
-    "swagger-ui-react": "^3.51.2",
+    "swagger-ui-react": "^5.30.3",
     "traverse": "^0.6.11",
     "tsyringe": "^4.10.0",
     "yaml": "^2.8.1",

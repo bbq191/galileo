@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react';
 import 'swagger-ui-react/swagger-ui.css';
 
 // 动态导入 SwaggerUI 以避免 SSR 问题
-const SwaggerUI = dynamic(() => import('swagger-ui-react'), {
+const SwaggerUI = dynamic(() => import('swagger-ui-react').then(mod => mod.default), {
   ssr: false,
   loading: () => (
     <div className="flex items-center justify-center min-h-screen">
@@ -27,11 +27,11 @@ const SwaggerUI = dynamic(() => import('swagger-ui-react'), {
 });
 
 export default function ApiDocsPage() {
-  const [spec, setSpec] = useState<object | null>(null);
+  const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // 加载 OpenAPI 规范
+    // 验证 API 端点是否可用
     fetch('/api/docs/openapi')
       .then((res) => {
         if (!res.ok) {
@@ -39,7 +39,14 @@ export default function ApiDocsPage() {
         }
         return res.json();
       })
-      .then((data) => setSpec(data))
+      .then((data) => {
+        // 验证返回的数据
+        if (!data.openapi && !data.swagger) {
+          throw new Error('Invalid OpenAPI specification');
+        }
+        console.log('OpenAPI spec loaded:', data.openapi);
+        setIsReady(true);
+      })
       .catch((err) => {
         console.error('Failed to load OpenAPI spec:', err);
         setError(err.message);
@@ -76,7 +83,7 @@ export default function ApiDocsPage() {
     );
   }
 
-  if (!spec) {
+  if (!isReady) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -112,7 +119,11 @@ export default function ApiDocsPage() {
 
       {/* Swagger UI */}
       <main className="swagger-ui-wrapper">
-        <SwaggerUI spec={spec} />
+        <SwaggerUI
+          url="/api/docs/openapi"
+          docExpansion="list"
+          defaultModelsExpandDepth={1}
+        />
       </main>
 
       {/* 自定义样式 */}

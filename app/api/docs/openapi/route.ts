@@ -27,7 +27,7 @@ export async function GET() {
     // 返回 JSON 格式的规范
     return NextResponse.json(spec, {
       headers: {
-        'Cache-Control': 'public, max-age=3600', // 缓存 1 小时
+        'Cache-Control': 'no-cache, no-store, must-revalidate', // 禁用缓存
         'Content-Type': 'application/json',
       },
     });

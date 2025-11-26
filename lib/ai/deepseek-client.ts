@@ -36,12 +36,22 @@ export class DeepseekClient {
     this.apiKey = config.apiKey || 'ollama'; // Ollama 不需要真实的 API Key
     this.apiUrl = config.apiUrl || 'http://localhost:11434';
     this.model = config.model || 'deepseek-r1:1.5b';
-    this.timeout = config.timeout || 60000; // Ollama 推理较慢，设为 60 秒
-    this.maxRetries = config.maxRetries || 3;
-    this.retryDelay = config.retryDelay || 1000; // 1 秒
+    this.timeout = config.timeout ?? 300000; // Ollama 推理较慢，默认设为 300 秒（5 分钟）
+    this.maxRetries = config.maxRetries ?? 3;
+    this.retryDelay = config.retryDelay ?? 1000; // 1 秒
 
     // 检测是否为 Ollama
     this.isOllama = this.apiUrl.includes('localhost') || this.apiUrl.includes('127.0.0.1');
+
+    // 输出配置以便调试
+    console.log('[DeepseekClient] 初始化配置:', {
+      apiUrl: this.apiUrl,
+      model: this.model,
+      timeout: this.timeout,
+      maxRetries: this.maxRetries,
+      retryDelay: this.retryDelay,
+      isOllama: this.isOllama,
+    });
   }
 
   /**
@@ -478,15 +488,24 @@ export function createDeepseekClient(config?: Partial<DeepseekConfig>): Deepseek
     throw new Error('Deepseek API Key 未配置，请设置环境变量 DEEPSEEK_API_KEY');
   }
 
-  // 从环境变量读取配置
-  const timeout = config?.timeout
-    || (process.env.DEEPSEEK_TIMEOUT ? parseInt(process.env.DEEPSEEK_TIMEOUT, 10) : undefined);
+  // 从环境变量读取配置（优先使用传入的 config，其次使用环境变量）
+  const timeout = config?.timeout ??
+    (process.env.DEEPSEEK_TIMEOUT ? parseInt(process.env.DEEPSEEK_TIMEOUT, 10) : undefined);
 
-  const maxRetries = config?.maxRetries
-    || (process.env.DEEPSEEK_MAX_RETRIES ? parseInt(process.env.DEEPSEEK_MAX_RETRIES, 10) : undefined);
+  const maxRetries = config?.maxRetries ??
+    (process.env.DEEPSEEK_MAX_RETRIES ? parseInt(process.env.DEEPSEEK_MAX_RETRIES, 10) : undefined);
 
-  const retryDelay = config?.retryDelay
-    || (process.env.DEEPSEEK_RETRY_DELAY ? parseInt(process.env.DEEPSEEK_RETRY_DELAY, 10) : undefined);
+  const retryDelay = config?.retryDelay ??
+    (process.env.DEEPSEEK_RETRY_DELAY ? parseInt(process.env.DEEPSEEK_RETRY_DELAY, 10) : undefined);
+
+  console.log('[createDeepseekClient] 环境变量配置:', {
+    DEEPSEEK_TIMEOUT: process.env.DEEPSEEK_TIMEOUT,
+    DEEPSEEK_MAX_RETRIES: process.env.DEEPSEEK_MAX_RETRIES,
+    DEEPSEEK_RETRY_DELAY: process.env.DEEPSEEK_RETRY_DELAY,
+    parsedTimeout: timeout,
+    parsedMaxRetries: maxRetries,
+    parsedRetryDelay: retryDelay,
+  });
 
   return new DeepseekClient({
     apiKey,
