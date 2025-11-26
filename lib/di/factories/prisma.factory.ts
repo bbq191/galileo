@@ -3,7 +3,7 @@
  * 提供单例 PrismaClient 实例，支持热重载
  */
 
-import { PrismaClient } from '@/app/generated/prisma';
+import { PrismaClient } from '@prisma/client';
 
 /**
  * 全局类型扩展

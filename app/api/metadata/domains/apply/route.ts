@@ -4,10 +4,14 @@
  * 应用业务域分配（手动或自动推断后确认）
  */
 
+
+export const runtime = 'nodejs';
+export { dynamic } from '@/lib/api/route-config';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getService } from '@/lib/di/setup';
 import { DI_TOKENS } from '@/lib/di/tokens';
-import type { PrismaClient } from '@/app/generated/prisma';
+import type { PrismaClient } from '@prisma/client';
 import type { DomainInferencer } from '@/lib/metadata/inference/domain-inferencer';
 
 /**

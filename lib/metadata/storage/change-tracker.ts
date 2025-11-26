@@ -5,7 +5,7 @@
 
 // 使用延迟导入避免循环依赖
 import type { CreateMetadataChangeInput } from './types';
-import type { DatabaseMeta, TableMeta, ColumnMeta } from '@/app/generated/prisma';
+import type { DatabaseMeta, TableMeta, ColumnMeta } from '@prisma/client';
 
 // 延迟获取 metadataRepository 以避免循环依赖
 const getMetadataRepository = () => {

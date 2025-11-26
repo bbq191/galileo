@@ -1,24 +1,12 @@
 /**
- * AI 成本监控 API
- *
- * 提供 AI 调用成本的统计和报告功能
+ * AI 成本统计 API
  */
 
-
-/**
- * 显式声明 Node.js Runtime
- *
- * API Routes 运行在 Node.js Runtime 中，支持：
- * - Prisma ORM
- * - ioredis
- * - mysql2
- * - 其他 Node.js 专有 API
- */
 export const runtime = 'nodejs';
+export { dynamic } from '@/lib/api/route-config';
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import type { AICostTracker } from '@/lib/ai/ai-cost-tracker';
-import { withAiRateLimit } from '@/lib/security/api-rate-limit-middleware';
 
 // 延迟导入以避免循环依赖
 function getService(): AICostTracker {
@@ -32,132 +20,129 @@ function getService(): AICostTracker {
 }
 
 /**
- * GET /api/ai/cost
- *
- * 获取 AI 成本统计
- *
- * Query 参数：
- * - period: 'day' | 'week' | 'month' | 'custom'
- * - start: 开始时间（ISO 格式，仅 period=custom 时需要）
- * - end: 结束时间（ISO 格式，仅 period=custom 时需要）
- *
- * @example
- * GET /api/ai/cost?period=day
- * GET /api/ai/cost?period=custom&start=2025-11-01&end=2025-11-11
+ * GET /api/ai/cost - 获取 AI 成本统计
  */
-export const GET = withAiRateLimit(async (request: Request) => {
-  try {
-    const costTracker = getService();
+export async function GET(request: Request) {
+  // 延迟导入速率限制以避免循环依赖
+  const { withAiRateLimit } = await import('@/lib/security/api-rate-limit-middleware');
 
-    const { searchParams } = new URL(request.url);
-    const period = searchParams.get('period') || 'day';
+  const handler = withAiRateLimit(async (req: Request) => {
+    try {
+      const costTracker = getService();
 
-    let statistics;
+      const { searchParams } = new URL(req.url);
+      const period = searchParams.get('period') || 'day';
 
-    switch (period) {
-      case 'day':
-        statistics = await costTracker.getTodayStatistics();
-        break;
+      let statistics;
 
-      case 'week':
-        statistics = await costTracker.getWeekStatistics();
-        break;
+      switch (period) {
+        case 'day':
+          statistics = await costTracker.getTodayStatistics();
+          break;
 
-      case 'month':
-        statistics = await costTracker.getMonthStatistics();
-        break;
+        case 'week':
+          statistics = await costTracker.getWeekStatistics();
+          break;
 
-      case 'custom': {
-        const startParam = searchParams.get('start');
-        const endParam = searchParams.get('end');
+        case 'month':
+          statistics = await costTracker.getMonthStatistics();
+          break;
 
-        if (!startParam || !endParam) {
-          return NextResponse.json(
-            { error: 'Custom period requires start and end parameters' },
-            { status: 400 }
-          );
+        case 'custom': {
+          const startParam = searchParams.get('start');
+          const endParam = searchParams.get('end');
+
+          if (!startParam || !endParam) {
+            return NextResponse.json(
+              { error: 'Custom period requires start and end parameters' },
+              { status: 400 }
+            );
+          }
+
+          const start = new Date(startParam);
+          const end = new Date(endParam);
+
+          if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+            return NextResponse.json(
+              { error: 'Invalid date format' },
+              { status: 400 }
+            );
+          }
+
+          statistics = await costTracker.getStatistics(start, end);
+          break;
         }
 
-        const start = new Date(startParam);
-        const end = new Date(endParam);
-
-        if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        default:
           return NextResponse.json(
-            { error: 'Invalid date format' },
+            { error: 'Invalid period parameter. Must be: day, week, month, or custom' },
             { status: 400 }
           );
-        }
-
-        statistics = await costTracker.getStatistics(start, end);
-        break;
       }
 
-      default:
-        return NextResponse.json(
-          { error: 'Invalid period parameter. Must be: day, week, month, or custom' },
-          { status: 400 }
-        );
+      return NextResponse.json({
+        success: true,
+        period,
+        statistics,
+      });
+    } catch (error) {
+      console.error('[API] AI cost statistics error:', error);
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Failed to get AI cost statistics',
+          message: error instanceof Error ? error.message : String(error),
+        },
+        { status: 500 }
+      );
     }
+  });
 
-    return NextResponse.json({
-      success: true,
-      period,
-      statistics,
-    });
-  } catch (error) {
-    console.error('[API] AI cost statistics error:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Failed to get AI cost statistics',
-        message: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
-  }
-});
+  return handler(request);
+}
 
 /**
  * POST /api/ai/cost
  *
  * 生成 AI 成本报告（Markdown 格式）
- *
- * Query 参数：
- * - period: 'day' | 'week' | 'month'
- *
- * @example
- * POST /api/ai/cost?period=week
  */
-export const POST = withAiRateLimit(async (request: Request) => {
-  try {
-    const costTracker = getService();
+export async function POST(request: Request) {
+  // 延迟导入速率限制以避免循环依赖
+  const { withAiRateLimit } = await import('@/lib/security/api-rate-limit-middleware');
 
-    const { searchParams } = new URL(request.url);
-    const period = searchParams.get('period') as 'day' | 'week' | 'month';
+  const handler = withAiRateLimit(async (req: Request) => {
+    try {
+      const costTracker = getService();
 
-    if (!['day', 'week', 'month'].includes(period)) {
+      const { searchParams } = new URL(req.url);
+      const period = searchParams.get('period') as 'day' | 'week' | 'month';
+
+      if (!['day', 'week', 'month'].includes(period)) {
+        return NextResponse.json(
+          { error: 'Invalid period parameter. Must be: day, week, or month' },
+          { status: 400 }
+        );
+      }
+
+      const report = await costTracker.generateReport(period);
+
+      return NextResponse.json({
+        success: true,
+        period,
+        report,
+      });
+    } catch (error) {
+      console.error('[API] AI cost report error:', error);
       return NextResponse.json(
-        { error: 'Invalid period parameter. Must be: day, week, or month' },
-        { status: 400 }
+        {
+          success: false,
+          error: 'Failed to generate AI cost report',
+          message: error instanceof Error ? error.message : String(error),
+        },
+        { status: 500 }
       );
     }
+  });
 
-    const report = await costTracker.generateReport(period);
-
-    return NextResponse.json({
-      success: true,
-      period,
-      report,
-    });
-  } catch (error) {
-    console.error('[API] AI cost report error:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Failed to generate AI cost report',
-        message: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
-  }
-});
+  return handler(request);
+}

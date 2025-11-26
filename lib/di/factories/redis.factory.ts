@@ -37,6 +37,10 @@ export function createRedisClient(config?: RedisFactoryConfig): Redis {
       return delay;
     },
     maxRetriesPerRequest: 3,
+    // 延迟连接，避免构建时尝试连接
+    lazyConnect: true,
+    // 开发环境启用离线队列，允许在 Redis 未启动时继续运行
+    enableOfflineQueue: true,
   };
 
   if (globalThis.redisGlobal) {
@@ -45,28 +49,44 @@ export function createRedisClient(config?: RedisFactoryConfig): Redis {
 
   const redisClient = new Redis(redisConfig);
 
+  // 在构建时静默错误，避免污染构建日志
+  const isBuildTime = process.env.NEXT_PHASE === 'phase-production-build';
+
   redisClient.on('connect', () => {
-    console.log('[Redis] 已连接到 Redis 服务器');
+    if (!isBuildTime) {
+      console.log('[Redis] 已连接到 Redis 服务器');
+    }
   });
 
   redisClient.on('error', (err) => {
-    console.error('[Redis] 连接错误:', err);
+    // 构建时静默连接错误（预期的行为）
+    if (!isBuildTime) {
+      console.error('[Redis] 连接错误:', err);
+    }
   });
 
   redisClient.on('ready', () => {
-    console.log('[Redis] Redis 客户端就绪');
+    if (!isBuildTime) {
+      console.log('[Redis] Redis 客户端就绪');
+    }
   });
 
-  // 注册清理钩子
+  // 注册清理钩子，使用 once 避免重复注册
   const cleanup = async () => {
-    await redisClient.quit();
-    console.log('[Redis] 已断开连接');
+    if (redisClient.status !== 'end') {
+      await redisClient.quit();
+      console.log('[Redis] 已断开连接');
+    }
   };
 
   if (typeof process !== 'undefined') {
-    process.on('beforeExit', cleanup);
-    process.on('SIGINT', cleanup);
-    process.on('SIGTERM', cleanup);
+    // 增加 maxListeners 避免内存泄漏警告
+    process.setMaxListeners(Math.max(process.getMaxListeners(), 20));
+
+    // 使用 once 避免重复注册
+    process.once('beforeExit', cleanup);
+    process.once('SIGINT', cleanup);
+    process.once('SIGTERM', cleanup);
   }
 
   // 保存到 global（开发环境）

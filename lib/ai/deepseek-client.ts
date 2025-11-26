@@ -83,12 +83,13 @@ export class DeepseekClient {
         // 其他错误，如果还有重试次数则继续
         if (attempt < this.maxRetries - 1) {
           const delay = this.retryDelay * Math.pow(2, attempt);
-          console.log(`请求失败，等待 ${delay}ms 后重试 (${attempt + 1}/${this.maxRetries})...`);
+          console.error(`请求失败: ${lastError.message}，等待 ${delay}ms 后重试 (${attempt + 1}/${this.maxRetries})...`);
           await this.sleep(delay);
           continue;
         }
 
         // 已达到最大重试次数
+        console.error(`请求失败，已达最大重试次数: ${lastError.message}`);
         throw error;
       }
     }
@@ -308,12 +309,13 @@ export class DeepseekClient {
         // 其他错误，如果还有重试次数则继续
         if (attempt < this.maxRetries - 1) {
           const delay = this.retryDelay * Math.pow(2, attempt);
-          console.log(`请求失败，等待 ${delay}ms 后重试 (${attempt + 1}/${this.maxRetries})...`);
+          console.error(`请求失败: ${lastError.message}，等待 ${delay}ms 后重试 (${attempt + 1}/${this.maxRetries})...`);
           await this.sleep(delay);
           continue;
         }
 
         // 已达到最大重试次数
+        console.error(`请求失败，已达最大重试次数: ${lastError.message}`);
         throw error;
       }
     }

@@ -26,9 +26,11 @@ interface DataSourceListProps {
   onTestConnection: (id: number) => void;
   onSync: (id: number) => void;
   onInferRelationships: (dataSource: DataSource, incrementalMode?: boolean) => void;
+  onAnnotate: (id: number) => void;
   testingConnections: Set<number>;
   syncingDataSources: Set<number>;
   inferringRelationships: Set<number>;
+  annotatingDataSources: Set<number>;
   operationInProgress: number | null;
 }
 
@@ -39,9 +41,11 @@ export default function DataSourceList({
   onTestConnection,
   onSync,
   onInferRelationships,
+  onAnnotate,
   testingConnections,
   syncingDataSources,
   inferringRelationships,
+  annotatingDataSources,
   operationInProgress,
 }: DataSourceListProps) {
   // 获取状态徽章
@@ -221,6 +225,22 @@ export default function DataSourceList({
                       </ul>
                     </div>
 
+                    {/* 语义标注按钮 */}
+                    <button
+                      className="btn btn-sm btn-accent"
+                      onClick={() => onAnnotate(ds.id)}
+                      disabled={annotatingDataSources.has(ds.id) || operationInProgress !== null}
+                      title="AI 语义标注"
+                    >
+                      {annotatingDataSources.has(ds.id) ? (
+                        <span className="loading loading-spinner loading-xs"></span>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </button>
+
                     {/* 编辑按钮 */}
                     <button
                       className="btn btn-sm btn-info"
@@ -380,6 +400,23 @@ export default function DataSourceList({
                     </li>
                   </ul>
                 </div>
+
+                <button
+                  className="btn btn-sm btn-accent"
+                  onClick={() => onAnnotate(ds.id)}
+                  disabled={annotatingDataSources.has(ds.id) || operationInProgress !== null}
+                >
+                  {annotatingDataSources.has(ds.id) ? (
+                    <span className="loading loading-spinner loading-xs"></span>
+                  ) : (
+                    <>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                      </svg>
+                      <span className="ml-1">标注</span>
+                    </>
+                  )}
+                </button>
 
                 <button
                   className="btn btn-sm btn-info"

@@ -4,7 +4,7 @@
  * 职责：使用向量嵌入计算数据库与业务域的语义相似度
  */
 
-import type { BusinessDomain } from '@/app/generated/prisma';
+import type { BusinessDomain } from '@prisma/client';
 import type { StrategyResult, DatabaseMetadataForInference } from '../domain-inference.types';
 import { EmbeddingGenerator } from '@/lib/vector/embedding-generator';
 import { getService } from '@/lib/di/setup';
@@ -101,7 +101,7 @@ export class VectorSimilarityStrategy {
 
     // 表名及其描述（前 15 个）
     const tableDescriptions = database.tables.slice(0, 15).map(t => {
-      const desc = t.semanticDescription || t.tableComment || '';
+      const desc = t.tableComment || t.semanticDescription || '';
       return desc ? `${t.tableName}(${desc})` : t.tableName;
     });
 

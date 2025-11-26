@@ -4,7 +4,7 @@
  */
 
 import { injectable, inject } from 'tsyringe';
-import { PrismaClient } from '@/app/generated/prisma';
+import { PrismaClient } from '@prisma/client';
 import { DI_TOKENS } from '@/lib/di/tokens';
 import { getService } from '@/lib/di/setup';
 import type { ConnectionManager } from "@/lib/database/connection-manager";

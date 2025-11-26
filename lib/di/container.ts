@@ -5,7 +5,7 @@
 
 import 'reflect-metadata';
 import { container as tsyringeContainer, DependencyContainer, Lifecycle } from 'tsyringe';
-import { PrismaClient } from '@/app/generated/prisma';
+import { PrismaClient } from '@prisma/client';
 import { DI_TOKENS } from './tokens';
 import type { ContainerConfig } from './types';
 

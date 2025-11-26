@@ -8,7 +8,7 @@
  * - 提供统一的检测接口
  */
 
-import { PrismaClient } from '@/app/generated/prisma';
+import { PrismaClient } from '@prisma/client';
 import prisma from '@/lib/prisma/client';
 import type { Connection } from 'mysql2/promise';
 import { structureHashDetector, type ChangedTable } from './hash-based-detector';

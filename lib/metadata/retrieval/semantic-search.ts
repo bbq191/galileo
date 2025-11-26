@@ -3,7 +3,7 @@
  * 基于语义相似度搜索表和字段
  */
 
-import { PrismaClient } from '@/app/generated/prisma';
+import { PrismaClient } from '@prisma/client';
 import prisma from '@/lib/prisma/client';
 import { TableSearchResult, SearchOptions } from './types';
 import { VectorSearchService } from '@/lib/vector/vector-search-service';

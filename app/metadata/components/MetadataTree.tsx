@@ -244,7 +244,12 @@ export default function MetadataTree({
                                   </svg>
                                   <span className="text-sm font-medium">{table.tableName}</span>
                                 </div>
-                                {table.tableComment && (
+                                {table.semanticDescription && (
+                                  <div className="text-xs text-info ml-6 mt-1">
+                                    💡 {table.semanticDescription}
+                                  </div>
+                                )}
+                                {!table.semanticDescription && table.tableComment && (
                                   <div className="text-xs text-base-content/60 ml-6 mt-1">
                                     {table.tableComment}
                                   </div>

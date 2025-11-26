@@ -14,7 +14,7 @@ import { injectable, inject } from 'tsyringe';
 import { DI_TOKENS } from '@/lib/di/tokens';
 import type { MultiLevelCache } from './multi-level-cache';
 import type { QueryCacheManager } from './query-cache-manager';
-import type { PrismaClient } from '@/app/generated/prisma';
+import type { PrismaClient } from '@prisma/client';
 import type { WarmupAnalyzer } from './warmup/warmup-analyzer';
 import {
   WarmupPriority,

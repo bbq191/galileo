@@ -1,21 +1,5 @@
-/**
- * 健康检查 API
- * GET /api/health
- *
- * 综合健康检查，包括所有 DI 服务状态
- */
-
-
-/**
- * 显式声明 Node.js Runtime
- *
- * API Routes 运行在 Node.js Runtime 中，支持：
- * - Prisma ORM
- * - ioredis
- * - mysql2
- * - 其他 Node.js 专有 API
- */
 export const runtime = 'nodejs';
+export { dynamic } from '@/lib/api/route-config';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getService } from '@/lib/di/helpers/app-router';

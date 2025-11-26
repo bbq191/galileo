@@ -44,17 +44,21 @@ export function setupDependencyInjection(): void {
   const { MultiLevelCache } = require('@/lib/cache/multi-level-cache');
   registerSingleton(DI_TOKENS.MultiLevelCache, MultiLevelCache);
 
-  // 启动 MultiLevelCache 清理服务
-  const multiLevelCache = container.resolve<any>(DI_TOKENS.MultiLevelCache);
-  multiLevelCache.startCleanup();
+  // 启动 MultiLevelCache 清理服务（跳过构建时）
+  if (process.env.NEXT_PHASE !== 'phase-production-build') {
+    const multiLevelCache = container.resolve<any>(DI_TOKENS.MultiLevelCache);
+    multiLevelCache.startCleanup();
+  }
 
   // 注册 ConnectionManager
   const { ConnectionManager } = require('@/lib/database/connection-manager');
   registerSingleton(DI_TOKENS.ConnectionManager, ConnectionManager);
 
-  // 启动 ConnectionManager 生命周期服务
-  const connectionManager = container.resolve<any>(DI_TOKENS.ConnectionManager);
-  connectionManager.start();
+  // 启动 ConnectionManager 生命周期服务（跳过构建时）
+  if (process.env.NEXT_PHASE !== 'phase-production-build') {
+    const connectionManager = container.resolve<any>(DI_TOKENS.ConnectionManager);
+    connectionManager.start();
+  }
 
   // 注册 QueryCacheManager
   const { QueryCacheManager } = require('@/lib/cache/query-cache-manager');
@@ -104,11 +108,13 @@ export function setupDependencyInjection(): void {
   const { SemanticCacheManager } = require('@/lib/cache/semantic-cache-manager');
   registerSingleton(DI_TOKENS.SemanticCacheManager, SemanticCacheManager);
 
-  // 初始化 SemanticCacheManager
-  const semanticCacheManager = container.resolve<any>(DI_TOKENS.SemanticCacheManager);
-  semanticCacheManager.initialize().catch((error: any) => {
-    console.error('[DI] SemanticCacheManager initialization failed:', error);
-  });
+  // 初始化 SemanticCacheManager（跳过构建时）
+  if (process.env.NEXT_PHASE !== 'phase-production-build') {
+    const semanticCacheManager = container.resolve<any>(DI_TOKENS.SemanticCacheManager);
+    semanticCacheManager.initialize().catch((error: any) => {
+      console.error('[DI] SemanticCacheManager initialization failed:', error);
+    });
+  }
 
   // 注册 VectorSearchService（依赖 EmbeddingGenerator 和 Redis）
   const { VectorSearchService } = require('@/lib/vector/vector-search-service');
@@ -128,21 +134,25 @@ export function setupDependencyInjection(): void {
     });
   });
 
-  // 初始化 VectorSearchService
-  const vectorSearchService = container.resolve<any>(DI_TOKENS.VectorSearchService);
-  vectorSearchService.initialize().catch((error: any) => {
-    console.error('[DI] VectorSearchService initialization failed:', error);
-  });
+  // 初始化 VectorSearchService（跳过构建时）
+  if (process.env.NEXT_PHASE !== 'phase-production-build') {
+    const vectorSearchService = container.resolve<any>(DI_TOKENS.VectorSearchService);
+    vectorSearchService.initialize().catch((error: any) => {
+      console.error('[DI] VectorSearchService initialization failed:', error);
+    });
+  }
 
   // 注册 PromptCacheManager
   const { PromptCacheManager } = require('@/lib/ai/prompt-cache-manager');
   registerSingleton(DI_TOKENS.PromptCacheManager, PromptCacheManager);
 
-  // 初始化 PromptCacheManager
-  const promptCacheManager = container.resolve<any>(DI_TOKENS.PromptCacheManager);
-  promptCacheManager.initialize().catch((error: any) => {
-    console.error('[DI] PromptCacheManager initialization failed:', error);
-  });
+  // 初始化 PromptCacheManager（跳过构建时）
+  if (process.env.NEXT_PHASE !== 'phase-production-build') {
+    const promptCacheManager = container.resolve<any>(DI_TOKENS.PromptCacheManager);
+    promptCacheManager.initialize().catch((error: any) => {
+      console.error('[DI] PromptCacheManager initialization failed:', error);
+    });
+  }
 
   // 注册 AICostTracker
   const { AICostTracker } = require('@/lib/ai/ai-cost-tracker');
@@ -254,9 +264,11 @@ export function setupDependencyInjection(): void {
     return new StatisticsPersistenceService(redis, queryStatsTracker, queryCacheManager);
   });
 
-  // 启动持久化服务
-  const statisticsPersistence = container.resolve<any>(DI_TOKENS.StatisticsPersistenceService);
-  statisticsPersistence.start();
+  // 启动持久化服务（跳过构建时）
+  if (process.env.NEXT_PHASE !== 'phase-production-build') {
+    const statisticsPersistence = container.resolve<any>(DI_TOKENS.StatisticsPersistenceService);
+    statisticsPersistence.start();
+  }
 
   // 注册 StatisticsAggregationService
   const { StatisticsAggregationService } = require('@/lib/statistics/statistics-aggregation.service');
@@ -355,7 +367,7 @@ export function getService<T>(token: symbol): T {
 /**
  * 便捷方法：获取 PrismaClient
  */
-export function getPrismaClient(): import('@/app/generated/prisma').PrismaClient {
+export function getPrismaClient(): import('@prisma/client').PrismaClient {
   return getService(DI_TOKENS.PrismaClient);
 }
 

@@ -26,8 +26,11 @@ yarn-debug.log*
 yarn-error.log*
 
 # local env files
-.env*.local
 .env
+.env*.local
+.env.development
+.env.production
+.env.test
 
 # vercel
 .vercel
@@ -40,3 +43,31 @@ next-env.d.ts
 prisma/migrations
 
 /app/generated/prisma
+
+# logs
+logs/
+logs/*.log
+logs/*.log.*
+logs/*.gz
+!logs/.gitkeep
+
+# PM2 配置（可能包含敏感信息）
+ecosystem.config.js
+ecosystem.config.cjs
+
+# 数据库备份和敏感数据
+*.sql
+*.sqlite
+*.db
+
+# IDE 和编辑器
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
+*~
+
+# 临时文件和缓存
+.cache/
+temp/
+tmp/

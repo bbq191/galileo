@@ -5,7 +5,7 @@
 
 import 'reflect-metadata';
 import { injectable, inject } from 'tsyringe';
-import { PrismaClient } from '@/app/generated/prisma';
+import { PrismaClient } from '@prisma/client';
 import { EntityMatch } from './types';
 import { DI_TOKENS } from '@/lib/di/tokens';
 

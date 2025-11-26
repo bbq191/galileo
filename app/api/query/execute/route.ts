@@ -1,26 +1,5 @@
-/**
- * 查询执行 API
- * POST /api/query/execute
- *
- * 功能：
- * - 接收自然语言查询
- * - 执行完整的 SQL 生成和执行流程
- * - 返回查询结果和元数据
- * - 支持跨数据库查询
- * - 完整的审计日志记录
- */
-
-
-/**
- * 显式声明 Node.js Runtime
- *
- * API Routes 运行在 Node.js Runtime 中，支持：
- * - Prisma ORM
- * - ioredis
- * - mysql2
- * - 其他 Node.js 专有 API
- */
 export const runtime = 'nodejs';
+export { dynamic } from '@/lib/api/route-config';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getQueryOrchestrator, getAuditOrchestrator } from '@/lib/di/setup';

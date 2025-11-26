@@ -13,6 +13,7 @@ export default function DataSourcesPage() {
   const [testingConnections, setTestingConnections] = useState<Set<number>>(new Set());
   const [syncingDataSources, setSyncingDataSources] = useState<Set<number>>(new Set());
   const [inferringRelationships, setInferringRelationships] = useState<Set<number>>(new Set());
+  const [annotatingDataSources, setAnnotatingDataSources] = useState<Set<number>>(new Set());
   const [operationInProgress, setOperationInProgress] = useState<number | null>(null);
 
   // 格式化持续时间为人类可读格式
@@ -269,6 +270,60 @@ export default function DataSourcesPage() {
     }
   };
 
+  // 触发语义标注
+  const handleAnnotate = async (id: number) => {
+    // 防止重复点击和互斥操作
+    if (annotatingDataSources.has(id) || operationInProgress !== null) {
+      return;
+    }
+
+    try {
+      setOperationInProgress(id);
+      setAnnotatingDataSources(prev => new Set(prev).add(id));
+
+      const response = await fetch(`/api/datasources/${id}/annotate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          force: false, // 不强制重新标注已有描述的项
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.status === 'success') {
+        const stats = result.data.summary;
+        const message = `语义标注完成！\n\n` +
+          `数据库: ${stats.databases} 个\n` +
+          `表: ${stats.tables} 个\n` +
+          `字段: ${stats.columns} 个\n\n` +
+          `处理统计:\n` +
+          `  - 规则引擎: ${stats.ruleProcessed} 个\n` +
+          `  - AI 处理: ${stats.aiProcessed} 个\n` +
+          `  - 已跳过: ${stats.skipped} 个\n` +
+          `  - 失败: ${stats.failed} 个\n\n` +
+          `耗时: ${formatDuration(result.data.duration || 0)}`;
+        alert(message);
+        // 刷新列表
+        await loadDataSources();
+      } else {
+        alert(`语义标注失败：${result.message || result.error}`);
+      }
+    } catch (err) {
+      console.error('Error annotating semantics:', err);
+      alert(err instanceof Error ? err.message : 'Failed to annotate semantics');
+    } finally {
+      setAnnotatingDataSources(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
+      setOperationInProgress(null);
+    }
+  };
+
   // 表单提交成功后的回调
   const handleFormSuccess = async () => {
     setShowModal(false);
@@ -313,9 +368,11 @@ export default function DataSourcesPage() {
             onTestConnection={handleTestConnection}
             onSync={handleSync}
             onInferRelationships={handleInferRelationships}
+            onAnnotate={handleAnnotate}
             testingConnections={testingConnections}
             syncingDataSources={syncingDataSources}
             inferringRelationships={inferringRelationships}
+            annotatingDataSources={annotatingDataSources}
             operationInProgress={operationInProgress}
           />
         )}

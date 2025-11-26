@@ -4,7 +4,7 @@
  */
 
 import { injectable, inject } from 'tsyringe';
-import { PrismaClient } from '@/app/generated/prisma';
+import { PrismaClient } from '@prisma/client';
 import { QueryIntent } from '@/lib/nlp/types';
 import { MetadataContext, SearchOptions } from './types';
 import { SemanticSearch } from './semantic-search';

@@ -10,7 +10,7 @@
  */
 
 import { injectable, inject } from 'tsyringe';
-import type { PrismaClient } from '@/app/generated/prisma';
+import type { PrismaClient } from '@prisma/client';
 import { DI_TOKENS } from '@/lib/di/tokens';
 import type { MultiLevelCache } from '@/lib/cache/multi-level-cache';
 import type { EmbeddingGenerator } from '@/lib/vector/embedding-generator';

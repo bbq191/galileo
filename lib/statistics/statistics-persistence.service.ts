@@ -114,9 +114,16 @@ export class StatisticsPersistenceService {
 
   /**
    * 持久化统计数据到 Redis
+   * @author xusy
    */
   async persistStatistics(): Promise<void> {
     try {
+      // 检查 Redis 连接状态
+      if (this.redis.status !== 'ready' && this.redis.status !== 'connect') {
+        // Redis 未就绪，跳过持久化
+        return;
+      }
+
       const stats: PersistedStatistics = {
         timestamp: new Date(),
         queryStats: {
@@ -134,16 +141,23 @@ export class StatisticsPersistenceService {
 
       console.log(`[StatisticsPersistenceService] 统计数据已持久化: ${key}`);
     } catch (error) {
-      console.error('[StatisticsPersistenceService] 持久化失败:', error);
-      throw error;
+      console.error('[StatisticsPersistenceService] 持久化失败:', error instanceof Error ? error.message : error);
+      // 不抛出错误，允许服务继续运行
     }
   }
 
   /**
    * 从 Redis 恢复统计数据
+   * @author xusy
    */
   async restoreStatistics(date?: Date): Promise<PersistedStatistics | null> {
     try {
+      // 检查 Redis 连接状态
+      if (this.redis.status !== 'ready' && this.redis.status !== 'connect') {
+        console.warn('[StatisticsPersistenceService] Redis 未就绪，无法恢复统计数据');
+        return null;
+      }
+
       const key = date ? this.getStatsKeyForDate(date) : this.getCurrentStatsKey();
       const data = await this.redis.get(key);
 
@@ -156,13 +170,14 @@ export class StatisticsPersistenceService {
       console.log(`[StatisticsPersistenceService] 统计数据已恢复: ${key}`);
       return stats;
     } catch (error) {
-      console.error('[StatisticsPersistenceService] 恢复失败:', error);
-      throw error;
+      console.error('[StatisticsPersistenceService] 恢复失败:', error instanceof Error ? error.message : error);
+      return null;
     }
   }
 
   /**
    * 获取历史统计数据
+   * @author xusy
    */
   async getHistoricalStatistics(
     startDate: Date,
@@ -171,6 +186,12 @@ export class StatisticsPersistenceService {
     const results: PersistedStatistics[] = [];
 
     try {
+      // 检查 Redis 连接状态
+      if (this.redis.status !== 'ready' && this.redis.status !== 'connect') {
+        console.warn('[StatisticsPersistenceService] Redis 未就绪，无法获取历史统计数据');
+        return results;
+      }
+
       const pattern = `${this.config.redisKeyPrefix}:*`;
       const keys = await this.redis.keys(pattern);
 
@@ -214,16 +235,23 @@ export class StatisticsPersistenceService {
       );
       return results;
     } catch (error) {
-      console.error('[StatisticsPersistenceService] 获取历史数据失败:', error);
-      throw error;
+      console.error('[StatisticsPersistenceService] 获取历史数据失败:', error instanceof Error ? error.message : error);
+      return results;
     }
   }
 
   /**
    * 清理过期的统计数据
+   * @author xusy
    */
   async cleanupOldStatistics(): Promise<number> {
     try {
+      // 检查 Redis 连接状态
+      if (this.redis.status !== 'ready' && this.redis.status !== 'connect') {
+        console.warn('[StatisticsPersistenceService] Redis 未就绪，无法清理过期数据');
+        return 0;
+      }
+
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - this.config.retentionDays);
 
@@ -252,8 +280,8 @@ export class StatisticsPersistenceService {
       );
       return keysToDelete.length;
     } catch (error) {
-      console.error('[StatisticsPersistenceService] 清理失败:', error);
-      throw error;
+      console.error('[StatisticsPersistenceService] 清理失败:', error instanceof Error ? error.message : error);
+      return 0;
     }
   }
 

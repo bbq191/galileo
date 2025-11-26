@@ -189,14 +189,14 @@ export class AIGenerator extends BasePipelineStage {
 ### 表: ${t.tableName}
 **数据库**: ${t.databaseName}
 **完整表名**: ${fullTableName}
-**说明**: ${t.semanticDescription || t.tableComment || "无"}
+**说明**: ${t.tableComment || t.semanticDescription || "无"}
 **字段**:
 ${t.columns
   .map(
     (c) => `  - ${c.columnName} (${c.dataType})${
       c.isPrimaryKey ? " [主键]" : ""
     }
-    说明: ${c.semanticDescription || c.columnComment || "无"}${
+    说明: ${c.columnComment || c.semanticDescription || "无"}${
       c.sampleValues && c.sampleValues.length > 0
         ? `
     示例: ${c.sampleValues

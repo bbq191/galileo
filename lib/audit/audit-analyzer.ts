@@ -9,7 +9,7 @@
  * - 性能趋势分析
  */
 
-import { PrismaClient } from '@/app/generated/prisma';
+import { PrismaClient } from '@prisma/client';
 import prisma from '@/lib/prisma/client';
 import type { AuditLog, PopularQuery, TableUsageStats, TimeRangeStats } from './types';
 

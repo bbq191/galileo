@@ -11,7 +11,7 @@
  * - 协调字段差异分析器进行结构对比
  */
 
-import { PrismaClient } from '@/app/generated/prisma';
+import { PrismaClient } from '@prisma/client';
 import prisma from '@/lib/prisma/client';
 import type { Connection } from 'mysql2/promise';
 import type { NewTable, DeletedTable } from '../table-diff-detector';

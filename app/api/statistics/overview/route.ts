@@ -1,24 +1,5 @@
-/**
- * 统计概览 API
- * GET /api/statistics/overview
- *
- * 功能：
- * - 返回系统统计概览
- * - 包含实时查询统计、缓存统计、审计统计
- * - 计算系统健康度、性能评分、可靠性评分
- */
-
-
-/**
- * 显式声明 Node.js Runtime
- *
- * API Routes 运行在 Node.js Runtime 中，支持：
- * - Prisma ORM
- * - ioredis
- * - mysql2
- * - 其他 Node.js 专有 API
- */
 export const runtime = 'nodejs';
+export { dynamic } from '@/lib/api/route-config';
 
 import { NextRequest, NextResponse } from 'next/server';
 import type { StatisticsAggregationService } from '@/lib/statistics/statistics-aggregation.service';

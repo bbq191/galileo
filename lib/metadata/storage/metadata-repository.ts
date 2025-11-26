@@ -12,7 +12,7 @@
 
 import { injectable, inject } from 'tsyringe';
 import { DI_TOKENS } from '@/lib/di/tokens';
-import { PrismaClient } from '@/app/generated/prisma';
+import { PrismaClient } from '@prisma/client';
 import { DatabaseMetadataRepository } from './database-metadata.repository';
 import { TableMetadataRepository } from './table-metadata.repository';
 import { ColumnMetadataRepository } from './column-metadata.repository';
@@ -40,7 +40,7 @@ import type {
   ExplicitRelationship,
   InferredRelationship,
   MetadataChange,
-} from '@/app/generated/prisma';
+} from '@prisma/client';
 
 /**
  * 元数据仓储聚合类

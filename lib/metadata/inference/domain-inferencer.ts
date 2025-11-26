@@ -8,7 +8,7 @@
  */
 
 import { injectable, inject } from 'tsyringe';
-import type { PrismaClient, BusinessDomain } from '@/app/generated/prisma';
+import type { PrismaClient, BusinessDomain } from '@prisma/client';
 import { DI_TOKENS } from '@/lib/di/tokens';
 import { NamingRuleStrategy } from './strategies/naming-rule-strategy';
 import { VectorSimilarityStrategy } from './strategies/vector-similarity-strategy';

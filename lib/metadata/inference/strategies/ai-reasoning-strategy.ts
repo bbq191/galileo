@@ -4,7 +4,7 @@
  * 职责：使用 LLM 综合分析数据库元数据并推断业务域
  */
 
-import type { BusinessDomain } from '@/app/generated/prisma';
+import type { BusinessDomain } from '@prisma/client';
 import { getDeepseekClient } from '@/lib/ai';
 import type { StrategyResult, DatabaseMetadataForInference } from '../domain-inference.types';
 
@@ -60,7 +60,7 @@ export class AIReasoningStrategy {
     const tableList = database.tables
       .slice(0, 20)
       .map(t => {
-        const desc = t.semanticDescription || t.tableComment || '';
+        const desc = t.tableComment || t.semanticDescription || '';
         return `- ${t.tableName}${desc ? ` (${desc})` : ''}`;
       })
       .join('\n');

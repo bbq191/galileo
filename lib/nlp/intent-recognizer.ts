@@ -6,7 +6,7 @@
 import 'reflect-metadata';
 import { injectable, inject } from 'tsyringe';
 import { DeepseekClient } from '@/lib/ai/deepseek-client';
-import { PrismaClient } from '@/app/generated/prisma';
+import { PrismaClient } from '@prisma/client';
 import { QueryIntent, RawIntent } from './types';
 import { INTENT_SYSTEM_PROMPT, buildIntentPrompt, buildDisambiguationPrompt } from './prompts/intent-prompts';
 import { EntityResolver } from './entity-resolver';
@@ -171,7 +171,7 @@ export class IntentRecognizer {
 
       return tables.map(table => ({
         name: table.tableName,
-        description: table.semanticDescription || table.tableComment || '',
+        description: table.tableComment || table.semanticDescription || '',
         database: table.database.databaseName,
         domain: table.database.domain?.name, // 业务域名称
         domainDescription: table.database.domain?.description || undefined, // 业务域描述

@@ -2,7 +2,7 @@
  * 业务域推断类型定义
  */
 
-import type { BusinessDomain } from '@/app/generated/prisma';
+import type { BusinessDomain } from '@prisma/client';
 
 /**
  * 业务域推断结果

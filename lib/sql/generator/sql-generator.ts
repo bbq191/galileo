@@ -261,10 +261,10 @@ export class SQLGenerator {
 ### 表: ${t.tableName}
 **数据库**: ${t.databaseName}
 **完整表名（在SQL中必须使用这个）**: ${fullTableName}
-**表说明**: ${t.semanticDescription || t.tableComment || '无'}
+**表说明**: ${t.tableComment || t.semanticDescription || '无'}
 **字段**:
 ${t.columns.map(c => `  - ${c.columnName} (${c.dataType})${c.isPrimaryKey ? ' [主键]' : ''}
-    说明: ${c.semanticDescription || c.columnComment || '无'}${c.sampleValues && c.sampleValues.length > 0 ? `
+    说明: ${c.columnComment || c.semanticDescription || '无'}${c.sampleValues && c.sampleValues.length > 0 ? `
     示例值: ${c.sampleValues.slice(0, 3).map(v => v === null ? 'NULL' : String(v)).join(', ')}` : ''}`
     ).join('\n')}
 

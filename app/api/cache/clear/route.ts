@@ -6,6 +6,10 @@
  * - pattern=all: 清除所有缓存
  */
 
+
+export const runtime = 'nodejs';
+export { dynamic } from '@/lib/api/route-config';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getContainer } from '@/lib/di/container';
 import { DI_TOKENS } from '@/lib/di/tokens';

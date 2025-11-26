@@ -8,7 +8,7 @@
  * - 监控预热异常
  */
 
-import type { PrismaClient } from '@/app/generated/prisma';
+import type { PrismaClient } from '@prisma/client';
 import type { WarmupResult } from './warmup-strategy';
 
 /**

@@ -3,7 +3,7 @@
  * 收集用户对 SQL 生成质量的反馈，用于持续改进
  */
 
-import { PrismaClient } from '@/app/generated/prisma';
+import { PrismaClient } from '@prisma/client';
 import prisma from '@/lib/prisma/client';
 
 export interface SQLFeedback {

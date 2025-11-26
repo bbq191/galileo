@@ -1,11 +1,5 @@
-/**
- * 字段元数据更新 API
- * PUT /api/metadata/columns/:id - 更新字段的语义描述
- *
- * @author xusy
- */
-
 export const runtime = 'nodejs';
+export { dynamic } from '@/lib/api/route-config';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getPrismaClient } from '@/lib/di/setup';

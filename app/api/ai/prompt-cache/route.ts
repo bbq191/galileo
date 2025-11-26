@@ -1,20 +1,5 @@
-/**
- * Prompt 缓存管理 API
- *
- * 提供 Prompt 缓存的统计、清理和管理功能
- */
-
-
-/**
- * 显式声明 Node.js Runtime
- *
- * API Routes 运行在 Node.js Runtime 中，支持：
- * - Prisma ORM
- * - ioredis
- * - mysql2
- * - 其他 Node.js 专有 API
- */
 export const runtime = 'nodejs';
+export { dynamic } from '@/lib/api/route-config';
 
 import { NextRequest, NextResponse } from 'next/server';
 import type { PromptCacheManager } from '@/lib/ai/prompt-cache-manager';

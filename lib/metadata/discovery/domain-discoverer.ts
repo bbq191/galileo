@@ -11,7 +11,7 @@
  */
 
 import { injectable, inject } from 'tsyringe';
-import type { PrismaClient } from '@/app/generated/prisma';
+import type { PrismaClient } from '@prisma/client';
 import { DI_TOKENS } from '@/lib/di/tokens';
 import type { DeepseekClient } from '@/lib/ai/deepseek-client';
 import type { EmbeddingGenerator } from '@/lib/vector/embedding-generator';

@@ -7,7 +7,7 @@
  * - 虽然不如 DDL 哈希精准，但可作为兼容性方案
  */
 
-import { PrismaClient } from '@/app/generated/prisma';
+import { PrismaClient } from '@prisma/client';
 import prisma from '@/lib/prisma/client';
 import type { Connection } from 'mysql2/promise';
 

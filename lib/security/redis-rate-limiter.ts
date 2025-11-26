@@ -149,13 +149,55 @@ export const redisRateLimitConfigs = {
 } as const;
 
 /**
- * Redis 速率限制器实例
+ * Redis 速率限制器实例（延迟初始化以避免循环依赖）
  */
+let _redisRateLimitersCache: Record<string, RateLimiterRedis | RateLimiterMemory> | null = null;
+
 export const redisRateLimiters = {
-  query: createRedisRateLimiter(redisRateLimitConfigs.query),
-  metadata: createRedisRateLimiter(redisRateLimitConfigs.metadata),
-  general: createRedisRateLimiter(redisRateLimitConfigs.general),
-  ai: createRedisRateLimiter(redisRateLimitConfigs.ai),
+  get query() {
+    if (!_redisRateLimitersCache) {
+      _redisRateLimitersCache = {
+        query: createRedisRateLimiter(redisRateLimitConfigs.query),
+        metadata: createRedisRateLimiter(redisRateLimitConfigs.metadata),
+        general: createRedisRateLimiter(redisRateLimitConfigs.general),
+        ai: createRedisRateLimiter(redisRateLimitConfigs.ai),
+      };
+    }
+    return _redisRateLimitersCache.query;
+  },
+  get metadata() {
+    if (!_redisRateLimitersCache) {
+      _redisRateLimitersCache = {
+        query: createRedisRateLimiter(redisRateLimitConfigs.query),
+        metadata: createRedisRateLimiter(redisRateLimitConfigs.metadata),
+        general: createRedisRateLimiter(redisRateLimitConfigs.general),
+        ai: createRedisRateLimiter(redisRateLimitConfigs.ai),
+      };
+    }
+    return _redisRateLimitersCache.metadata;
+  },
+  get general() {
+    if (!_redisRateLimitersCache) {
+      _redisRateLimitersCache = {
+        query: createRedisRateLimiter(redisRateLimitConfigs.query),
+        metadata: createRedisRateLimiter(redisRateLimitConfigs.metadata),
+        general: createRedisRateLimiter(redisRateLimitConfigs.general),
+        ai: createRedisRateLimiter(redisRateLimitConfigs.ai),
+      };
+    }
+    return _redisRateLimitersCache.general;
+  },
+  get ai() {
+    if (!_redisRateLimitersCache) {
+      _redisRateLimitersCache = {
+        query: createRedisRateLimiter(redisRateLimitConfigs.query),
+        metadata: createRedisRateLimiter(redisRateLimitConfigs.metadata),
+        general: createRedisRateLimiter(redisRateLimitConfigs.general),
+        ai: createRedisRateLimiter(redisRateLimitConfigs.ai),
+      };
+    }
+    return _redisRateLimitersCache.ai;
+  },
 };
 
 /**

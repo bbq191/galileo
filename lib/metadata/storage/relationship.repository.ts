@@ -4,7 +4,7 @@
  */
 
 import { injectable, inject } from 'tsyringe';
-import { PrismaClient, ExplicitRelationship, InferredRelationship } from '@/app/generated/prisma';
+import { PrismaClient, ExplicitRelationship, InferredRelationship } from '@prisma/client';
 import { DI_TOKENS } from '@/lib/di/tokens';
 import type {
   CreateExplicitRelationshipInput,

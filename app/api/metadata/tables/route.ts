@@ -1,21 +1,5 @@
-/**
- * 表元数据查询 API
- * GET /api/metadata/tables
- *
- * 重构后使用 MetadataOrchestrator 和统一错误处理
- */
-
-
-/**
- * 显式声明 Node.js Runtime
- *
- * API Routes 运行在 Node.js Runtime 中，支持：
- * - Prisma ORM
- * - ioredis
- * - mysql2
- * - 其他 Node.js 专有 API
- */
 export const runtime = 'nodejs';
+export { dynamic } from '@/lib/api/route-config';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getMetadataOrchestrator } from '@/lib/di/setup';

@@ -9,7 +9,7 @@
 
 import { injectable, inject } from 'tsyringe';
 import type { ColumnInfo } from '@/lib/metadata/types';
-import { PrismaClient } from '@/app/generated/prisma';
+import { PrismaClient } from '@prisma/client';
 import { DI_TOKENS } from '@/lib/di/tokens';
 
 /**
@@ -359,11 +359,10 @@ export class RuleBasedAnnotator {
   private rules: NamingRule[];
 
   constructor(
-    @inject(DI_TOKENS.PrismaClient) private prisma: PrismaClient,
-    customRules: NamingRule[] = []
+    @inject(DI_TOKENS.PrismaClient) private prisma: PrismaClient
   ) {
-    // 合并内置规则和自定义规则，并按优先级排序
-    this.rules = [...BUILTIN_RULES, ...customRules].sort(
+    // 使用内置规则，按优先级排序
+    this.rules = [...BUILTIN_RULES].sort(
       (a, b) => (a.priority || 999) - (b.priority || 999)
     );
   }

@@ -273,11 +273,26 @@ export class VectorStore {
 
   /**
    * 从 Redis 加载数据
+   * @author xusy
    */
   private async loadFromRedis(): Promise<void> {
     if (!this.redis) return;
 
     try {
+      // 检查 Redis 连接状态，尝试连接如果未连接
+      if (this.redis.status === 'wait' || this.redis.status === 'close' || this.redis.status === 'end') {
+        // 使用 connect 方法，如果已经在连接中会自动忽略
+        await this.redis.connect().catch(() => {
+          // 连接失败时继续运行，使用内存模式
+        });
+      }
+
+      // 检查连接是否就绪
+      if (this.redis.status !== 'ready' && this.redis.status !== 'connect') {
+        console.warn(`[VectorStore] Redis 未就绪 (status: ${this.redis.status})，使用内存模式`);
+        return;
+      }
+
       const keys = await this.redis.keys(`${this.redisPrefix}:item:*`);
 
       for (const key of keys) {
@@ -290,17 +305,28 @@ export class VectorStore {
 
       console.log(`从 Redis 加载了 ${keys.length} 条向量记录`);
     } catch (error) {
-      console.error('从 Redis 加载向量数据失败:', error);
+      // 构建时静默错误
+      const isBuildTime = process.env.NEXT_PHASE === 'phase-production-build';
+      if (!isBuildTime) {
+        console.warn('[VectorStore] 从 Redis 加载向量数据失败，使用内存模式:', error instanceof Error ? error.message : error);
+      }
     }
   }
 
   /**
    * 保存到 Redis
+   * @author xusy
    */
   private async saveToRedis(item: VectorStoreItem): Promise<void> {
     if (!this.redis) return;
 
     try {
+      // 检查 Redis 连接状态
+      if (this.redis.status !== 'ready' && this.redis.status !== 'connect') {
+        // Redis 未就绪，数据仅保存在内存中
+        return;
+      }
+
       const key = `${this.redisPrefix}:item:${item.id}`;
       // 使用自定义 replacer 处理 BigInt 序列化
       const serialized = JSON.stringify(item, (_, value) =>
@@ -308,7 +334,11 @@ export class VectorStore {
       );
       await this.redis.set(key, serialized);
     } catch (error) {
-      console.error('保存向量数据到 Redis 失败:', error);
+      // 构建时静默错误
+      const isBuildTime = process.env.NEXT_PHASE === 'phase-production-build';
+      if (!isBuildTime) {
+        console.warn('[VectorStore] 保存向量数据到 Redis 失败，数据仅保存在内存中:', error instanceof Error ? error.message : error);
+      }
     }
   }
 

@@ -7,7 +7,7 @@
  * - 对比数据库实际表与元数据存储的表
  */
 
-import { PrismaClient } from '@/app/generated/prisma';
+import { PrismaClient } from '@prisma/client';
 import prisma from '@/lib/prisma/client';
 import type { Connection } from 'mysql2/promise';
 

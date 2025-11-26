@@ -4,6 +4,10 @@
  * 推断单个数据库的业务域
  */
 
+
+export const runtime = 'nodejs';
+export { dynamic } from '@/lib/api/route-config';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getService } from '@/lib/di/setup';
 import { DI_TOKENS } from '@/lib/di/tokens';

@@ -4,7 +4,7 @@
  */
 
 import { injectable, inject } from 'tsyringe';
-import { PrismaClient, MetadataChange } from '@/app/generated/prisma';
+import { PrismaClient, MetadataChange } from '@prisma/client';
 import { DI_TOKENS } from '@/lib/di/tokens';
 import type { CreateMetadataChangeInput } from './types';
 

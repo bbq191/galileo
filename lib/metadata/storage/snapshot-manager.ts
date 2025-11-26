@@ -9,7 +9,7 @@
  */
 
 import prisma from '@/lib/prisma/client';
-import type { SnapshotType } from '@/app/generated/prisma';
+import type { SnapshotType } from '@prisma/client';
 
 /**
  * 快照选项

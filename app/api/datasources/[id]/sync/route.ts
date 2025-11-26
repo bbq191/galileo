@@ -1,23 +1,10 @@
-/**
- * 数据源元数据同步 API
- * POST /api/datasources/:id/sync - 同步数据源的元数据
- */
-
-
-/**
- * 显式声明 Node.js Runtime
- *
- * API Routes 运行在 Node.js Runtime 中，支持：
- * - Prisma ORM
- * - ioredis
- * - mysql2
- * - 其他 Node.js 专有 API
- */
 export const runtime = 'nodejs';
+export { dynamic } from '@/lib/api/route-config';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { safeServerErrorResponse } from '@/lib/api/response';
 import { getMetadataOrchestrator, getPrismaClient } from '@/lib/di/setup';
+import { logger, logError } from '@/lib/logger';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -33,7 +20,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const { id } = await context.params;
     const dataSourceId = parseInt(id);
 
-    console.log(`[POST /api/datasources/${id}/sync] Starting metadata sync...`);
+    logger.info({
+      dataSourceId,
+      action: 'sync_start',
+      path: `/api/datasources/${id}/sync`,
+    }, 'Starting metadata sync');
 
     // 解析请求体（可选参数）
     const body = await request.json().catch(() => ({}));
@@ -57,9 +48,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
       if (dataSource?.targetDatabases) {
         try {
           databases = JSON.parse(dataSource.targetDatabases);
-          console.log(`[POST /api/datasources/${id}/sync] Using configured target databases:`, databases);
+          logger.info({
+            dataSourceId,
+            databases,
+            action: 'using_configured_databases',
+          }, 'Using configured target databases');
         } catch {
-          console.warn(`[POST /api/datasources/${id}/sync] Failed to parse targetDatabases, will sync all databases`);
+          logger.warn({
+            dataSourceId,
+            action: 'parse_target_databases_failed',
+          }, 'Failed to parse targetDatabases, will sync all databases');
         }
       }
     }
@@ -77,8 +75,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const duration = Date.now() - startTime;
 
-    console.log(`[POST /api/datasources/${id}/sync] Sync completed in ${duration}ms`);
-    console.log(`[POST /api/datasources/${id}/sync] Synced ${result.databaseCount} databases, ${result.tableCount} tables, ${result.columnCount} columns`);
+    logger.info({
+      dataSourceId,
+      action: 'sync_success',
+      duration,
+      databaseCount: result.databaseCount,
+      tableCount: result.tableCount,
+      columnCount: result.columnCount,
+    }, `Sync completed in ${duration}ms - ${result.databaseCount} databases, ${result.tableCount} tables, ${result.columnCount} columns`);
 
     return NextResponse.json({
       status: 'success',
@@ -89,12 +93,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
       },
     });
   } catch (error) {
-    return safeServerErrorResponse(
-      error instanceof Error ? error : new Error('Failed to synchronize metadata'),
-      {
-        context: 'datasource-sync',
-        metadata: { operation: 'sync_metadata' },
-      }
-    );
+    const err = error instanceof Error ? error : new Error('Failed to synchronize metadata');
+    const { id } = await context.params;
+    const dataSourceId = parseInt(id);
+    const duration = Date.now() - startTime;
+
+    logError(err, {
+      dataSourceId,
+      action: 'sync_failed',
+      duration,
+      context: 'datasource-sync',
+    });
+
+    return safeServerErrorResponse(err, {
+      context: 'datasource-sync',
+      metadata: { operation: 'sync_metadata' },
+    });
   }
 }

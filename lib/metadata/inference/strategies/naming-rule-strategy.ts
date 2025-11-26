@@ -4,7 +4,7 @@
  * 职责：基于数据库名称、表名前缀等命名规则推断业务域
  */
 
-import type { BusinessDomain } from '@/app/generated/prisma';
+import type { BusinessDomain } from '@prisma/client';
 import type { StrategyResult, DatabaseMetadataForInference } from '../domain-inference.types';
 
 /**

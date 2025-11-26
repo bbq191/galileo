@@ -7,7 +7,7 @@ import 'reflect-metadata';
 import '../setup'; // 确保 DI 容器已初始化
 import { getContainer } from '../container';
 import { DI_TOKENS } from '../tokens';
-import type { PrismaClient } from '@/app/generated/prisma';
+import type { PrismaClient } from '@prisma/client';
 import type { ConnectionManager } from '@/lib/database/connection-manager';
 import type { MultiLevelCache } from '@/lib/cache/multi-level-cache';
 import type { QueryCacheManager } from '@/lib/cache/query-cache-manager';

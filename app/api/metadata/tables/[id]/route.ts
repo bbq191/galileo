@@ -1,11 +1,5 @@
-/**
- * 表元数据更新 API
- * PUT /api/metadata/tables/:id - 更新表的语义描述
- *
- * @author xusy
- */
-
 export const runtime = 'nodejs';
+export { dynamic } from '@/lib/api/route-config';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getPrismaClient } from '@/lib/di/setup';

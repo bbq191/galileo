@@ -4,6 +4,7 @@
  */
 
 export const runtime = 'nodejs';
+export { dynamic } from '@/lib/api/route-config';
 
 import { NextResponse } from 'next/server';
 import { getContainer, isRegistered } from '@/lib/di/container';

@@ -3,7 +3,7 @@
  * 负责分表组的识别、创建、更新和查询
  */
 
-import { PrismaClient } from '@/app/generated/prisma';
+import { PrismaClient } from '@prisma/client';
 import { ShardGroupDetector, type ShardGroupInfo } from './shard-group-detector';
 
 /**

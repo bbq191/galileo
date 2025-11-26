@@ -8,7 +8,7 @@
  */
 
 import { injectable, inject } from 'tsyringe';
-import { PrismaClient } from '@/app/generated/prisma';
+import { PrismaClient } from '@prisma/client';
 import type { DatabaseInfo, TableInfo, ColumnInfo } from '@/lib/metadata/types';
 import { RuleBasedAnnotator } from './rules/naming-rules';
 import { BatchProcessor, type BatchRequest, type BatchProgress } from './batch-processor';

@@ -5,7 +5,7 @@
 
 import { metadataRepository } from './metadata-repository';
 import { multiLevelCache } from '@/lib/cache';
-import type { TableMeta, ColumnMeta, DatabaseMeta } from '@/app/generated/prisma';
+import type { TableMeta, ColumnMeta, DatabaseMeta } from '@prisma/client';
 import type { PaginatedResult, QueryOptions } from './types';
 
 /**
