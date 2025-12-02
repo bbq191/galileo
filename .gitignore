@@ -71,3 +71,4 @@ ecosystem.config.cjs
 .cache/
 temp/
 tmp/
+manual/
