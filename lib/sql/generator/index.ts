@@ -4,7 +4,6 @@
 
 export { SQLGenerator } from './sql-generator';
 export { CrossDatabaseHandler } from './cross-db-handler';
-export { MultiStepSQLGenerator } from './multi-step-generator';
 export type {
   SQLGenerationResult,
   SQLGenerationOptions,

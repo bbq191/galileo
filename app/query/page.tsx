@@ -28,6 +28,7 @@ interface QueryResult {
     }>;
     usedDatabases?: string[];
     dataSourceIds?: number[];
+    appliedBusinessRules?: { terms: string[]; filters: string[]; aggregations: string[]; templates: string[] };
   };
   warnings?: string[];
   optimizationSuggestions?: Array<{
@@ -94,6 +95,31 @@ export default function QueryPage() {
     setLoading(false);
   };
 
+  // 执行编辑后的 SQL（服务端按 enforce 模式校验）
+  const handleExecuteEditedSQL = async (sql: string) => {
+    setLoading(true);
+    setError(null);
+
+    const res = await apiFetch<any[]>('/api/query/execute-sql', {
+      method: 'POST',
+      json: {
+        sql,
+        question: query.trim() || undefined,
+        dataSourceIds: result?.metadata?.dataSourceIds,
+        options: { maxRows: 10000, timeout: 30000 },
+      },
+    });
+
+    if (res.ok) {
+      setResult({ success: true, data: res.data, ...res.meta } as QueryResult);
+    } else {
+      const body = res.body as QueryResult | undefined;
+      setResult(body?.metadata ? { ...body, success: false } : null);
+      setError(res.error.message);
+    }
+    setLoading(false);
+  };
+
   // 预览 SQL（不执行）
   const handlePreview = async () => {
     if (!query.trim()) {
@@ -108,6 +134,7 @@ export default function QueryPage() {
       sql: string;
       explanation: string;
       dataSourceIds?: number[];
+      appliedBusinessRules?: NonNullable<QueryResult['metadata']>['appliedBusinessRules'];
       warnings?: string[];
       optimizationSuggestions?: QueryResult['optimizationSuggestions'];
     }>('/api/query/preview', {
@@ -130,6 +157,7 @@ export default function QueryPage() {
           fromCache: false,
           columns: [],
           dataSourceIds: res.data.dataSourceIds,
+          appliedBusinessRules: res.data.appliedBusinessRules,
         },
         warnings: res.data.warnings,
         optimizationSuggestions: res.data.optimizationSuggestions,
@@ -215,12 +243,26 @@ export default function QueryPage() {
               </div>
             )}
 
+            {/* 注入的业务规则 */}
+            {result.metadata?.appliedBusinessRules && (
+              <div className="text-sm opacity-70">
+                已应用业务规则：
+                {[
+                  ...result.metadata.appliedBusinessRules.terms,
+                  ...result.metadata.appliedBusinessRules.filters,
+                  ...result.metadata.appliedBusinessRules.aggregations,
+                  ...result.metadata.appliedBusinessRules.templates,
+                ].join('、')}
+              </div>
+            )}
+
             {/* SQL 预览 */}
             {result.metadata?.generatedSQL && (
               <SQLPreview
                 sql={result.metadata.generatedSQL}
                 explanation={result.metadata.explanation}
-                editable={false}
+                editable={!loading}
+                onSQLChange={handleExecuteEditedSQL}
               />
             )}
 

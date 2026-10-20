@@ -6,6 +6,17 @@ jest.mock('@/lib/di/container', () => ({
   getContainer: () => ({ resolve: resolvePipeline }),
 }));
 
+const buildBusinessRulesContext = jest.fn<(...args: any[]) => Promise<any>>();
+jest.mock('@/lib/business-rules/rules-context', () => ({
+  buildBusinessRulesContext: (...args: any[]) => buildBusinessRulesContext(...args),
+}));
+const recordUsage = jest.fn();
+jest.mock('@/lib/business-rules/business-rules-engine', () => ({
+  BusinessRulesEngine: class {
+    recordUsage = recordUsage;
+  },
+}));
+
 import { QueryOrchestrator } from '@/lib/di/orchestrators/query.orchestrator';
 import { UserRole } from '@/lib/auth/permissions';
 import { ExecutorError, ExecutorErrorType } from '@/lib/sql/executor/types';
@@ -38,7 +49,7 @@ function createOrchestrator() {
     timeParser: { parse: jest.fn() },
     queryDomainInferencer: { inferDomain: jest.fn(async () => null) },
     sqlGenerator: {
-      generate: jest.fn(async () => ({ sql: SQL, explanation: '统计总数', warnings: ['跨库 JOIN 可能影响性能'] })),
+      generate: jest.fn(async (..._args: any[]) => ({ sql: SQL, explanation: '统计总数', warnings: ['跨库 JOIN 可能影响性能'] })),
     },
     crossDbHandler: {},
     queryExecutor: {
@@ -210,10 +221,10 @@ describe('QueryOrchestrator - 结果缓存', () => {
     const { orchestrator, deps } = createOrchestrator();
 
     await orchestrator.processNaturalLanguageQuery('统计总数');
-    expect(deps.cacheManager.setResult).toHaveBeenLastCalledWith('nlq:all:src=any:统计总数', expect.anything());
+    expect(deps.cacheManager.setResult).toHaveBeenLastCalledWith('nlq:all:src=any:br=off:统计总数', expect.anything());
 
     await orchestrator.processNaturalLanguageQuery('统计总数', { dataSourceId: 1 });
-    expect(deps.cacheManager.setResult).toHaveBeenLastCalledWith('nlq:all:src=1:统计总数', expect.anything());
+    expect(deps.cacheManager.setResult).toHaveBeenLastCalledWith('nlq:all:src=1:br=off:统计总数', expect.anything());
   });
 
   it('缓存命中时返回真实的 SQL、意图与建议，而不是自然语言原文', async () => {
@@ -231,7 +242,7 @@ describe('QueryOrchestrator - 结果缓存', () => {
 
   it('旧格式缓存条目（缺少 nlq）按未命中处理', async () => {
     const { orchestrator, deps, cache } = createOrchestrator();
-    cache.set('nlq:all:src=any:统计总数', { success: true, data: [], rowCount: 0, executionTime: 0, fromCache: false, metadata: { columns: [] } });
+    cache.set('nlq:all:src=any:br=off:统计总数', { success: true, data: [], rowCount: 0, executionTime: 0, fromCache: false, metadata: { columns: [] } });
 
     const result = await orchestrator.processNaturalLanguageQuery('统计总数');
 
@@ -297,5 +308,89 @@ describe('QueryOrchestrator - 多数据源', () => {
 
     expect(result).toMatchObject({ success: false, error: 'Connection 2 is unhealthy' });
     expect(result.errorCode).toBeUndefined();
+  });
+});
+
+describe('QueryOrchestrator - 业务规则', () => {
+  const rules = {
+    promptSection: '## 业务规则和约定',
+    digest: 'd1',
+    applied: { terms: ['观看时长'], filters: [], aggregations: [], templates: [] },
+    appliedIds: { termIds: [1], templateIds: [], filterIds: [], aggregationIds: [] },
+  };
+
+  beforeEach(() => {
+    buildBusinessRulesContext.mockReset();
+    recordUsage.mockClear();
+  });
+
+  it('默认关闭：不构建规则，生成时不追加 Prompt', async () => {
+    delete process.env.ENABLE_BUSINESS_RULES;
+    const { orchestrator, deps } = createOrchestrator();
+
+    await orchestrator.processNaturalLanguageQuery('统计总数', { explainOnly: true });
+
+    expect(buildBusinessRulesContext).not.toHaveBeenCalled();
+    expect(deps.sqlGenerator.generate).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
+      promptAppendix: undefined,
+      promptAppendixDigest: undefined,
+    });
+  });
+
+  it('开启：规则追加到 Prompt，结果中返回已应用的规则并记录使用统计', async () => {
+    process.env.ENABLE_BUSINESS_RULES = 'true';
+    buildBusinessRulesContext.mockResolvedValue(rules);
+    const { orchestrator, deps } = createOrchestrator();
+
+    const result = await orchestrator.processNaturalLanguageQuery('统计观看时长', { explainOnly: true });
+
+    expect(buildBusinessRulesContext).toHaveBeenCalledWith(expect.anything(), '统计观看时长', expect.anything());
+    expect(deps.sqlGenerator.generate).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
+      promptAppendix: '## 业务规则和约定',
+      promptAppendixDigest: 'd1',
+    });
+    expect(result.metadata?.appliedBusinessRules).toEqual(rules.applied);
+    expect(recordUsage).toHaveBeenCalledWith(rules.appliedIds);
+  });
+
+  it('开启但同时启用管道：跳过规则并告警', async () => {
+    process.env.ENABLE_BUSINESS_RULES = 'true';
+    process.env.ENABLE_SQL_PIPELINE = 'true';
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    resolvePipeline.mockReturnValue({
+      generate: async () => ({ result: { sql: 'SELECT 2', explanation: '', confidence: 1, usedTables: [], usedColumns: [] } }),
+    });
+    const { orchestrator } = createOrchestrator();
+
+    const result = await orchestrator.processNaturalLanguageQuery('统计总数', { explainOnly: true });
+
+    expect(result.success).toBe(true);
+    expect(buildBusinessRulesContext).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('[BusinessRules]'));
+  });
+
+  it('构建规则失败：按无规则继续生成', async () => {
+    process.env.ENABLE_BUSINESS_RULES = 'true';
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    buildBusinessRulesContext.mockRejectedValue(new Error('db down'));
+    const { orchestrator, deps } = createOrchestrator();
+
+    const result = await orchestrator.processNaturalLanguageQuery('统计总数', { explainOnly: true });
+
+    expect(result.success).toBe(true);
+    expect(deps.sqlGenerator.generate).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
+      promptAppendix: undefined,
+      promptAppendixDigest: undefined,
+    });
+  });
+
+  it('结果缓存 key 区分规则开关', async () => {
+    process.env.ENABLE_BUSINESS_RULES = 'true';
+    buildBusinessRulesContext.mockResolvedValue(null);
+    const { orchestrator, deps } = createOrchestrator();
+
+    await orchestrator.processNaturalLanguageQuery('统计总数');
+
+    expect(deps.cacheManager.setResult).toHaveBeenCalledWith('nlq:all:src=any:br=on:统计总数', expect.anything());
   });
 });

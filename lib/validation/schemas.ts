@@ -103,9 +103,25 @@ export const LoginSchema = z.object({
   password: z.string({ message: '请输入密码' }).min(1, '请输入密码').max(256),
 });
 
+// 执行用户编辑后的 SQL
+export const SqlExecuteSchema = z.object({
+  sql: z.string({ message: 'SQL 不能为空' }).trim().min(1, 'SQL 不能为空').max(20000, 'SQL 不能超过 20000 字符'),
+  /** 生成该 SQL 的原始问题（记录到审计日志） */
+  question: z.string().max(5000).optional(),
+  /** 生成该 SQL 时涉及的数据源，用于定位 SQL 中的表 */
+  dataSourceIds: z.array(z.number().int().positive()).max(20).optional(),
+  options: z
+    .object({
+      maxRows: z.number().int().min(1).max(10000).optional(),
+      timeout: z.number().int().min(1000).max(300000).optional(),
+    })
+    .optional(),
+});
+
 // 导出所有 schemas
 export const schemas = {
   login: LoginSchema,
+  sqlExecute: SqlExecuteSchema,
   queryExecute: QueryExecuteSchema,
   metadataSync: MetadataSyncSchema,
   datasourceCreate: DatasourceCreateSchema,

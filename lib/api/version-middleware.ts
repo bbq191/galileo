@@ -218,6 +218,8 @@ export function getVersionMigrationAdvice(version: string): string | null {
 export interface DeprecatedEndpoint {
   /** 端点路径 */
   path: string;
+  /** 精确匹配规则；未设置时按 path 前缀匹配（前缀匹配会连同所有子路径一起弃用） */
+  pattern?: RegExp;
   /** 弃用日期 */
   deprecatedDate: string;
   /** 日落日期 */
@@ -233,14 +235,24 @@ export interface DeprecatedEndpoint {
  * 在此处添加需要弃用的端点
  */
 export const DEPRECATED_ENDPOINTS: DeprecatedEndpoint[] = [
-  // 示例（当前无弃用端点）
-  // {
-  //   path: '/api/old-endpoint',
-  //   deprecatedDate: '2025-11-17',
-  //   sunsetDate: '2026-05-17',
-  //   replacement: '/api/new-endpoint',
-  //   reason: 'Replaced with improved implementation',
-  // },
+  // 业务域 CRUD 统一到 /api/domains（支持关键词维护）；
+  // /api/metadata/domains 下的 infer、batch-infer、apply、metrics 保留，不受影响
+  {
+    path: '/api/metadata/domains',
+    pattern: /^\/api\/metadata\/domains\/?$/,
+    deprecatedDate: '2026-10-20',
+    sunsetDate: '2027-01-20',
+    replacement: '/api/domains',
+    reason: 'Business domain CRUD moved to /api/domains',
+  },
+  {
+    path: '/api/metadata/domains/{id}',
+    pattern: /^\/api\/metadata\/domains\/\d+\/?$/,
+    deprecatedDate: '2026-10-20',
+    sunsetDate: '2027-01-20',
+    replacement: '/api/domains/{id}',
+    reason: 'Business domain CRUD moved to /api/domains',
+  },
 ];
 
 /**
@@ -262,7 +274,11 @@ const deprecationStats: DeprecationStats = {
  * 检查端点是否已弃用
  */
 export function isEndpointDeprecated(path: string): DeprecatedEndpoint | null {
-  return DEPRECATED_ENDPOINTS.find((endpoint) => path.startsWith(endpoint.path)) || null;
+  return (
+    DEPRECATED_ENDPOINTS.find((endpoint) =>
+      endpoint.pattern ? endpoint.pattern.test(path) : path.startsWith(endpoint.path)
+    ) || null
+  );
 }
 
 /**
@@ -351,14 +367,15 @@ export function addEndpointDeprecationHeaders(
  *
  * 自动检查端点是否已弃用，添加相应的警告头和日志
  */
-export function withDeprecationCheck(
-  handler: (request: Request, context?: unknown) => Promise<Response>
-): (request: Request, context?: unknown) => Promise<Response> {
-  return async (request: Request, context?: unknown) => {
+export function withDeprecationCheck<Args extends [Request, ...unknown[]]>(
+  handler: (...args: Args) => Promise<Response>
+): (...args: Args) => Promise<Response> {
+  return async (...args: Args) => {
+    const [request] = args;
     const url = new URL(request.url);
     const deprecatedEndpoint = isEndpointDeprecated(url.pathname);
 
-    const response = await handler(request, context);
+    const response = await handler(...args);
 
     if (deprecatedEndpoint) {
       // 记录弃用警告

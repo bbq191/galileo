@@ -9,6 +9,7 @@ export const runtime = 'nodejs';
 export { dynamic } from '@/lib/api/route-config';
 
 import { NextRequest, NextResponse } from 'next/server';
+import { withDeprecationCheck } from '@/lib/api/version-middleware';
 import { getService } from '@/lib/di/setup';
 import { DI_TOKENS } from '@/lib/di/tokens';
 import type { PrismaClient } from '@prisma/client';
@@ -21,7 +22,7 @@ import type { PrismaClient } from '@prisma/client';
  * - 验证业务域是否存在
  * - 返回更新后的业务域信息
  */
-export async function PUT(
+async function handlePut(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -116,7 +117,7 @@ export async function PUT(
  *
  * 删除业务域（可选功能）
  */
-export async function DELETE(
+async function handleDelete(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -186,3 +187,7 @@ export async function DELETE(
     );
   }
 }
+
+// 已弃用：业务域 CRUD 请使用 /api/domains（见 lib/api/version-middleware.ts 的 DEPRECATED_ENDPOINTS）
+export const PUT = withDeprecationCheck(handlePut);
+export const DELETE = withDeprecationCheck(handleDelete);

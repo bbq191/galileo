@@ -29,6 +29,8 @@ import { ExecutorError, ExecutorErrorType, type ExecutionResult } from '@/lib/sq
 import { getContainer } from '../container';
 import { isFeatureEnabled, getSqlValidatorMode } from '@/lib/feature-flags';
 import { getDataPermissions, getDataScopeKey, type QueryUser } from '@/lib/auth/data-permissions';
+import { buildBusinessRulesContext, type BusinessRulesContext } from '@/lib/business-rules/rules-context';
+import type { BusinessRulesEngine } from '@/lib/business-rules/business-rules-engine';
 
 /**
  * 查询选项
@@ -100,6 +102,9 @@ export interface QueryResult {
 
     /** 涉及的数据源 ID */
     dataSourceIds?: number[];
+
+    /** 注入 Prompt 的业务规则（ENABLE_BUSINESS_RULES=true 时） */
+    appliedBusinessRules?: BusinessRulesContext['applied'];
 
     /** 使用的列 */
     usedColumns?: string[];
@@ -178,6 +183,7 @@ interface CachedQueryEntry extends ExecutionResult {
     usedDatabases?: string[];
     usedTables?: string[];
     dataSourceIds?: number[];
+    appliedBusinessRules?: BusinessRulesContext['applied'];
     warnings?: string[];
     suggestions?: QueryResult['suggestions'];
   };
@@ -244,6 +250,9 @@ export class QueryOrchestrator {
 
   /** 6 阶段生成管道，仅在 ENABLE_SQL_PIPELINE=true 时按需解析，避免关闭时也构造全部阶段 */
   private pipeline?: SQLGenerationPipeline;
+
+  /** 业务规则引擎，仅在 ENABLE_BUSINESS_RULES=true 时按需创建 */
+  private businessRulesEngine?: BusinessRulesEngine;
 
   /**
    * 处理自然语言查询
@@ -370,9 +379,10 @@ export class QueryOrchestrator {
         throw error;
       }
 
-      // Step 4: SQL 生成
+      // Step 4: SQL 生成（可选注入业务规则）
       const t4 = Date.now();
-      const sqlResult = await this.generateSQL(resolvedIntent, context);
+      const businessRules = await this.buildBusinessRules(query, context);
+      const sqlResult = await this.generateSQL(resolvedIntent, context, businessRules);
       timings.sqlGeneration = Date.now() - t4;
       console.log(`[QueryOrchestrator] SQL generated (${timings.sqlGeneration}ms)`);
 
@@ -425,6 +435,7 @@ export class QueryOrchestrator {
             usedDatabases: Array.from(new Set(context.tables.map(t => t.databaseName))),
             usedTables: context.tables.map(t => t.tableName),
             dataSourceIds,
+            appliedBusinessRules: businessRules?.applied,
           },
           performance: {
             intentRecognitionTime: timings.intentRecognition,
@@ -496,6 +507,7 @@ export class QueryOrchestrator {
           usedDatabases: Array.from(new Set(context.tables.map(t => t.databaseName))),
           usedTables: context.tables.map(t => t.tableName),
           dataSourceIds,
+          appliedBusinessRules: businessRules?.applied,
         },
         performance: {
           intentRecognitionTime: timings.intentRecognition,
@@ -537,127 +549,113 @@ export class QueryOrchestrator {
   }
 
   /**
-   * 直接执行 SQL 查询
+   * 执行用户编辑后的 SQL
    *
-   * @param sql - SQL 查询语句
-   * @param connectionId - 连接 ID
-   * @param options - 查询选项
-   * @returns 查询结果
+   * 与自然语言查询的区别：
+   * - 元数据上下文按 SQL 中引用的表精确加载（MetadataRetriever.retrieveContextForSQL）
+   * - SQL 校验始终使用 enforce 模式：这是用户直接输入的 SQL，不受 SQL_VALIDATOR_MODE 影响
+   * - 不读写自然语言结果缓存
    */
-  async executeSQL(
+  async executeUserSQL(
     sql: string,
-    connectionId: string,
-    options: QueryOptions = {}
+    options: QueryOptions & { dataSourceIds?: number[] } = {}
   ): Promise<QueryResult> {
     const startTime = Date.now();
+    const permissions = getDataPermissions(options.user);
+    const performance = (extra: Partial<NonNullable<QueryResult['performance']>> = {}) => ({
+      intentRecognitionTime: 0,
+      metadataRetrievalTime: 0,
+      sqlGenerationTime: 0,
+      queryExecutionTime: 0,
+      ...extra,
+      totalTime: Date.now() - startTime,
+    });
+    const baseMetadata = {
+      generatedSQL: sql,
+      explanation: '用户编辑的 SQL',
+      rowCount: 0,
+      executionTime: 0,
+      fromCache: false,
+      columns: [],
+    };
 
+    let context: MetadataContext;
     try {
-      console.log(`[QueryOrchestrator] Executing direct SQL on connection ${connectionId}`);
-
-      // 检查缓存
-      if (options.enableCache !== false) {
-        const cacheKey = `sql:${connectionId}:${sql}`;
-        const cached = await this.cacheManager.getResult(cacheKey);
-        if (cached) {
-          console.log(`[QueryOrchestrator] Cache hit for SQL query`);
-          return {
-            success: true,
-            data: cached.data,
-            metadata: {
-              generatedSQL: sql,
-              explanation: 'Direct SQL execution',
-              rowCount: cached.data?.length || 0,
-              executionTime: 0,
-              fromCache: true,
-              columns: (cached as any).columns || [],
-            },
-            performance: {
-              intentRecognitionTime: 0,
-              metadataRetrievalTime: 0,
-              sqlGenerationTime: 0,
-              queryExecutionTime: 0,
-              totalTime: Date.now() - startTime,
-            },
-          };
-        }
-      }
-
-      // 构建简单的上下文
-      const context: MetadataContext = {
-        tables: [],
-        relationships: [],
-        columns: [],
-        estimatedComplexity: 'low',
-      };
-
-      // 执行查询
-      const execResult = await this.queryExecutor.execute(sql, context, options);
-
-      if (!execResult.success) {
-        return {
-          success: false,
-          error: execResult.error || 'SQL execution failed',
-          metadata: {
-            generatedSQL: sql,
-            explanation: 'Direct SQL execution',
-            rowCount: 0,
-            executionTime: Date.now() - startTime,
-            fromCache: false,
-            columns: [],
-          },
-          performance: {
-            intentRecognitionTime: 0,
-            metadataRetrievalTime: 0,
-            sqlGenerationTime: 0,
-            queryExecutionTime: Date.now() - startTime,
-            totalTime: Date.now() - startTime,
-          },
-        };
-      }
-
-      const result: QueryResult = {
-        success: true,
-        data: execResult.data,
-        metadata: {
-          generatedSQL: sql,
-          explanation: 'Direct SQL execution',
-          rowCount: execResult.rowCount,
-          executionTime: Date.now() - startTime,
-          fromCache: false,
-          columns: (execResult as any).metadata?.columns || [],
-        },
-        performance: {
-          intentRecognitionTime: 0,
-          metadataRetrievalTime: 0,
-          sqlGenerationTime: 0,
-          queryExecutionTime: Date.now() - startTime,
-          totalTime: Date.now() - startTime,
-        },
-      };
-
-      // 缓存结果
-      if (options.enableCache !== false && execResult.data && execResult.success) {
-        const cacheKey = `sql:${connectionId}:${sql}`;
-        await this.cacheManager.setResult(cacheKey, execResult);
-      }
-
-      return result;
-
+      context = await this.metadataRetriever.retrieveContextForSQL(sql, options.dataSourceIds);
     } catch (error) {
-      console.error(`[QueryOrchestrator] SQL execution failed:`, error);
-
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error occurred',
-        performance: {
-          intentRecognitionTime: 0,
-          metadataRetrievalTime: 0,
-          sqlGenerationTime: 0,
-          queryExecutionTime: 0,
-          totalTime: Date.now() - startTime,
-        },
+        errorCode: 'validation_failed',
+        error: error instanceof Error ? error.message : '无法加载 SQL 涉及的元数据',
+        metadata: baseMetadata,
+        performance: performance(),
       };
     }
+
+    const intent: QueryIntent = {
+      type: 'select',
+      entities: {
+        databases: Array.from(new Set(context.tables.map(t => t.databaseName))),
+        tables: context.tables.map(t => t.tableName),
+      },
+      conditions: {},
+    };
+    const dataSourceIds = Array.from(
+      new Set(context.tables.map(t => t.database?.sourceId).filter((id): id is number => id !== undefined))
+    );
+    const metadata = {
+      ...baseMetadata,
+      usedDatabases: intent.entities.databases,
+      usedTables: intent.entities.tables,
+      dataSourceIds,
+    };
+
+    const tValidation = Date.now();
+    const validation = await this.validateSQL(sql, context, permissions, sql, 'enforce');
+    const validationTime = Date.now() - tValidation;
+    if (validation.blocked) {
+      return {
+        success: false,
+        errorCode: 'validation_failed',
+        intent,
+        error: `查询未通过安全校验：${validation.errors.join('；')}`,
+        metadata,
+        performance: performance({ validationTime }),
+      };
+    }
+
+    const tExecution = Date.now();
+    const execResult = await this.queryExecutor.execute(sql, context, options);
+    const queryExecutionTime = Date.now() - tExecution;
+
+    if (!execResult.success) {
+      return {
+        success: false,
+        errorCode: execResult.errorType === ExecutorErrorType.CROSS_SOURCE_UNSUPPORTED
+          ? 'cross_source_unsupported'
+          : undefined,
+        intent,
+        error: execResult.error || 'SQL execution failed',
+        metadata,
+        performance: performance({ validationTime, queryExecutionTime }),
+      };
+    }
+
+    return {
+      success: true,
+      data: execResult.data,
+      intent,
+      metadata: {
+        ...metadata,
+        rowCount: execResult.rowCount,
+        executionTime: queryExecutionTime,
+        fromCache: execResult.fromCache || false,
+        columns: execResult.metadata.columns,
+      },
+      warnings: validation.warnings,
+      suggestions: validation.suggestions,
+      performance: performance({ validationTime, queryExecutionTime }),
+    };
   }
 
   /**
@@ -700,16 +698,57 @@ export class QueryOrchestrator {
    */
   private async generateSQL(
     intent: QueryIntent,
-    context: MetadataContext
+    context: MetadataContext,
+    businessRules: BusinessRulesContext | null
   ): Promise<SQLGenerationResult> {
     if (!isFeatureEnabled('sqlPipeline')) {
-      return this.sqlGenerator.generate(intent, context);
+      return this.sqlGenerator.generate(intent, context, {
+        promptAppendix: businessRules?.promptSection,
+        promptAppendixDigest: businessRules?.digest,
+      });
     }
 
     this.pipeline ??= getContainer().resolve<SQLGenerationPipeline>(DI_TOKENS.SQLGenerationPipeline);
     // 管道内置的 Validator 阶段会无条件拦截且不了解用户权限，校验统一交给 validateSQL
     const { result } = await this.pipeline.generate(intent, context, {}, { disabledStages: ['Validator'] });
     return result;
+  }
+
+  /**
+   * 挑选可应用的业务规则（ENABLE_BUSINESS_RULES=true 时）
+   *
+   * 日志前缀 [BusinessRules]，记录每次实际注入的规则，便于评估对生成质量的影响。
+   * 任何异常都按「无规则」继续生成，不影响查询。
+   */
+  private async buildBusinessRules(
+    query: string,
+    context: MetadataContext
+  ): Promise<BusinessRulesContext | null> {
+    if (!isFeatureEnabled('businessRules')) {
+      return null;
+    }
+    if (isFeatureEnabled('sqlPipeline')) {
+      console.warn('[BusinessRules] ENABLE_SQL_PIPELINE 已开启，业务规则仅作用于 SQLGenerator，本次未注入');
+      return null;
+    }
+
+    try {
+      if (!this.businessRulesEngine) {
+        // 按需加载：该模块导入时会初始化 Prisma 与 Redis 客户端
+        const { BusinessRulesEngine } = require('@/lib/business-rules/business-rules-engine');
+        this.businessRulesEngine = new BusinessRulesEngine() as BusinessRulesEngine;
+      }
+
+      const rules = await buildBusinessRulesContext(this.businessRulesEngine, query, context);
+      if (rules) {
+        console.info('[BusinessRules]', JSON.stringify({ query, applied: rules.applied }));
+        this.businessRulesEngine.recordUsage(rules.appliedIds);
+      }
+      return rules;
+    } catch (error) {
+      console.error('[BusinessRules] 构建业务规则失败，按无规则生成:', error);
+      return null;
+    }
   }
 
   /**
@@ -721,9 +760,9 @@ export class QueryOrchestrator {
     sql: string,
     context: MetadataContext,
     permissions: UserPermissions,
-    query: string
+    query: string,
+    mode = getSqlValidatorMode()
   ): Promise<SQLValidationOutcome> {
-    const mode = getSqlValidatorMode();
     if (mode === 'off') {
       return { blocked: false, passed: true, errors: [], warnings: [], suggestions: [] };
     }
@@ -789,7 +828,9 @@ export class QueryOrchestrator {
    * 结果缓存 key：数据可见范围不同的用户不共享缓存
    */
   private resultCacheKey(query: string, dataScope: string, dataSourceId?: number): string {
-    return `nlq:${dataScope}:src=${dataSourceId ?? 'any'}:${query}`;
+    // 开关切换后不复用另一种模式下生成的结果
+    const rules = isFeatureEnabled('businessRules') ? 'on' : 'off';
+    return `nlq:${dataScope}:src=${dataSourceId ?? 'any'}:br=${rules}:${query}`;
   }
 
   /**
@@ -824,6 +865,7 @@ export class QueryOrchestrator {
           usedDatabases: cached.nlq.usedDatabases,
           usedTables: cached.nlq.usedTables,
           dataSourceIds: cached.nlq.dataSourceIds,
+          appliedBusinessRules: cached.nlq.appliedBusinessRules,
         },
         warnings: cached.nlq.warnings,
         suggestions: cached.nlq.suggestions,
@@ -873,6 +915,7 @@ export class QueryOrchestrator {
           usedDatabases: result.metadata.usedDatabases,
           usedTables: result.metadata.usedTables,
           dataSourceIds: result.metadata.dataSourceIds,
+          appliedBusinessRules: result.metadata.appliedBusinessRules,
           warnings: result.warnings,
           suggestions: result.suggestions,
         },

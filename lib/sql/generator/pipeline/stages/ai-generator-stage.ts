@@ -24,6 +24,7 @@ import { SQL_GENERATION_SYSTEM_PROMPT } from "../../prompts/sql-prompts";
 import { SQLGenerationResult } from "../../types";
 import { BasePipelineStage } from "../base-stage";
 import { PipelineContext } from "../types";
+import { buildSQLCacheVariant } from "@/lib/cache/sql-cache-variant";
 
 @injectable()
 export class AIGenerator extends BasePipelineStage {
@@ -147,6 +148,7 @@ export class AIGenerator extends BasePipelineStage {
         result,
         intent,
         options,
+        metadata,
         response.tokens
       );
 
@@ -344,6 +346,7 @@ ${conditionsDesc}
     result: SQLGenerationResult,
     intent: PipelineContext["intent"],
     options: PipelineContext["options"],
+    metadata: PipelineContext["metadata"],
     tokens?: {
       promptTokens: number;
       completionTokens: number;
@@ -365,7 +368,7 @@ ${conditionsDesc}
 
       // 2. 保存 SQL 缓存
       if (options.useCache !== false) {
-        await this.queryCacheManager.setSQL(intent, result);
+        await this.queryCacheManager.setSQL(intent, result, buildSQLCacheVariant(metadata));
       }
     } catch (error) {
       // 缓存保存失败不影响主流程

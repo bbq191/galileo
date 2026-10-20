@@ -155,7 +155,7 @@
 | `inference/` | 关系/业务域推断（3 种策略） | `relationship-inferencer.ts`、`domain-inferencer.ts` |
 | `retrieval/` | 元数据检索、语义搜索、相关性排序 | `metadata-retriever.ts`、`semantic-search.ts` |
 | `shard/` | 分表管理、分表组检测 | `shard-group-detector.ts`、`shard-group.service.ts` |
-| `storage/` | 数据存储、缓存包装、变更追踪 | `metadata-repository.ts`、`cached-metadata-repository.ts` |
+| `storage/` | 数据存储、变更追踪 | `metadata-repository.ts`、`change-tracker.ts` |
 | `discovery/` | 业务域自动发现 | `domain-discoverer.ts` |
 | `graph/` | 关系图谱构建 | `relationship-graph-builder.ts` |
 

@@ -58,6 +58,7 @@ export async function POST(request: NextRequest) {
       explanation: result.metadata.explanation,
       usedTables: result.metadata.usedTables,
       dataSourceIds: result.metadata.dataSourceIds,
+      appliedBusinessRules: result.metadata.appliedBusinessRules,
       warnings: result.warnings,
       optimizationSuggestions: result.suggestions,
     } as PreviewQueryResponse);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface SQLPreviewProps {
   sql: string;
@@ -23,6 +23,12 @@ export default function SQLPreview({
   const [editedSQL, setEditedSQL] = useState(sql);
   const [copied, setCopied] = useState(false);
 
+  // 生成了新的 SQL 时重置编辑内容
+  useEffect(() => {
+    setEditedSQL(sql);
+    setIsEditing(false);
+  }, [sql]);
+
   // 复制 SQL
   const handleCopy = async () => {
     try {
@@ -35,7 +41,7 @@ export default function SQLPreview({
     }
   };
 
-  // 保存编辑
+  // 提交编辑（由调用方决定如何处理，查询页会直接执行）
   const handleSave = () => {
     if (onSQLChange) {
       onSQLChange(editedSQL);
@@ -138,7 +144,7 @@ export default function SQLPreview({
             />
             <div className="flex gap-2 mt-2">
               <button className="btn btn-sm btn-primary" onClick={handleSave}>
-                保存
+                执行
               </button>
               <button className="btn btn-sm btn-ghost" onClick={handleCancel}>
                 取消

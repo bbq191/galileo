@@ -14,6 +14,7 @@ import { SQLGenerationResult, SQLGenerationOptions } from './types';
 import { SQL_GENERATION_SYSTEM_PROMPT } from './prompts/sql-prompts';
 import { CrossDatabaseHandler } from './cross-db-handler';
 import type { QueryCacheManager } from '@/lib/cache/query-cache-manager';
+import { buildSQLCacheVariant } from '@/lib/cache/sql-cache-variant';
 import { DI_TOKENS } from '@/lib/di/tokens';
 
 @injectable()
@@ -37,10 +38,11 @@ export class SQLGenerator {
     options: SQLGenerationOptions = {}
   ): Promise<SQLGenerationResult> {
     const { useCache = true } = options;
+    const cacheVariant = buildSQLCacheVariant(context, options.promptAppendixDigest);
 
     // 1. 尝试从缓存获取 SQL
     if (useCache) {
-      const cachedSQL = await this.queryCacheManager.getSQL(intent);
+      const cachedSQL = await this.queryCacheManager.getSQL(intent, cacheVariant);
       if (cachedSQL) {
         console.log('SQL 缓存命中，直接返回');
         return cachedSQL;
@@ -60,6 +62,9 @@ export class SQLGenerator {
       try {
         // 构建 SQL 生成 Prompt
         let prompt = this.buildSQLGenerationPrompt(intent, context);
+        if (options.promptAppendix) {
+          prompt += `\n\n${options.promptAppendix}`;
+        }
 
         // 如果是跨库查询，增强 Prompt
         if (crossDbAnalysis.isCrossDatabase) {
@@ -199,7 +204,7 @@ export class SQLGenerator {
 
         // 4. 将生成的 SQL 写入缓存
         if (useCache) {
-          await this.queryCacheManager.setSQL(intent, result);
+          await this.queryCacheManager.setSQL(intent, result, cacheVariant);
         }
 
         return result;

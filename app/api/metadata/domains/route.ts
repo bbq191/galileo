@@ -9,6 +9,7 @@ export const runtime = 'nodejs';
 export { dynamic } from '@/lib/api/route-config';
 
 import { NextRequest, NextResponse } from 'next/server';
+import { withDeprecationCheck } from '@/lib/api/version-middleware';
 import { getService } from '@/lib/di/setup';
 import { DI_TOKENS } from '@/lib/di/tokens';
 import type { PrismaClient } from '@prisma/client';
@@ -21,7 +22,7 @@ import type { PrismaClient } from '@prisma/client';
  * - 统计每个业务域关联的数据库数量
  * - 返回业务域列表及统计信息
  */
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     // 从查询参数获取选项
     const { searchParams } = new URL(request.url);
@@ -78,7 +79,7 @@ export async function GET(request: NextRequest) {
  * - 创建新业务域
  * - 返回创建结果
  */
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const body = await request.json();
     const { name, description, ownerTeam } = body;
@@ -137,3 +138,7 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+// 已弃用：业务域 CRUD 请使用 /api/domains（见 lib/api/version-middleware.ts 的 DEPRECATED_ENDPOINTS）
+export const GET = withDeprecationCheck(handleGet);
+export const POST = withDeprecationCheck(handlePost);

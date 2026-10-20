@@ -152,9 +152,8 @@ Galileo 实现了完整的日志体系，覆盖应用运行的各个层面：
 - 见 `lib/security/rate-limit-logger.ts`
 
 **缓存日志**:
-- 缓存命中率统计
-- 缓存预热监控
-- 见 `lib/cache/warmup/warmup-monitor.ts`
+- 缓存命中率统计（日志前缀 `[QueryCache]`）
+- 见 `lib/cache/query-cache-manager.ts`
 
 ---
 
@@ -707,7 +706,7 @@ logger.info(`查询执行成功: ${datasourceId}, 耗时: ${executionTime}ms`);
 | `lib/ai/error-logger.ts` | 错误日志和性能记录 |
 | `lib/metadata/sync/sync-logger.ts` | 同步日志 |
 | `lib/security/rate-limit-logger.ts` | 速率限制日志 |
-| `lib/cache/warmup/warmup-monitor.ts` | 缓存预热监控 |
+| `lib/cache/query-cache-manager.ts` | 查询缓存命中统计 |
 
 ### 编排器
 

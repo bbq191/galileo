@@ -15,6 +15,8 @@
 export const FEATURE_FLAGS = {
   /** 查询主链路使用 SQLGenerationPipeline 替代 SQLGenerator */
   sqlPipeline: 'ENABLE_SQL_PIPELINE',
+  /** 将业务规则（术语、过滤条件、聚合规则、查询模板）注入 SQL 生成 Prompt，仅作用于 SQLGenerator */
+  businessRules: 'ENABLE_BUSINESS_RULES',
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;

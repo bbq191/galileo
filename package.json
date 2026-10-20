@@ -15,6 +15,7 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:ai": "tsx scripts/run-ai-migrations.ts",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:business-rules": "tsx prisma/seeds/business-rules.ts",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset",
     "security:generate-keys": "tsx scripts/generate-security-keys.ts",

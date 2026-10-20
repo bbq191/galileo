@@ -295,17 +295,20 @@
 
 源码: `app/api/metadata/relationships/infer/route.ts`
 
-### 4.6 元数据业务域管理
+### 4.6 元数据业务域管理（已弃用）
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | /api/metadata/domains | 获取业务域列表 |
-| POST | /api/metadata/domains | 创建业务域 |
-| GET | /api/metadata/domains/{id} | 获取业务域详情 |
-| PUT | /api/metadata/domains/{id} | 更新业务域 |
-| DELETE | /api/metadata/domains/{id} | 删除业务域 |
+> **已弃用，2027-01-20 移除。** 业务域的增删改查请使用 [第 5 节 /api/domains](#51-获取创建业务域)，
+> 它同时支持关键词维护（查询时的业务域推断依赖关键词）。调用以下接口会收到 `Deprecation`、`Sunset`、
+> `Link` 响应头，服务端记录 `[Deprecation Warning]` 日志。下方 4.7 ~ 4.10 的推断与指标接口不受影响。
 
-源码: `app/api/metadata/domains/` 目录
+| 方法 | 路径 | 替代接口 |
+|------|------|----------|
+| GET | /api/metadata/domains | GET /api/domains |
+| POST | /api/metadata/domains | POST /api/domains |
+| PUT | /api/metadata/domains/{id} | PUT /api/domains/{id} |
+| DELETE | /api/metadata/domains/{id} | DELETE /api/domains/{id} |
+
+源码: `app/api/metadata/domains/route.ts`、`app/api/metadata/domains/[id]/route.ts`
 
 ### 4.7 推断单表业务域
 
@@ -325,7 +328,7 @@
 
 ### 4.9 应用业务域分配
 
-**POST /api/metadata/domains/apply**
+**PUT /api/metadata/domains/apply**
 
 将推断的业务域应用到表。
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { apiFetch } from '@/lib/client/api-fetch';
 
 /**
  * 数据库元数据（含业务域）
@@ -123,15 +124,11 @@ export default function DatabaseDomainsPage() {
    * 加载业务域列表
    */
   const loadDomains = async () => {
-    try {
-      const response = await fetch('/api/metadata/domains');
-      const result = await response.json();
-
-      if (result.success) {
-        setDomains(result.data.domains || []);
-      }
-    } catch (err) {
-      console.error('获取业务域列表失败:', err);
+    const res = await apiFetch<{ domains: BusinessDomain[] }>('/api/domains');
+    if (res.ok) {
+      setDomains(res.data.domains || []);
+    } else {
+      console.error('获取业务域列表失败:', res.error.message);
     }
   };
 

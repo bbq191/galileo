@@ -1,5 +1,12 @@
 // prisma/seeds/business-rules.ts
-import { PrismaClient } from '@prisma/client';
+/**
+ * 业务规则示例数据（npm run db:seed:business-rules）
+ *
+ * 注意：以下为直播 / 寿险业务的示例，表名、字段与过滤条件需按实际业务替换。
+ * 可重复执行：有唯一约束的规则按名称跳过，业务术语按术语文本跳过已存在的条目。
+ * 规则仅在 ENABLE_BUSINESS_RULES=true 时注入 SQL 生成，见 lib/business-rules/rules-context.ts。
+ */
+import { Prisma, PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -8,8 +15,12 @@ async function seedBusinessRules() {
 
   // 1. 业务术语映射
   console.log('📝 添加业务术语映射...');
+  // 业务术语没有唯一约束，先过滤掉已存在的术语，避免重复执行时插入重复数据
+  const existingTerms = new Set(
+    (await prisma.businessTermMapping.findMany({ select: { term: true } })).map((t) => t.term)
+  );
   const terms = await prisma.businessTermMapping.createMany({
-    data: [
+    data: ([
       {
         term: '寿险',
         description: '中国人民人寿保险部门',
@@ -87,12 +98,13 @@ async function seedBusinessRules() {
         usageCount: 0,
         isEnabled: true
       }
-    ]
+    ] as Prisma.BusinessTermMappingCreateManyInput[]).filter((t) => !existingTerms.has(t.term))
   });
 
   // 2. 分表模式
   console.log('📊 添加分表模式...');
   const patterns = await prisma.shardingPattern.createMany({
+    skipDuplicates: true,
     data: [
       {
         patternName: 'live_watch_detail_sharding',
@@ -148,6 +160,7 @@ async function seedBusinessRules() {
   // 3. 查询模板
   console.log('📋 添加查询模板...');
   const templates = await prisma.queryTemplate.createMany({
+    skipDuplicates: true,
     data: [
       {
         name: '时间范围聚合查询',
@@ -226,6 +239,7 @@ async function seedBusinessRules() {
   // 4. 常用过滤规则
   console.log('🔍 添加常用过滤规则...');
   const filters = await prisma.commonFilter.createMany({
+    skipDuplicates: true,
     data: [
       {
         name: '有效数据过滤',
@@ -261,6 +275,7 @@ async function seedBusinessRules() {
   // 5. 聚合规则
   console.log('📊 添加聚合规则...');
   const aggregations = await prisma.aggregationRule.createMany({
+    skipDuplicates: true,
     data: [
       {
         name: '观看时长汇总',

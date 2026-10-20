@@ -39,6 +39,10 @@ export interface SQLGenerationOptions {
   enableOptimization?: boolean;
   /** 是否使用缓存（默认 true） */
   useCache?: boolean;
+  /** 追加到生成 Prompt 末尾的内容（如业务规则） */
+  promptAppendix?: string;
+  /** promptAppendix 的摘要，参与 SQL 缓存 key，规则变化时不复用旧 SQL */
+  promptAppendixDigest?: string;
 }
 
 /**

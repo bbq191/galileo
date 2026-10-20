@@ -23,7 +23,8 @@ describe('feature-flags', () => {
 
   it('getFeatureFlags 返回全部开关', () => {
     process.env.ENABLE_SQL_PIPELINE = 'true';
+    delete process.env.ENABLE_BUSINESS_RULES;
 
-    expect(getFeatureFlags()).toEqual({ sqlPipeline: true });
+    expect(getFeatureFlags()).toEqual({ sqlPipeline: true, businessRules: false });
   });
 });

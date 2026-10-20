@@ -107,6 +107,14 @@ export class QueryCacheManager {
     return JSON.stringify(normalized);
   }
 
+  /**
+   * SQL 缓存的哈希：意图 + 变体（见 buildSQLCacheVariant）
+   */
+  private sqlCacheHash(intent: QueryIntent, variant: string): string {
+    const normalizedIntent = this.normalizeIntent(intent);
+    return this.generateHash(variant ? `${normalizedIntent}|${variant}` : normalizedIntent);
+  }
+
   // ==================== 意图缓存 ====================
 
   /**
@@ -185,10 +193,9 @@ export class QueryCacheManager {
    * @param intent 意图对象
    * @returns 缓存的 SQL 生成结果或 null
    */
-  async getSQL(intent: QueryIntent): Promise<SQLGenerationResult | null> {
+  async getSQL(intent: QueryIntent, variant: string = ''): Promise<SQLGenerationResult | null> {
     try {
-      const normalizedIntent = this.normalizeIntent(intent);
-      const intentHash = this.generateHash(normalizedIntent);
+      const intentHash = this.sqlCacheHash(intent, variant);
 
       const cached = await this.cache.get<SQLGenerationResult>(
         'query_sql',
@@ -219,11 +226,11 @@ export class QueryCacheManager {
    */
   async setSQL(
     intent: QueryIntent,
-    sqlResult: SQLGenerationResult
+    sqlResult: SQLGenerationResult,
+    variant: string = ''
   ): Promise<void> {
     try {
-      const normalizedIntent = this.normalizeIntent(intent);
-      const intentHash = this.generateHash(normalizedIntent);
+      const intentHash = this.sqlCacheHash(intent, variant);
 
       await this.cache.set('query_sql', { intent_hash: intentHash }, sqlResult);
 

@@ -1,6 +1,7 @@
 /**
  * 性能监控 API
  * GET /api/performance - 获取性能指标
+ * POST /api/performance?action=reset - 重置性能指标
  */
 
 
@@ -23,15 +24,12 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const action = searchParams.get('action');
 
-    // 重置性能指标
+    // 重置会修改状态，不能用 GET（跨站链接即可触发），改用 POST
     if (action === 'reset') {
-      performanceMonitor.reset();
-      cacheStats.reset();
-
-      return NextResponse.json({
-        status: 'success',
-        message: '性能指标已重置',
-      });
+      return NextResponse.json(
+        { status: 'error', message: '请使用 POST /api/performance?action=reset 重置性能指标' },
+        { status: 405, headers: { Allow: 'POST' } }
+      );
     }
 
     // 获取性能指标
@@ -117,4 +115,23 @@ function assessCachePerformance(hitRate: number): string {
   if (hitRate > 0.6) return '一般';
   if (hitRate > 0.4) return '较差';
   return '差';
+}
+
+/**
+ * POST /api/performance?action=reset
+ * 重置性能指标
+ */
+export async function POST(request: NextRequest) {
+  const action = new URL(request.url).searchParams.get('action');
+  if (action !== 'reset') {
+    return NextResponse.json({ status: 'error', message: `不支持的操作: ${action}` }, { status: 400 });
+  }
+
+  performanceMonitor.reset();
+  cacheStats.reset();
+
+  return NextResponse.json({
+    status: 'success',
+    message: '性能指标已重置',
+  });
 }

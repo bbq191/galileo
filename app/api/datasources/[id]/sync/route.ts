@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { safeServerErrorResponse } from '@/lib/api/response';
 import { getMetadataOrchestrator, getPrismaClient } from '@/lib/di/setup';
 import { logger, logError } from '@/lib/logger';
+import { parseTargetDatabases } from '@/lib/metadata/sync/target-databases';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -46,14 +47,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
         select: { targetDatabases: true },
       });
       if (dataSource?.targetDatabases) {
-        try {
-          databases = JSON.parse(dataSource.targetDatabases);
+        databases = parseTargetDatabases(dataSource.targetDatabases);
+        if (databases) {
           logger.info({
             dataSourceId,
             databases,
             action: 'using_configured_databases',
           }, 'Using configured target databases');
-        } catch {
+        } else {
           logger.warn({
             dataSourceId,
             action: 'parse_target_databases_failed',
@@ -74,6 +75,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
     });
 
     const duration = Date.now() - startTime;
+
+    // syncDataSource 失败时返回 success: false，而不是抛出异常
+    if (!result.success) {
+      logger.error({ dataSourceId, action: 'sync_failed', duration, error: result.error }, 'Metadata sync failed');
+      return NextResponse.json({
+        status: 'error',
+        message: '元数据同步失败',
+        error: result.error,
+      }, { status: 500 });
+    }
 
     logger.info({
       dataSourceId,

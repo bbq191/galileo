@@ -14,6 +14,7 @@ import { MetadataContext } from '@/lib/metadata/retrieval/types';
  * 业务术语匹配结果
  */
 export interface BusinessTermMatch {
+  id?: number;
   term: string;
   category: string;
   targetType: string;
@@ -42,6 +43,7 @@ export interface ShardingPatternMatch {
  * 查询模板匹配结果
  */
 export interface QueryTemplateMatch {
+  id?: number;
   name: string;
   category: string;
   naturalLanguagePattern: string;
@@ -56,6 +58,7 @@ export interface QueryTemplateMatch {
  * 过滤规则结果
  */
 export interface FilterRule {
+  id?: number;
   name: string;
   targetTable: string;
   filterCondition: string;
@@ -68,6 +71,7 @@ export interface FilterRule {
  * 聚合规则结果
  */
 export interface AggregationRuleResult {
+  id?: number;
   name: string;
   metricName: string;
   sourceTable: string;
@@ -78,7 +82,20 @@ export interface AggregationRuleResult {
 }
 
 /**
+ * 实际注入 Prompt 的规则（用于记录使用统计）
+ */
+export interface AppliedRuleIds {
+  termIds: number[];
+  templateIds: number[];
+  filterIds: number[];
+  aggregationIds: number[];
+}
+
+/**
  * 业务规则引擎
+ *
+ * 各 match / get 方法只负责匹配，不更新使用统计；
+ * 规则真正注入 Prompt 后由调用方通过 recordUsage 记录。
  */
 export class BusinessRulesEngine {
   private prisma: PrismaClient;
@@ -87,6 +104,27 @@ export class BusinessRulesEngine {
   constructor() {
     this.prisma = prisma;
     this.redis = getRedisClient();
+  }
+
+  /**
+   * 读取 Redis 缓存；Redis 不可用时返回 null 并回退到数据库，不影响规则匹配
+   */
+  private async getCached<T>(key: string): Promise<T | null> {
+    try {
+      const cached = await this.redis.get(key);
+      return cached ? (JSON.parse(cached) as T) : null;
+    } catch (error) {
+      console.warn('[BusinessRulesEngine] 读取缓存失败，回退到数据库:', error);
+      return null;
+    }
+  }
+
+  private async setCached(key: string, value: unknown, ttlSeconds: number): Promise<void> {
+    try {
+      await this.redis.set(key, JSON.stringify(value), 'EX', ttlSeconds);
+    } catch (error) {
+      console.warn('[BusinessRulesEngine] 写入缓存失败:', error);
+    }
   }
 
   /**
@@ -106,11 +144,11 @@ export class BusinessRulesEngine {
     try {
       // Level 1: 检查 Redis 缓存
       const cacheKey = `business_term:${naturalLanguageQuery}`;
-      const cached = await this.redis.get(cacheKey);
+      const cached = await this.getCached<BusinessTermMatch[]>(cacheKey);
 
       if (cached) {
         console.log('[BusinessRulesEngine] 业务术语匹配 - Redis 缓存命中');
-        return JSON.parse(cached);
+        return cached;
       }
 
       // Level 2: 从数据库查询所有启用的业务术语
@@ -139,6 +177,7 @@ export class BusinessRulesEngine {
           }
 
           matches.push({
+            id: term.id,
             term: term.term,
             category: term.category,
             targetType: term.targetType,
@@ -151,11 +190,6 @@ export class BusinessRulesEngine {
           });
 
           console.log(`[BusinessRulesEngine] 匹配到业务术语: ${term.term} (${term.category})`);
-
-          // 更新使用统计（异步，不阻塞主流程）
-          this.updateTermUsage(term.id).catch(err => {
-            console.error('[BusinessRulesEngine] 更新使用统计失败:', err);
-          });
         }
       }
 
@@ -168,7 +202,7 @@ export class BusinessRulesEngine {
       });
 
       // 写入 Redis 缓存（TTL: 1 小时）
-      await this.redis.set(cacheKey, JSON.stringify(matches), 'EX', 3600);
+      await this.setCached(cacheKey, matches, 3600);
 
       console.log(`[BusinessRulesEngine] 业务术语匹配完成，找到 ${matches.length} 个匹配项`);
       return matches;
@@ -177,24 +211,6 @@ export class BusinessRulesEngine {
       console.error('[BusinessRulesEngine] 业务术语匹配失败:', error);
       // 降级：返回空数组，不阻塞 SQL 生成流程
       return [];
-    }
-  }
-
-  /**
-   * 更新术语使用统计
-   * @param termId 术语 ID
-   */
-  private async updateTermUsage(termId: number): Promise<void> {
-    try {
-      await this.prisma.businessTermMapping.update({
-        where: { id: termId },
-        data: {
-          usageCount: { increment: 1 },
-          lastUsedAt: new Date()
-        }
-      });
-    } catch (error) {
-      console.error(`[BusinessRulesEngine] 更新术语使用统计失败 (ID: ${termId}):`, error);
     }
   }
 
@@ -346,6 +362,7 @@ export class BusinessRulesEngine {
           }
 
           matches.push({
+            id: template.id,
             name: template.name,
             category: template.category,
             naturalLanguagePattern: template.naturalLanguagePattern,
@@ -357,11 +374,6 @@ export class BusinessRulesEngine {
           });
 
           console.log(`[BusinessRulesEngine] 匹配到查询模板: ${template.name} (相似度: ${similarity.toFixed(2)})`);
-
-          // 更新使用统计（异步，不阻塞主流程）
-          this.updateTemplateUsage(template.id).catch(err => {
-            console.error('[BusinessRulesEngine] 更新模板使用统计失败:', err);
-          });
         }
       }
 
@@ -378,24 +390,6 @@ export class BusinessRulesEngine {
       console.error('[BusinessRulesEngine] 查询模板匹配失败:', error);
       // 降级：返回空数组，不阻塞 SQL 生成流程
       return [];
-    }
-  }
-
-  /**
-   * 更新查询模板使用统计
-   * @param templateId 模板 ID
-   */
-  private async updateTemplateUsage(templateId: number): Promise<void> {
-    try {
-      await this.prisma.queryTemplate.update({
-        where: { id: templateId },
-        data: {
-          usageCount: { increment: 1 },
-          lastUsedAt: new Date()
-        }
-      });
-    } catch (error) {
-      console.error(`[BusinessRulesEngine] 更新模板使用统计失败 (ID: ${templateId}):`, error);
     }
   }
 
@@ -438,6 +432,7 @@ export class BusinessRulesEngine {
           }
 
           filters.push({
+            id: filter.id,
             name: filter.name,
             targetTable: filter.targetTable,
             filterCondition: filter.filterCondition,
@@ -447,11 +442,6 @@ export class BusinessRulesEngine {
           });
 
           console.log(`[BusinessRulesEngine] 找到适用的过滤规则: ${filter.name} (优先级: ${filter.priority}, 自动应用: ${filter.autoApply})`);
-
-          // 更新使用统计（异步，不阻塞主流程）
-          this.updateFilterUsage(filter.id).catch(err => {
-            console.error('[BusinessRulesEngine] 更新过滤规则使用统计失败:', err);
-          });
         }
       }
 
@@ -462,24 +452,6 @@ export class BusinessRulesEngine {
       console.error('[BusinessRulesEngine] 获取过滤规则失败:', error);
       // 降级：返回空数组，不阻塞 SQL 生成流程
       return [];
-    }
-  }
-
-  /**
-   * 更新过滤规则使用统计
-   * @param filterId 过滤规则 ID
-   */
-  private async updateFilterUsage(filterId: number): Promise<void> {
-    try {
-      await this.prisma.commonFilter.update({
-        where: { id: filterId },
-        data: {
-          usageCount: { increment: 1 },
-          lastUsedAt: new Date()
-        }
-      });
-    } catch (error) {
-      console.error(`[BusinessRulesEngine] 更新过滤规则使用统计失败 (ID: ${filterId}):`, error);
     }
   }
 
@@ -498,11 +470,11 @@ export class BusinessRulesEngine {
     try {
       // Level 1: 检查 Redis 缓存
       const cacheKey = `aggregation_rule:${metricName}`;
-      const cached = await this.redis.get(cacheKey);
+      const cached = await this.getCached<AggregationRuleResult>(cacheKey);
 
       if (cached) {
         console.log('[BusinessRulesEngine] 聚合规则 - Redis 缓存命中');
-        return JSON.parse(cached);
+        return cached;
       }
 
       // Level 2: 从数据库查询
@@ -519,6 +491,7 @@ export class BusinessRulesEngine {
       }
 
       const result: AggregationRuleResult = {
+        id: rule.id,
         name: rule.name,
         metricName: rule.metricName,
         sourceTable: rule.sourceTable,
@@ -529,14 +502,9 @@ export class BusinessRulesEngine {
       };
 
       // 写入 Redis 缓存（TTL: 1 小时）
-      await this.redis.set(cacheKey, JSON.stringify(result), 'EX', 3600);
+      await this.setCached(cacheKey, result, 3600);
 
       console.log(`[BusinessRulesEngine] 找到聚合规则: ${rule.name} (${rule.aggregationFunction})`);
-
-      // 更新使用统计（异步，不阻塞主流程）
-      this.updateAggregationUsage(rule.id).catch(err => {
-        console.error('[BusinessRulesEngine] 更新聚合规则使用统计失败:', err);
-      });
 
       return result;
 
@@ -548,58 +516,91 @@ export class BusinessRulesEngine {
   }
 
   /**
-   * 更新聚合规则使用统计
-   * @param ruleId 聚合规则 ID
-   */
-  private async updateAggregationUsage(ruleId: number): Promise<void> {
-    try {
-      await this.prisma.aggregationRule.update({
-        where: { id: ruleId },
-        data: {
-          usageCount: { increment: 1 },
-          lastUsedAt: new Date()
-        }
-      });
-    } catch (error) {
-      console.error(`[BusinessRulesEngine] 更新聚合规则使用统计失败 (ID: ${ruleId}):`, error);
-    }
-  }
-
-  /**
-   * 计算相似度（简单实现）
-   * 实际应使用向量嵌入 + 余弦相似度
+   * 计算查询与模板模式的相似度
    *
-   * @param query1 查询文本 1
-   * @param query2 查询文本 2
-   * @returns 相似度分数 (0-1)
+   * 模式示例：`查询{指标}最{高/低}的{N}个{维度}`
+   * - 含 `/` 的占位符是候选关键词（高 或 低）
+   * - 其他占位符匹配任意内容
+   * 中文问题没有空格，不能按词切分比较。按模式构造正则：不匹配为 0，
+   * 匹配时模式中的固定文字越多越具体，得分越高（0.5 ~ 1）。
    */
-  private calculateSimilarity(query1: string, query2: string): number {
-    // 简单的 Jaccard 相似度
-    const words1 = new Set(query1.split(/[\s,，。！？、]+/));
-    const words2 = new Set(query2.split(/[\s,，。！？、]+/));
+  private calculateSimilarity(query: string, pattern: string): number {
+    const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    let literalLength = 0;
 
-    // 计算交集
-    const words1Array = Array.from(words1);
-    const intersection = new Set(words1Array.filter(x => words2.has(x)));
+    const source = pattern
+      .split(/(\{[^}]*\})/)
+      .filter(Boolean)
+      .map((part) => {
+        const placeholder = /^\{([^}]*)\}$/.exec(part);
+        if (!placeholder) {
+          literalLength += part.length;
+          return escape(part);
+        }
+        const alternatives = placeholder[1].split('/').map((a) => a.trim()).filter(Boolean);
+        if (alternatives.length > 1) {
+          literalLength += Math.min(...alternatives.map((a) => a.length));
+          return `(?:${alternatives.map(escape).join('|')})`;
+        }
+        return '.+?';
+      })
+      .join('');
 
-    // 计算并集
-    const union = new Set([...words1Array, ...Array.from(words2)]);
-
-    return intersection.size / union.size;
+    if (literalLength === 0 || !new RegExp(source).test(query)) {
+      return 0;
+    }
+    return 0.5 + Math.min(0.5, literalLength / 20);
   }
 
   /**
-   * 清理资源
-   * 断开数据库连接
+   * 匹配问题中提到的聚合指标
+   *
+   * 按指标名长度从长到短匹配，被更长指标包含的短指标不再重复命中
+   * （如「平均观看时长」不会同时命中「观看时长」）
    */
-  async cleanup(): Promise<void> {
-    console.log('[BusinessRulesEngine] 清理资源...');
+  async matchAggregationRules(naturalLanguageQuery: string): Promise<AggregationRuleResult[]> {
     try {
-      await this.prisma.$disconnect();
-      // Redis 客户端由全局单例管理，不在此处断开
-      console.log('[BusinessRulesEngine] 资源清理完成');
+      const rules = await this.prisma.aggregationRule.findMany({ where: { isEnabled: true } });
+      const sorted = [...rules].sort((a, b) => b.metricName.length - a.metricName.length);
+
+      const matched: AggregationRuleResult[] = [];
+      let remaining = naturalLanguageQuery;
+      for (const rule of sorted) {
+        if (!remaining.includes(rule.metricName)) continue;
+        remaining = remaining.split(rule.metricName).join(' ');
+        matched.push({
+          id: rule.id,
+          name: rule.name,
+          metricName: rule.metricName,
+          sourceTable: rule.sourceTable,
+          sourceColumn: rule.sourceColumn,
+          aggregationFunction: rule.aggregationFunction,
+          unit: rule.unit || undefined,
+          semanticDescription: rule.semanticDescription || undefined,
+        });
+      }
+      return matched;
     } catch (error) {
-      console.error('[BusinessRulesEngine] 资源清理失败:', error);
+      console.error('[BusinessRulesEngine] 匹配聚合规则失败:', error);
+      return [];
     }
+  }
+
+  /**
+   * 记录规则使用统计（仅针对实际注入 Prompt 的规则，异步执行不阻塞主流程）
+   */
+  recordUsage(applied: AppliedRuleIds): void {
+    const now = new Date();
+    const data = { usageCount: { increment: 1 }, lastUsedAt: now };
+    const updates = [
+      applied.termIds.length && this.prisma.businessTermMapping.updateMany({ where: { id: { in: applied.termIds } }, data }),
+      applied.templateIds.length && this.prisma.queryTemplate.updateMany({ where: { id: { in: applied.templateIds } }, data }),
+      applied.filterIds.length && this.prisma.commonFilter.updateMany({ where: { id: { in: applied.filterIds } }, data }),
+      applied.aggregationIds.length && this.prisma.aggregationRule.updateMany({ where: { id: { in: applied.aggregationIds } }, data }),
+    ].filter(Boolean);
+
+    Promise.all(updates).catch((error) => {
+      console.error('[BusinessRulesEngine] 更新规则使用统计失败:', error);
+    });
   }
 }

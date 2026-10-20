@@ -1,10 +1,51 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import { apiFetch, formatApiError } from '@/lib/client/api-fetch';
+
 interface TableDetailProps {
   table: any;
 }
 
 export default function TableDetail({ table }: TableDetailProps) {
+  const [description, setDescription] = useState<string | null>(table.semanticDescription ?? null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  // 切换表时重置
+  useEffect(() => {
+    setDescription(table.semanticDescription ?? null);
+    setEditing(false);
+    setSaveError(null);
+  }, [table.id, table.semanticDescription]);
+
+  const startEditing = () => {
+    setDraft(description ?? '');
+    setSaveError(null);
+    setEditing(true);
+  };
+
+  // 保存语义描述（需要元数据管理权限）
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveError(null);
+
+    const res = await apiFetch<{ semanticDescription: string | null }>(`/api/metadata/tables/${table.id}`, {
+      method: 'PUT',
+      json: { semanticDescription: draft },
+    });
+
+    if (res.ok) {
+      setDescription(res.data.semanticDescription);
+      setEditing(false);
+    } else {
+      setSaveError(formatApiError(res.error));
+    }
+    setSaving(false);
+  };
+
   // 格式化数字
   const formatNumber = (num: number | bigint | null) => {
     if (num === null || num === undefined) return '-';
@@ -38,27 +79,42 @@ export default function TableDetail({ table }: TableDetailProps) {
       </div>
 
       {/* 语义描述 */}
-      {table.semanticDescription && (
-        <div className="alert alert-info">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            className="stroke-current shrink-0 w-6 h-6"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-            ></path>
-          </svg>
-          <div>
-            <h3 className="font-bold">AI 语义描述</h3>
-            <div className="text-sm">{table.semanticDescription}</div>
+      <div className="card bg-base-200">
+        <div className="card-body p-4 gap-2">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold">语义描述</h3>
+            {!editing && (
+              <button className="btn btn-xs btn-ghost" onClick={startEditing}>
+                编辑
+              </button>
+            )}
           </div>
+
+          {editing ? (
+            <>
+              <textarea
+                className="textarea textarea-bordered w-full text-sm"
+                rows={3}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="描述这张表的业务含义（表没有数据库注释时，SQL 生成会使用该描述）"
+              />
+              {saveError && <div className="text-error text-sm whitespace-pre-line">{saveError}</div>}
+              <div className="flex gap-2">
+                <button className="btn btn-sm btn-primary" onClick={handleSave} disabled={saving}>
+                  {saving && <span className="loading loading-spinner loading-xs" />}
+                  保存
+                </button>
+                <button className="btn btn-sm btn-ghost" onClick={() => setEditing(false)} disabled={saving}>
+                  取消
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="text-sm opacity-80">{description || '暂无描述'}</div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* 详细信息 */}
       <div className="overflow-x-auto">

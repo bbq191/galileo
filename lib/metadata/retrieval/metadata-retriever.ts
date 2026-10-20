@@ -7,6 +7,7 @@ import { injectable, inject } from 'tsyringe';
 import { PrismaClient } from '@prisma/client';
 import { QueryIntent } from '@/lib/nlp/types';
 import { MetadataContext, SearchOptions } from './types';
+import { extractTableReferences } from './sql-table-references';
 import { SemanticSearch } from './semantic-search';
 import { RelevanceRanker } from './relevance-ranker';
 import { ContextBuilder } from './context-builder';
@@ -78,6 +79,47 @@ export class MetadataRetriever {
     console.log(`- 复杂度: ${context.estimatedComplexity}`);
 
     return context;
+  }
+
+  /**
+   * 为一条已有的 SQL（如用户编辑后的 SQL）加载元数据上下文
+   *
+   * 按 SQL 中引用的表精确定位，而不是语义检索；表必须已同步到元数据中。
+   *
+   * @param dataSourceIds 限定在这些数据源中查找（通常来自生成该 SQL 时涉及的数据源）
+   * @throws 表不在元数据中，或未写库名且在多个库中同名
+   */
+  async retrieveContextForSQL(sql: string, dataSourceIds?: number[]): Promise<MetadataContext> {
+    const references = extractTableReferences(sql);
+    if (references.length === 0) {
+      throw new Error('未能从 SQL 中识别出查询的表');
+    }
+
+    const sourceFilter = dataSourceIds && dataSourceIds.length > 0
+      ? { sourceId: { in: dataSourceIds } }
+      : {};
+
+    const tables = [];
+    for (const ref of references) {
+      const matches = await this.prisma.tableMeta.findMany({
+        where: {
+          tableName: ref.table,
+          database: { ...sourceFilter, ...(ref.database && { databaseName: ref.database }) },
+        },
+        include: { database: { include: { domain: true } } },
+      });
+
+      const name = ref.database ? `${ref.database}.${ref.table}` : ref.table;
+      if (matches.length === 0) {
+        throw new Error(`表 ${name} 不在已同步的元数据中`);
+      }
+      if (matches.length > 1) {
+        throw new Error(`表 ${name} 在多个库中存在，请使用「库名.表名」指定`);
+      }
+      tables.push(matches[0]);
+    }
+
+    return this.contextBuilder.buildMetadataContext(tables);
   }
 
   /**

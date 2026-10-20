@@ -14,6 +14,7 @@
 4. [故障排查](#4-故障排查)
 5. [性能调优](#5-性能调优)
 6. [备份恢复](#6-备份恢复)
+7. [定时任务](#7-定时任务)
 
 ---
 
@@ -501,6 +502,38 @@ redis-cli FLUSHDB
 # 4. 重启服务
 pm2 start galileo
 ```
+
+---
+
+## 7. 定时任务
+
+维护任务以管理员接口的形式提供，由外部调度（crontab、k8s CronJob 等）定时调用。
+**不在应用进程内定时执行**，避免多实例部署时每个实例各跑一遍。
+
+| 接口 | 作用 | 建议频率 |
+|------|------|----------|
+| `POST /api/admin/maintenance/cleanup-history` | 删除超过保留期的查询历史（默认 90 天，`QUERY_HISTORY_RETENTION_DAYS` 或请求体 `{"days": N}`，最少 7 天） | 每天一次 |
+| `POST /api/admin/maintenance/sync-datasources` | 依次增量同步所有 active 数据源的元数据（不做关系推断与 AI 标注） | 按表结构变更频率，如每天凌晨 |
+
+调用需要管理员权限，定时任务使用 `X-API-Key: $ADMIN_API_KEY`：
+
+```bash
+# crontab -e
+API=https://galileo.example.com
+KEY=请替换为 ADMIN_API_KEY 的值
+
+# 每天 03:00 清理查询历史
+0 3 * * * curl -fsS -X POST -H "X-API-Key: $KEY" $API/api/admin/maintenance/cleanup-history >> /var/log/galileo/cron.log 2>&1
+
+# 每天 04:00 同步元数据；有数据源失败时返回 207，用 jq 检查 failed 并告警
+0 4 * * * curl -sS -X POST -H "X-API-Key: $KEY" $API/api/admin/maintenance/sync-datasources | tee -a /var/log/galileo/cron.log | jq -e '.data.failed == 0' > /dev/null || echo "元数据同步存在失败" | mail -s galileo ops@example.com
+```
+
+注意：
+
+- 同步接口最长运行 5 分钟（`maxDuration`），数据源较多时请拆分时段或调大限制
+- 同一实例上重复触发会返回 409；多实例部署时请确保调度间隔大于单次同步耗时
+- 两个接口都经过 middleware 的 30 次/分钟通用限流
 
 ---
 

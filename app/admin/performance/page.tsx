@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { apiFetch, formatApiError } from '@/lib/client/api-fetch';
 
 /**
  * 性能指标数据类型
@@ -214,19 +215,13 @@ export default function PerformancePage() {
       return;
     }
 
-    try {
-      const response = await fetch('/api/performance?action=reset');
-      const data = await response.json();
-
-      if (data.status === 'success') {
-        alert('性能指标已重置');
-        await refreshData();
-      } else {
-        throw new Error(data.message || '重置失败');
-      }
-    } catch (err) {
-      console.error('重置性能指标失败:', err);
-      alert(err instanceof Error ? err.message : '重置性能指标失败');
+    const res = await apiFetch('/api/performance?action=reset', { method: 'POST' });
+    if (res.ok) {
+      alert('性能指标已重置');
+      await refreshData();
+    } else {
+      console.error('重置性能指标失败:', res.error);
+      alert(formatApiError(res.error));
     }
   };
 

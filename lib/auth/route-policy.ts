@@ -51,7 +51,8 @@ const RULES: Rule[] = [
   { prefix: '/api/ai/diagnostic', access: requires(Permission.STATS_VIEW) },
   { prefix: '/api/ai/prompt-cache', methods: ['GET'], access: requires(Permission.STATS_VIEW) },
 
-  // 系统配置
+  // 系统配置与维护任务（定时任务通过 X-API-Key 调用）
+  { prefix: '/api/admin', access: requires(Permission.SYSTEM_CONFIG) },
   { prefix: '/api/cache/clear', access: requires(Permission.SYSTEM_CONFIG) },
   { prefix: '/api/ai/prompt-cache', access: requires(Permission.SYSTEM_CONFIG) },
 

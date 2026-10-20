@@ -578,33 +578,24 @@ paths:
   /metadata/domains:
     get:
       tags: [Metadata]
-      summary: 获取元数据业务域列表
+      summary: 获取元数据业务域列表（已弃用，请使用 GET /domains）
+      deprecated: true
       responses:
         '200':
           description: 成功
     post:
       tags: [Metadata]
-      summary: 创建元数据业务域
+      summary: 创建元数据业务域（已弃用，请使用 POST /domains）
+      deprecated: true
       responses:
         '201':
           description: 创建成功
 
   /metadata/domains/{id}:
-    get:
-      tags: [Metadata]
-      summary: 获取元数据业务域详情
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: 成功
     put:
       tags: [Metadata]
-      summary: 更新元数据业务域
+      summary: 更新元数据业务域（已弃用，请使用 PUT /domains/{id}）
+      deprecated: true
       parameters:
         - name: id
           in: path
@@ -616,7 +607,8 @@ paths:
           description: 成功
     delete:
       tags: [Metadata]
-      summary: 删除元数据业务域
+      summary: 删除元数据业务域（已弃用，请使用 DELETE /domains/{id}）
+      deprecated: true
       parameters:
         - name: id
           in: path
@@ -624,7 +616,7 @@ paths:
           schema:
             type: string
       responses:
-        '204':
+        '200':
           description: 删除成功
 
   /metadata/domains/infer:
@@ -654,7 +646,7 @@ paths:
           description: 成功
 
   /metadata/domains/apply:
-    post:
+    put:
       tags: [Metadata]
       summary: 应用业务域分配
       description: 将推断的业务域应用到表

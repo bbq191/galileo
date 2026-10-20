@@ -16,6 +16,7 @@ import { injectable, inject } from 'tsyringe';
 import { BasePipelineStage } from '../base-stage';
 import { PipelineContext } from '../types';
 import type { QueryCacheManager } from '@/lib/cache/query-cache-manager';
+import { buildSQLCacheVariant } from '@/lib/cache/sql-cache-variant';
 import { DI_TOKENS } from '@/lib/di/tokens';
 
 @injectable()
@@ -39,7 +40,7 @@ export class SQLCacheChecker extends BasePipelineStage {
     this.log(context, '检查 SQL 缓存...', 'info');
 
     // 尝试从缓存获取 SQL
-    const cachedSQL = await this.queryCacheManager.getSQL(intent);
+    const cachedSQL = await this.queryCacheManager.getSQL(intent, buildSQLCacheVariant(context.metadata));
 
     if (!cachedSQL) {
       this.log(context, 'SQL 缓存未命中，继续到下一阶段', 'info');

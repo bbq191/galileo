@@ -246,6 +246,8 @@ export interface PreviewQueryResponse {
   usedColumns?: string[];
   /** 涉及的数据源 ID */
   dataSourceIds?: number[];
+  /** 注入 Prompt 的业务规则名称 */
+  appliedBusinessRules?: { terms: string[]; filters: string[]; aggregations: string[]; templates: string[] };
   /** 与 ExecuteQueryResponse 保持一致的顶层字段 */
   warnings?: string[];
   optimizationSuggestions?: Array<{
