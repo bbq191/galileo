@@ -8,6 +8,7 @@
     "build": "cross-env NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 node --max-old-space-size=4096 ./node_modules/next/dist/bin/next build",
     "start": "next start",
     "lint": "next lint",
+    "test": "jest",
     "lint:fix": "next lint --fix",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
