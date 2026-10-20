@@ -1,7 +1,9 @@
 // prisma/seeds/verify-business-rules.ts
-import { PrismaClient } from '@prisma/client';
+// Prisma 7 不再自动加载 .env，必须在导入数据库客户端之前加载
+import 'dotenv/config';
+import { createPrismaClient } from '@/lib/di/factories/prisma.factory';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 async function verifyBusinessRules() {
   console.log('🔍 开始验证业务规则数据库...\n');

@@ -7,9 +7,12 @@
  * 规则仅在 ENABLE_BUSINESS_RULES=true 时注入 SQL 生成，见 lib/business-rules/rules-context.ts。
  * 分表不在此维护：同步时自动识别为 TableShardGroup，见 lib/metadata/shard/shard-expander.ts。
  */
-import { Prisma, PrismaClient } from '@prisma/client';
+// Prisma 7 不再自动加载 .env，必须在导入数据库客户端之前加载
+import 'dotenv/config';
+import { Prisma } from '@prisma/client';
+import { createPrismaClient } from '@/lib/di/factories/prisma.factory';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 async function seedBusinessRules() {
   console.log('🌱 开始添加业务规则测试数据...');

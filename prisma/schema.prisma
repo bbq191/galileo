@@ -2,9 +2,9 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// 连接 URL 见 prisma.config.ts（CLI）与 lib/di/factories/prisma.factory.ts（运行时驱动适配器）
 datasource db {
   provider = "mysql"
-  url      = env("DATABASE_URL")
 }
 
 model BusinessDomain {

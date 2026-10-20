@@ -9,6 +9,8 @@
  * --reset 会重置密码并递增 tokenVersion，使该用户所有已登录会话在 Access Token 过期后失效。
  */
 
+// Prisma 7 不再自动加载 .env，必须在导入数据库客户端之前加载
+import 'dotenv/config';
 import { randomBytes } from 'crypto';
 import prisma from '@/lib/prisma/client';
 import { hashPassword } from '@/lib/auth/password';

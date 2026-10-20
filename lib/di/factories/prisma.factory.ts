@@ -4,6 +4,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { createLazyMariaDbAdapter } from '@/lib/prisma/mariadb-config';
 
 /**
  * 全局类型扩展
@@ -20,6 +21,8 @@ declare global {
 export function createPrismaClient(): PrismaClient {
   const prismaClientSingleton = () => {
     return new PrismaClient({
+      // Prisma 7 起必须通过驱动适配器连接数据库，见 lib/prisma/mariadb-config.ts
+      adapter: createLazyMariaDbAdapter(),
       log:
         process.env.NODE_ENV === 'development'
           ? ['query', 'error', 'warn']

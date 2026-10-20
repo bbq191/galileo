@@ -3,6 +3,8 @@
  * 初始化数据库种子数据
  */
 
+// Prisma 7 不再自动加载 .env，必须在导入数据库客户端之前加载
+import 'dotenv/config';
 import prisma from '@/lib/prisma/client';
 import seedDataDictionary from './seeds/data-dictionary';
 import seedBusinessDomains from './seeds/business-domains';
