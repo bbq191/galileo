@@ -93,7 +93,7 @@ Template Matcher -> Prompt Cache -> SQL Cache -> AI Generator -> Quality Enhance
 
 ### 安全与运维
 
-- **分布式限流**: Middleware (Edge Runtime, 内存) + API Routes (Redis) 双层防护，按接口差异化配额（查询执行 10/min，元数据同步 5/hour）
+- **分布式限流**: Proxy (proxy.ts, 内存或 Upstash) + API Routes (Redis) 双层防护，按接口差异化配额（查询执行 10/min，元数据同步 5/hour）
 - **连接加密**: 数据源密码 AES 加密存储，密钥与数据分离（`encryption`）
 - **安全响应头**: X-Frame-Options / X-Content-Type-Options / XSS-Protection / Referrer-Policy 全覆盖
 - **审计日志**: 全链路操作记录 + 审计分析（`audit-logger` + `audit-analyzer`）

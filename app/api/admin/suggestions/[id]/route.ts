@@ -1,5 +1,5 @@
 export const runtime = 'nodejs';
-export { dynamic } from '@/lib/api/route-config';
+export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getPrismaClient } from '@/lib/di/setup';
@@ -11,7 +11,8 @@ import { setSuggestionHidden } from '@/lib/suggestions/question-suggestions';
  *
  * 隐藏后不再推荐，重建时保留隐藏状态
  */
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const params = await context.params;
   try {
     const id = parseId(params.id);
     const body = await request.json().catch(() => ({}));

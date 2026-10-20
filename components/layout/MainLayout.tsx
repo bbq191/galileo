@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useEffect, useState, type JSX } from 'react';
 import { apiFetch, redirectToLogin } from '@/lib/client/api-fetch';
 import type { AuthMe, AuthSession } from '@/lib/client/contracts';
 

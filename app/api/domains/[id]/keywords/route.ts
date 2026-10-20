@@ -10,7 +10,7 @@
 
 
 export const runtime = 'nodejs';
-export { dynamic } from '@/lib/api/route-config';
+export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getPrismaClient } from '@/lib/di/setup';
@@ -19,16 +19,17 @@ import { DI_TOKENS } from '@/lib/di/tokens';
 import type { QueryDomainInferencer } from '@/lib/nlp/query-domain-inferencer';
 
 interface RouteParams {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
 /**
  * GET /api/domains/[id]/keywords
  * 获取业务域关键词列表
  */
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export async function GET(request: NextRequest, context: RouteParams) {
+  const params = await context.params;
   try {
     const domainId = parseInt(params.id);
 
@@ -65,7 +66,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
  * PUT /api/domains/[id]/keywords
  * 批量更新关键词
  */
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export async function PUT(request: NextRequest, context: RouteParams) {
+  const params = await context.params;
   try {
     const domainId = parseInt(params.id);
     const body = await request.json();
@@ -132,7 +134,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
  * POST /api/domains/[id]/keywords
  * 添加单个关键词
  */
-export async function POST(request: NextRequest, { params }: RouteParams) {
+export async function POST(request: NextRequest, context: RouteParams) {
+  const params = await context.params;
   try {
     const domainId = parseInt(params.id);
     const body = await request.json();

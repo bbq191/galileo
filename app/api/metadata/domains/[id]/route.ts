@@ -6,7 +6,7 @@
 
 
 export const runtime = 'nodejs';
-export { dynamic } from '@/lib/api/route-config';
+export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { withDeprecationCheck } from '@/lib/api/version-middleware';
@@ -24,8 +24,9 @@ import type { PrismaClient } from '@prisma/client';
  */
 async function handlePut(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
+  const params = await context.params;
   try {
     const domainId = parseInt(params.id, 10);
 
@@ -119,8 +120,9 @@ async function handlePut(
  */
 async function handleDelete(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
+  const params = await context.params;
   try {
     const domainId = parseInt(params.id, 10);
 

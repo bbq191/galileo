@@ -4,7 +4,7 @@
  * 集中定义每个页面 / API 需要的访问级别，由 middleware 统一执行。
  * 规则按顺序匹配，第一条命中即生效；未命中任何规则时要求登录。
  *
- * 注意：本模块被 middleware（Edge Runtime）引用，不能依赖 Node.js 专有 API。
+ * 由 proxy.ts 在每个请求上执行。
  */
 
 import { Permission } from './permissions';

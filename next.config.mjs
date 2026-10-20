@@ -97,16 +97,14 @@ const nextConfig = {
   // 生产环境禁用源码映射，防止源码泄露
   productionBrowserSourceMaps: false,
 
-  // 实验性功能配置
-  experimental: {
-    // 忽略 Prisma 生成的文件，防止 Windows 上的文件扫描权限问题
-    outputFileTracingExcludes: {
-      '*': [
-        'app/generated/prisma/**',
-        'generated/**',
-        'node_modules/@prisma/**',
-      ],
-    },
+  // 忽略 Prisma 生成的文件，防止 Windows 上的文件扫描权限问题
+  // （Next.js 15 起从 experimental 移到顶层；key 是路由路径的 glob，'/*' 匹配全部路由）
+  outputFileTracingExcludes: {
+    '/*': [
+      'app/generated/prisma/**',
+      'generated/**',
+      'node_modules/@prisma/**',
+    ],
   },
 
   // 编译器优化
@@ -166,7 +164,10 @@ const nextConfig = {
     config.resolve = {
       ...config.resolve,
       // 只在项目目录和 node_modules 中搜索模块（使用绝对路径）
+      // 'node_modules' 保留默认的逐级查找：依赖的 peer 版本冲突时 npm 会把它嵌套安装在依赖包自己的
+      // node_modules 下（如 swagger-ui-react 的 react-debounce-input），只查根目录会找不到
       modules: [
+        'node_modules',
         path.resolve(__dirname, 'node_modules'),
         __dirname,
       ],

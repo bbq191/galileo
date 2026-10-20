@@ -1,8 +1,7 @@
 /**
  * 认证配置
  *
- * 注意：本模块同时被 middleware（Edge Runtime）和 API Routes（Node.js）引用，
- * 不能依赖任何 Node.js 专有 API。
+ * 本模块同时被 proxy.ts 和 API Routes 引用。
  */
 
 /** Cookie 名称 */

@@ -10,7 +10,7 @@
  * - 生产环境的多实例部署
  * - 内网环境（无外部依赖）
  *
- * 注意：此文件不能在 middleware.ts 中使用（Edge Runtime 不支持 ioredis）
+ * 注意：proxy.ts 的请求限流使用 distributed-rate-limiter.ts，本文件用于 API Routes 层
  */
 
 import { RateLimiterRedis, RateLimiterMemory } from 'rate-limiter-flexible';

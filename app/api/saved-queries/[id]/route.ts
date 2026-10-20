@@ -1,5 +1,5 @@
 export const runtime = 'nodejs';
-export { dynamic } from '@/lib/api/route-config';
+export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getPrismaClient } from '@/lib/di/setup';
@@ -9,7 +9,7 @@ import { parseId, serviceErrorResponse } from '@/lib/api/service-error';
 import { deleteSavedQuery, getSavedQuery, updateSavedQuery } from '@/lib/saved-queries/saved-query-service';
 import { requireUser, savedQueryDeps } from '@/lib/saved-queries/route-deps';
 
-type Params = { params: { id: string } };
+type Params = { params: Promise<{ id: string }> };
 
 const invalidId = () => NextResponse.json({ success: false, error: '无效的查询 ID' }, { status: 400 });
 
@@ -18,7 +18,8 @@ const invalidId = () => NextResponse.json({ success: false, error: '无效的查
  *
  * 详情与最近 20 次执行记录（不含结果预览，见 runs/:runId）；查看后未读结果标记为已读
  */
-export async function GET(request: NextRequest, { params }: Params) {
+export async function GET(request: NextRequest, context: Params) {
+  const params = await context.params;
   const auth = requireUser(request);
   if ('response' in auth) return auth.response;
   const id = parseId(params.id);
@@ -36,7 +37,8 @@ export async function GET(request: NextRequest, { params }: Params) {
  * { title?, schedule?, runAtHour?, runOnWeekday?, status?: 'active' | 'paused' }
  * 因表结构变化而需要确认的查询，设置 status=active 表示用户确认 SQL 仍然正确，会刷新表结构快照。
  */
-export async function PATCH(request: NextRequest, { params }: Params) {
+export async function PATCH(request: NextRequest, context: Params) {
+  const params = await context.params;
   const auth = requireUser(request);
   if ('response' in auth) return auth.response;
   const id = parseId(params.id);
@@ -56,7 +58,8 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: Params) {
+export async function DELETE(request: NextRequest, context: Params) {
+  const params = await context.params;
   const auth = requireUser(request);
   if ('response' in auth) return auth.response;
   const id = parseId(params.id);

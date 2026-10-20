@@ -1,5 +1,5 @@
 export const runtime = 'nodejs';
-export { dynamic } from '@/lib/api/route-config';
+export const dynamic = 'force-dynamic';
 /** 单次最多执行 SAVED_QUERY_MAX_PER_TICK 个查询，每个最长 30 秒 */
 export const maxDuration = 300;
 

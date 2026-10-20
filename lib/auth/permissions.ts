@@ -6,7 +6,7 @@
  * - 权限检查
  * - API 访问控制
  *
- * 注意：本模块同时被 middleware（Edge Runtime）引用，不能依赖 Node.js 专有 API。
+ * 本模块同时被 proxy.ts 引用。
  */
 
 import type { NextRequest } from 'next/server';

@@ -12,7 +12,7 @@ jest.mock('@/lib/security/distributed-rate-limiter', () => ({
   checkDistributedRateLimit: (...args: any[]) => checkDistributedRateLimit(...args),
 }));
 
-import { middleware } from '@/middleware';
+import { proxy as middleware } from '@/proxy';
 import { signAccessToken } from '@/lib/auth/tokens';
 import { UserRole } from '@/lib/auth/permissions';
 

@@ -75,7 +75,7 @@ describe('GET /api/query/history', () => {
 });
 
 describe('GET /api/query/history/[id]', () => {
-  const params = { params: { id: '42' } };
+  const params = { params: Promise.resolve({ id: '42' }) };
 
   it('本人记录：200', async () => {
     findUnique.mockResolvedValue(auditLog('7'));

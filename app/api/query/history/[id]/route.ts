@@ -1,5 +1,5 @@
 export const runtime = 'nodejs';
-export { dynamic } from '@/lib/api/route-config';
+export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getPrismaClient } from '@/lib/di/setup';
@@ -9,8 +9,9 @@ import { getUserFromRequest, isAdmin } from '@/lib/auth/permissions';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
+  const params = await context.params;
   try {
     console.log('[Query Detail] API called with ID:', params.id);
 

@@ -9,7 +9,7 @@
  * 性能监控 API - 使用共享配置
  */
 export const runtime = 'nodejs';
-export { dynamic } from '@/lib/api/route-config';
+export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { performanceMonitor } from '@/lib/api/performance-monitor';

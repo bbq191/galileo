@@ -38,7 +38,7 @@ import { resolveRouteAccess } from '@/lib/auth/route-policy';
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /**
- * 常量时间字符串比较（Edge Runtime 无 crypto.timingSafeEqual）
+ * 常量时间字符串比较（不依赖 crypto.timingSafeEqual，与运行时无关）
  */
 function constantTimeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -111,12 +111,9 @@ function selectLimiter(pathname: string) {
 }
 
 /**
- * 中间件主函数
- *
- * Next.js middleware 默认运行在 Edge Runtime 中
- * 确保所有依赖都兼容 Edge Runtime（无 Node.js 专有 API）
+ * 请求代理主函数（Next.js 16 起 middleware 更名为 proxy，固定运行在 Node.js 运行时）
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const isApi = pathname.startsWith('/api/');
 
@@ -209,7 +206,6 @@ export async function middleware(request: NextRequest) {
     }
 
     // 记录速率限制违规（用于监控和安全分析）
-    // Edge Runtime 兼容的简单日志记录
     console.warn(
       `[Rate Limit Violation] ${new Date().toISOString()}`,
       `| Type: ${limiterName}`,

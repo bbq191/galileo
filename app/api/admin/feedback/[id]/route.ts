@@ -1,5 +1,5 @@
 export const runtime = 'nodejs';
-export { dynamic } from '@/lib/api/route-config';
+export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getMetadataRetriever, getPrismaClient } from '@/lib/di/setup';
@@ -16,7 +16,8 @@ import { serviceErrorResponse, parseId } from '@/lib/api/service-error';
  * 采纳时生成已验证查询；SQL 默认取用户纠正后的版本，没有纠正时取原 SQL。
  * SQL 中的表必须都在已同步的元数据中（400）。
  */
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const params = await context.params;
   try {
     const id = parseId(params.id);
     if (!id) {

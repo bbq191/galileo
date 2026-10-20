@@ -65,9 +65,9 @@ describe('/api/saved-queries', () => {
 
   it('修改：status 只能是 active / paused', async () => {
     service.updateSavedQuery.mockResolvedValue({ id: 4, status: 'paused', schedule: 'daily', nextRunAt: null });
-    const ok = await update(req('/api/saved-queries/4', 'PATCH', { status: 'paused' }), { params: { id: '4' } });
+    const ok = await update(req('/api/saved-queries/4', 'PATCH', { status: 'paused' }), { params: Promise.resolve({ id: '4' }) });
     expect(ok.status).toBe(200);
-    const bad = await update(req('/api/saved-queries/4', 'PATCH', { status: 'needs_review' }), { params: { id: '4' } });
+    const bad = await update(req('/api/saved-queries/4', 'PATCH', { status: 'needs_review' }), { params: Promise.resolve({ id: '4' }) });
     expect(bad.status).toBe(400);
   });
 
@@ -76,19 +76,19 @@ describe('/api/saved-queries', () => {
       runId: '9',
       result: { success: true, data: [{ n: 1 }], metadata: { rowCount: 1, columns: [] }, warnings: ['w'] },
     });
-    const res = await runNow(req('/api/saved-queries/4/run', 'POST'), { params: { id: '4' } });
+    const res = await runNow(req('/api/saved-queries/4/run', 'POST'), { params: Promise.resolve({ id: '4' }) });
     expect(await res.json()).toEqual({ success: true, savedQueryRunId: '9', data: [{ n: 1 }], metadata: { rowCount: 1, columns: [] }, warnings: ['w'] });
     expect(service.runSavedQueryNow).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: '7', role: 'user' }), 4);
 
     service.runSavedQueryNow.mockResolvedValue({ runId: '10', result: { success: false, errorCode: 'validation_failed', error: '未通过' } });
-    expect((await runNow(req('/api/saved-queries/4/run', 'POST'), { params: { id: '4' } })).status).toBe(422);
+    expect((await runNow(req('/api/saved-queries/4/run', 'POST'), { params: Promise.resolve({ id: '4' }) })).status).toBe(422);
   });
 
   it('执行记录详情：runId 必须是数字', async () => {
     service.getSavedQueryRun.mockResolvedValue({ id: '9' });
-    expect((await runDetail(req('/api/saved-queries/4/runs/9'), { params: { id: '4', runId: '9' } })).status).toBe(200);
+    expect((await runDetail(req('/api/saved-queries/4/runs/9'), { params: Promise.resolve({ id: '4', runId: '9' }) })).status).toBe(200);
     expect(service.getSavedQueryRun).toHaveBeenCalledWith(expect.anything(), '7', 4, BigInt(9));
-    expect((await runDetail(req('/api/saved-queries/4/runs/x'), { params: { id: '4', runId: 'x' } })).status).toBe(400);
+    expect((await runDetail(req('/api/saved-queries/4/runs/x'), { params: Promise.resolve({ id: '4', runId: 'x' }) })).status).toBe(400);
   });
 
   it('需要查询权限', () => {

@@ -19,7 +19,10 @@ jest.mock('@/lib/security/api-rate-limit-middleware', () => ({
   withQueryRateLimit: (handler: unknown) => handler,
 }));
 
-import { POST } from '@/app/api/query/execute/route';
+import { POST as routePOST } from '@/app/api/query/execute/route';
+
+/** 静态路由的 context 由 Next.js 传入空的 params */
+const POST = (req: NextRequest) => routePOST(req, { params: Promise.resolve({}) });
 
 function request(body: unknown) {
   return new NextRequest('http://localhost/api/query/execute', {

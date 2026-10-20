@@ -39,7 +39,7 @@ export type RateLimitType = 'query' | 'metadata' | 'general' | 'ai';
  */
 type ApiHandler = (
   request: Request,
-  context?: { params: Record<string, string> }
+  context: { params: Promise<Record<string, string | string[]>> }
 ) => Promise<Response>;
 
 /**
@@ -50,7 +50,7 @@ type ApiHandler = (
  * @returns 包装后的处理函数
  */
 export function withRateLimit(type: RateLimitType, handler: ApiHandler): ApiHandler {
-  return async (request: Request, context?: { params: Record<string, string> }) => {
+  return async (request: Request, context: { params: Promise<Record<string, string | string[]>> }) => {
     const limiter = redisRateLimiters[type];
     const identifier = getIdentifierFromRequest(request);
 

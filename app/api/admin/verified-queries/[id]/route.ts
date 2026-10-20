@@ -1,5 +1,5 @@
 export const runtime = 'nodejs';
-export { dynamic } from '@/lib/api/route-config';
+export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getMetadataRetriever, getPrismaClient } from '@/lib/di/setup';
@@ -12,7 +12,8 @@ import { serviceErrorResponse, parseId } from '@/lib/api/service-error';
  * 停用或重新启用。重新启用时按当前元数据刷新表结构快照（表结构变化后自动停用的，
  * 由管理员确认 SQL 仍然正确后再启用）。
  */
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const params = await context.params;
   try {
     const id = parseId(params.id);
     const body = await request.json().catch(() => ({}));

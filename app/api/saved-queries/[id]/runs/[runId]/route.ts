@@ -1,5 +1,5 @@
 export const runtime = 'nodejs';
-export { dynamic } from '@/lib/api/route-config';
+export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getPrismaClient } from '@/lib/di/setup';
@@ -12,7 +12,8 @@ import { requireUser } from '@/lib/saved-queries/route-deps';
  *
  * 一次执行的结果预览（最多 SAVED_QUERY_PREVIEW_ROWS 行）
  */
-export async function GET(request: NextRequest, { params }: { params: { id: string; runId: string } }) {
+export async function GET(request: NextRequest, context: { params: Promise<{ id: string; runId: string }> }) {
+  const params = await context.params;
   const auth = requireUser(request);
   if ('response' in auth) return auth.response;
   const id = parseId(params.id);

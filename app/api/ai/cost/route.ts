@@ -3,7 +3,7 @@
  */
 
 export const runtime = 'nodejs';
-export { dynamic } from '@/lib/api/route-config';
+export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import type { AICostTracker } from '@/lib/ai/ai-cost-tracker';
@@ -98,7 +98,7 @@ export async function GET(request: Request) {
     }
   });
 
-  return handler(request);
+  return handler(request, { params: Promise.resolve({}) });
 }
 
 /**
@@ -144,5 +144,5 @@ export async function POST(request: Request) {
     }
   });
 
-  return handler(request);
+  return handler(request, { params: Promise.resolve({}) });
 }

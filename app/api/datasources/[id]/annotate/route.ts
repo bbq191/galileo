@@ -1,5 +1,5 @@
 export const runtime = 'nodejs';
-export { dynamic } from '@/lib/api/route-config';
+export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 5 分钟，用于处理大型数据库的 AI 语义标注
 
 import { NextRequest, NextResponse } from 'next/server';

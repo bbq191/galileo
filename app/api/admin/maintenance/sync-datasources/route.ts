@@ -1,5 +1,5 @@
 export const runtime = 'nodejs';
-export { dynamic } from '@/lib/api/route-config';
+export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 5 分钟，依次同步所有数据源
 
 import { NextResponse } from 'next/server';

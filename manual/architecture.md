@@ -239,7 +239,7 @@
 用户输入（可选：指定数据源）
     │
     ▼
-[API] /api/query/execute ── middleware：登录校验、身份注入、限流
+[API] /api/query/execute ── proxy：登录校验、身份注入、限流
     │
     ▼
 [结果缓存] key = 数据可见范围 + 指定数据源 + 问题 ─── 命中 ──→ 返回结果

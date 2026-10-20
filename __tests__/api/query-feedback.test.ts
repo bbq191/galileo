@@ -96,22 +96,22 @@ describe('/api/admin/feedback', () => {
 
     const res = await reviewRoute(
       req('/api/admin/feedback/3', 'POST', { action: 'accept', question: ' 订单数 ', sql: 'SELECT 1 FROM t' }),
-      { params: { id: '3' } }
+      { params: Promise.resolve({ id: '3' }) }
     );
 
     expect(res.status).toBe(200);
     expect(reviewFeedback).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
       id: 3, action: 'accept', question: '订单数', sql: 'SELECT 1 FROM t', reviewer: 'alice',
     });
-    expect((await reviewRoute(req('/api/admin/feedback/x', 'POST', { action: 'accept' }), { params: { id: 'x' } })).status).toBe(400);
-    expect((await reviewRoute(req('/api/admin/feedback/3', 'POST', { action: 'maybe' }), { params: { id: '3' } })).status).toBe(400);
+    expect((await reviewRoute(req('/api/admin/feedback/x', 'POST', { action: 'accept' }), { params: Promise.resolve({ id: 'x' }) })).status).toBe(400);
+    expect((await reviewRoute(req('/api/admin/feedback/3', 'POST', { action: 'maybe' }), { params: Promise.resolve({ id: '3' }) })).status).toBe(400);
   });
 
   it('已验证查询启用 / 停用：isActive 必须是布尔值', async () => {
     setVerifiedQueryActive.mockResolvedValue({ id: 2, isActive: false, invalidReason: '管理员停用' });
 
-    const res = await patchVerified(req('/api/admin/verified-queries/2', 'PATCH', { isActive: false }), { params: { id: '2' } });
+    const res = await patchVerified(req('/api/admin/verified-queries/2', 'PATCH', { isActive: false }), { params: Promise.resolve({ id: '2' }) });
     expect(await res.json()).toEqual({ success: true, data: { id: 2, isActive: false, invalidReason: '管理员停用' } });
-    expect((await patchVerified(req('/api/admin/verified-queries/2', 'PATCH', { isActive: 'no' }), { params: { id: '2' } })).status).toBe(400);
+    expect((await patchVerified(req('/api/admin/verified-queries/2', 'PATCH', { isActive: 'no' }), { params: Promise.resolve({ id: '2' }) })).status).toBe(400);
   });
 });

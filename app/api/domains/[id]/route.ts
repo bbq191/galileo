@@ -10,22 +10,23 @@
 
 
 export const runtime = 'nodejs';
-export { dynamic } from '@/lib/api/route-config';
+export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getPrismaClient } from '@/lib/di/setup';
 
 interface RouteParams {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
 /**
  * GET /api/domains/[id]
  * 获取业务域详情
  */
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export async function GET(request: NextRequest, context: RouteParams) {
+  const params = await context.params;
   try {
     const prisma = getPrismaClient();
     const domainId = parseInt(params.id);
@@ -92,7 +93,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
  * PUT /api/domains/[id]
  * 更新业务域
  */
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export async function PUT(request: NextRequest, context: RouteParams) {
+  const params = await context.params;
   try {
     const prisma = getPrismaClient();
     const domainId = parseInt(params.id);
@@ -176,7 +178,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
  * DELETE /api/domains/[id]
  * 删除业务域
  */
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+export async function DELETE(request: NextRequest, context: RouteParams) {
+  const params = await context.params;
   try {
     const prisma = getPrismaClient();
     const domainId = parseInt(params.id);

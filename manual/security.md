@@ -111,17 +111,17 @@ npm run user:create -- alice --reset
 | 环节 | 实现 |
 |------|------|
 | 凭证存储 | httpOnly + SameSite=Lax Cookie：`galileo_at`（Access Token，路径 `/`）、`galileo_rt`（Refresh Token，路径 `/api/auth`） |
-| 校验 | `middleware.ts` 在 Edge Runtime 中用 jose 无状态校验 Access Token |
-| 续期 | 前端在 Access Token 过期前 2 分钟调用 `POST /api/auth/refresh`；`apiFetch` 收到 401 时自动续期并重试一次；页面请求时由 middleware 跳转 `GET /api/auth/refresh?next=` |
+| 校验 | `proxy.ts`（Next.js 16 起由 middleware 更名，运行在 Node.js 运行时）用 jose 无状态校验 Access Token |
+| 续期 | 前端在 Access Token 过期前 2 分钟调用 `POST /api/auth/refresh`；`apiFetch` 收到 401 时自动续期并重试一次；页面请求时由 proxy 跳转 `GET /api/auth/refresh?next=` |
 | 吊销 | 刷新时比对数据库中的 `tokenVersion` 与账号状态。登出、重置密码会递增 `tokenVersion`，使该用户**所有设备**的 Refresh Token 失效；已签发的 Access Token 在剩余有效期内仍可用 |
 | 密码 | Node 内置 scrypt 哈希（`lib/auth/password.ts`）；登录失败统一提示，用户不存在时同样执行一次哈希比对 |
 | 防暴力破解 | `/api/auth/login` 按 IP 限流 10 次/分钟 |
-| 跨站请求 | SameSite=Lax 阻止跨站写请求携带 Cookie；middleware 额外拒绝 Origin 与站点不一致的写请求（反向代理需透传 `X-Forwarded-Host`） |
+| 跨站请求 | SameSite=Lax 阻止跨站写请求携带 Cookie；proxy 额外拒绝 Origin 与站点不一致的写请求（反向代理需透传 `X-Forwarded-Host`） |
 | 脚本调用 | 请求头 `X-API-Key` 等于 `ADMIN_API_KEY` 时以管理员身份访问 |
 
 ### 4. 访问策略
 
-所有路由的访问级别集中定义在 `lib/auth/route-policy.ts`，由 middleware 统一执行：
+所有路由的访问级别集中定义在 `lib/auth/route-policy.ts`，由 proxy 统一执行：
 
 | 范围 | 访问级别 |
 |------|----------|
@@ -135,7 +135,7 @@ npm run user:create -- alice --reset
 
 ### 5. 在 API Route 中获取当前用户
 
-middleware 会先删除客户端传入的 `x-user-id`、`x-user-name`、`x-user-role`、`x-session-id`，
+proxy 会先删除客户端传入的 `x-user-id`、`x-user-name`、`x-user-role`、`x-session-id`，
 再根据 Token 重新注入，因此 API Route 可以直接信任：
 
 ```typescript
@@ -203,7 +203,7 @@ Galileo 采用**双层速率限制**架构：
 ```
 客户端请求
     ↓
-[Middleware 层] ← 内存速率限制（快速第一道防线）
+[Proxy 层] ← 内存速率限制（快速第一道防线）
     ↓
 [API Routes 层] ← Redis 速率限制（分布式，持久化）
     ↓

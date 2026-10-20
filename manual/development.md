@@ -22,7 +22,7 @@
 
 | 依赖 | 版本要求 | 用途 |
 |------|----------|------|
-| Node.js | >= 18.x | 运行时 |
+| Node.js | >= 20.9 | 运行时（Next.js 16 的最低要求） |
 | pnpm/npm | 最新 | 包管理 |
 | MySQL | 8.0+ | 元数据存储 |
 | Redis | 6.0+ | 缓存 |
@@ -98,7 +98,7 @@ npm start
 **必须遵守**
 - 单一职责原则：每个方法只做一件事
 - TypeScript 严格模式：`npx tsc --noEmit` 必须通过
-- ESLint 检查：`npm run lint --fix` 必须通过
+- ESLint 检查：`npm run lint` 必须通过（`npm run lint:fix` 自动修复；Next.js 16 已移除 `next lint`，脚本直接调用 ESLint）
 
 **文件组织**
 - API 路由：`app/api/<功能>/route.ts`
@@ -107,7 +107,14 @@ npm start
 
 ### 3.2 新增 API
 
-1. 在 `app/api/` 下创建路由文件
+1. 在 `app/api/` 下创建路由文件，文件开头声明：
+   ```typescript
+   export const runtime = 'nodejs';
+   export const dynamic = 'force-dynamic';
+   ```
+   两项都必须在路由文件中直接声明：Next.js 只静态识别字面量，从其他文件转发导出（`export { dynamic } from ...`）会被忽略。
+   `force-dynamic` 防止构建时预渲染 GET 路由（大部分路由依赖 DI 容器、数据库与 Redis，构建时不可用）。
+   动态路由的 `params` 是 Promise：`{ params }: { params: Promise<{ id: string }> }`，使用前 `await`
 2. 使用 Zod 定义请求/响应 Schema
 3. 通过 DI 容器获取服务
 4. 调用对应编排器处理业务
@@ -198,7 +205,8 @@ npx tsc --noEmit
 ### 5.2 代码检查
 
 ```bash
-npm run lint --fix
+npm run lint
+npm run lint:fix   # 自动修复
 ```
 
 ### 5.3 API 测试
