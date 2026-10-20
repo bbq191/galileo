@@ -364,7 +364,7 @@ ALERT_PHONE=+86-xxx-xxxx-xxxx
 | 查询审计 | `queryAuditLog` 表 | 90 天 | `GET /api/audit/logs` |
 | 性能数据 | `performance_metrics` 表 | 30 天 | `GET /api/performance` |
 | 系统告警 | `systemAlert` 表 | 180 天 | 数据库查询 |
-| 同步日志 | 内存 + 数据库 | 30 天 | 见 `lib/metadata/sync/sync-logger.ts` |
+| 同步日志 | 标准输出 + `MetadataChange` 表 | 未自动清理 | 见 `lib/metadata/sync/metadata-sync-service.ts` |
 
 **详细日志配置**: 见 [日志系统文档](./logging.md)
 

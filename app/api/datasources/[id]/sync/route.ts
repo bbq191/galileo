@@ -35,6 +35,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       minConfidence = 0.70,
       trackChanges = true,
       enableAIAnnotation = false,
+      fullSync = false, // 默认增量：结构哈希未变化的表跳过字段同步
     } = body;
 
     // 获取要同步的数据库列表
@@ -72,6 +73,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       minConfidence,
       trackChanges,
       enableAIAnnotation,
+      forceFullSync: fullSync === true,
     });
 
     const duration = Date.now() - startTime;

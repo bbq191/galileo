@@ -12,7 +12,8 @@ import type { MetadataRepository } from "../storage/metadata-repository";
 import { CollectorFactory } from "../collectors";
 import { RelationshipInferencer } from "../inference";
 import { changeTracker } from "../storage";
-import type { ColumnInfo } from "../types";
+import type { ColumnInfo, TableInfo } from "../types";
+import { computeStructureHash } from "./structure-hash";
 import { semanticConfig } from '@/lib/ai/config';
 
 /**
@@ -36,6 +37,9 @@ export interface SyncOptions {
 
   /** 是否启用AI语义标注 */
   enableAIAnnotation?: boolean;
+
+  /** 全量同步：忽略结构哈希，重新采集所有表的字段（默认增量） */
+  fullSync?: boolean;
 }
 
 /**
@@ -45,8 +49,11 @@ export interface SyncResult {
   /** 同步的数据库数量 */
   databaseCount: number;
 
-  /** 同步的表数量 */
+  /** 同步的表数量（含结构未变化而跳过字段同步的表） */
   tableCount: number;
+
+  /** 结构哈希未变化、跳过字段同步的表数量 */
+  unchangedTableCount: number;
 
   /** 同步的字段数量 */
   columnCount: number;
@@ -97,6 +104,7 @@ export class MetadataSyncService {
     const result: SyncResult = {
       databaseCount: 0,
       tableCount: 0,
+      unchangedTableCount: 0,
       columnCount: 0,
       explicitRelationshipCount: 0,
       inferredRelationshipCount: 0,
@@ -183,7 +191,7 @@ export class MetadataSyncService {
       console.log(`同步完成`);
       console.log(`========================================`);
       console.log(`数据库: ${result.databaseCount}`);
-      console.log(`表: ${result.tableCount}`);
+      console.log(`表: ${result.tableCount}（结构未变化 ${result.unchangedTableCount}）`);
       console.log(`字段: ${result.columnCount}`);
       console.log(`显式关系: ${result.explicitRelationshipCount}`);
       console.log(`推断关系: ${result.inferredRelationshipCount}`);
@@ -246,6 +254,8 @@ export class MetadataSyncService {
     const existingTableMap = new Map(
       existingTables.map((t) => [t.tableName, t])
     );
+    // 结构未变化的表跳过字段同步，字段数从已有元数据统计（一次查询）
+    const existingColumnCounts = await this.countColumnsByTable(database.id);
 
     // 同步每个表
     for (const tableInfo of tables) {
@@ -253,12 +263,13 @@ export class MetadataSyncService {
         await this.syncTable(
           database.id,
           databaseName,
-          tableInfo.tableName,
+          tableInfo,
           collector,
           String(dataSourceId),
           existingTableMap.get(tableInfo.tableName),
           options,
-          result
+          result,
+          existingColumnCounts
         );
       } catch (error) {
         console.error(`同步表失败: ${tableInfo.tableName}`, error);
@@ -299,18 +310,81 @@ export class MetadataSyncService {
   }
 
   /**
+   * 各表已有字段数（tableId → 字段数）
+   */
+  private async countColumnsByTable(databaseId: number): Promise<Map<number, number>> {
+    const counts = await this.prisma.columnMeta.groupBy({
+      by: ["tableId"],
+      where: { table: { databaseId } },
+      _count: { _all: true },
+    });
+    return new Map(counts.map((c) => [c.tableId, c._count._all]));
+  }
+
+  /**
+   * 计算表结构哈希；采集器不支持 DDL（如 PostgreSQL）或获取失败时返回 null，按全量处理
+   */
+  private async getStructureHash(
+    collector: any,
+    databaseName: string,
+    tableName: string
+  ): Promise<string | null> {
+    if (typeof collector.getTableDDL !== "function") {
+      return null;
+    }
+    try {
+      return computeStructureHash(await collector.getTableDDL(databaseName, tableName));
+    } catch {
+      console.log(`获取 DDL 失败: ${tableName}`);
+      return null;
+    }
+  }
+
+  /**
    * 同步单个表
+   *
+   * 增量：已有表的结构哈希未变化时，只更新行数、注释等表级信息，跳过字段采集与写入。
+   * 哈希为空（无法获取 DDL）或 fullSync=true 时按全量处理。
    */
   private async syncTable(
     databaseId: number,
     databaseName: string,
-    tableName: string,
+    tableInfo: TableInfo,
     collector: any,
     dataSourceId: string,
     existingTable: any,
     options: SyncOptions,
-    result: SyncResult
+    result: SyncResult,
+    existingColumnCounts: Map<number, number>
   ): Promise<void> {
+    const { tableName } = tableInfo;
+    const structureHash = await this.getStructureHash(collector, databaseName, tableName);
+    const tableFields = {
+      tableComment: tableInfo.tableComment || null,
+      // TABLE_ROWS 为估算值，视图为 NULL
+      rowCount: BigInt(Math.max(0, Math.trunc(Number(tableInfo.rowCount) || 0))),
+      createdTime: tableInfo.createTime ?? null,
+      updatedTime: tableInfo.updateTime ?? null,
+    };
+
+    if (
+      !options.fullSync &&
+      existingTable &&
+      structureHash &&
+      existingTable.structureHash === structureHash
+    ) {
+      await this.metadataRepository.updateTable(existingTable.id, {
+        ...tableFields,
+        lastSyncedAt: new Date(),
+      });
+      result.tableCount++;
+      result.unchangedTableCount++;
+      result.columnCount += existingColumnCounts.get(existingTable.id) ?? 0;
+      await this.annotateIfEnabled(existingTable.id, tableName, options);
+      console.log(`  = ${tableName}（结构未变化，跳过字段同步）`);
+      return;
+    }
+
     // 采集表结构
     const columns = await collector.collectColumns(
       dataSourceId,
@@ -318,29 +392,20 @@ export class MetadataSyncService {
       tableName
     );
 
-    // 获取表的 DDL（用于结构哈希）
-    let structureHash: string | null = null;
-    try {
-      const ddl = await collector.getTableDDL(databaseName, tableName);
-      const crypto = require("crypto");
-      structureHash = crypto.createHash("sha256").update(ddl).digest("hex");
-    } catch (error) {
-      console.log(`获取 DDL 失败: ${tableName}`);
-    }
-
     // 创建或更新表元数据
     const table = await this.metadataRepository.upsertTable({
       databaseId,
       tableName,
-      rowCount: BigInt(0),
-      structureHash,
+      ...tableFields,
+      // 无法获取 DDL 时保留已有哈希（undefined 不更新该字段）
+      structureHash: structureHash ?? undefined,
     });
 
     result.tableCount++;
 
-    // 检测表变更
+    // 检测表变更（结构哈希变化才算修改；行数、注释等变化不记录；哈希未知时不判断）
     if (options.trackChanges && existingTable) {
-      if (existingTable.structureHash !== structureHash) {
+      if (structureHash && existingTable.structureHash !== structureHash) {
         await changeTracker.trackTableChange(
           "table_modified",
           table,
@@ -383,10 +448,11 @@ export class MetadataSyncService {
         const existingColumn = existingColumnMap.get(columnInfo.columnName);
         if (existingColumn) {
           // 检查是否有变更
+          // 采集器的 isNullable 来自 `IS_NULLABLE = 'YES'`，MySQL 返回 1/0，需与库中的布尔值统一后比较
           if (
             existingColumn.dataType !== columnInfo.dataType ||
             existingColumn.columnType !== columnInfo.columnType ||
-            existingColumn.isNullable !== columnInfo.isNullable
+            existingColumn.isNullable !== Boolean(columnInfo.isNullable)
           ) {
             await changeTracker.trackColumnChange(
               "column_modified",
@@ -417,25 +483,37 @@ export class MetadataSyncService {
       }
     }
 
-    // AI 语义标注（如果启用）
-    if (options.enableAIAnnotation && semanticConfig.enabled) {
-      try {
-        const semanticAnnotator = getService<any>(DI_TOKENS.SemanticAnnotator);
-
-        // 标注表
-        await semanticAnnotator.annotateTable(table.id);
-
-        // 标注字段
-        await semanticAnnotator.annotateColumns(table.id, { force: false });
-
-        console.log(`  ✓ ${tableName} - AI语义标注完成`);
-      } catch (error: any) {
-        console.error(`  ✗ ${tableName} - 语义标注失败:`, error.message);
-        // 语义标注失败不应阻止同步流程，仅记录错误
-      }
-    }
+    await this.annotateIfEnabled(table.id, tableName, options);
 
     console.log(`  ✓ ${tableName} (${columns.length} 字段)`);
+  }
+
+  /**
+   * AI 语义标注（如果启用；force=false 时已标注的项会跳过）
+   */
+  private async annotateIfEnabled(
+    tableId: number,
+    tableName: string,
+    options: SyncOptions
+  ): Promise<void> {
+    if (!options.enableAIAnnotation || !semanticConfig.enabled) {
+      return;
+    }
+
+    try {
+      const semanticAnnotator = getService<any>(DI_TOKENS.SemanticAnnotator);
+
+      // 标注表
+      await semanticAnnotator.annotateTable(tableId);
+
+      // 标注字段
+      await semanticAnnotator.annotateColumns(tableId, { force: false });
+
+      console.log(`  ✓ ${tableName} - AI语义标注完成`);
+    } catch (error: any) {
+      console.error(`  ✗ ${tableName} - 语义标注失败:`, error.message);
+      // 语义标注失败不应阻止同步流程，仅记录错误
+    }
   }
 
   /**

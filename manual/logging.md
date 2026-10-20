@@ -142,9 +142,9 @@ Galileo 实现了完整的日志体系，覆盖应用运行的各个层面：
 ### 2.5 业务日志
 
 **同步日志**:
-- 记录数据源元数据同步过程
-- 统计新增/更新/删除的表和列
-- 见 `lib/metadata/sync/sync-logger.ts`
+- 同步过程输出到标准输出（每张表一行，`=` 表示结构未变化、跳过字段同步）
+- 表与字段的新增/修改/删除记录写入 `MetadataChange` 表（表修改以结构哈希变化为准）
+- 见 `lib/metadata/sync/metadata-sync-service.ts`
 
 **速率限制日志**:
 - 记录速率限制违规
@@ -704,7 +704,7 @@ logger.info(`查询执行成功: ${datasourceId}, 耗时: ${executionTime}ms`);
 | `lib/audit/error-sanitizer.ts` | 错误脱敏工具 |
 | `lib/api/performance-monitor.ts` | API 性能监控 |
 | `lib/ai/error-logger.ts` | 错误日志和性能记录 |
-| `lib/metadata/sync/sync-logger.ts` | 同步日志 |
+| `lib/metadata/sync/metadata-sync-service.ts` | 同步过程与变更记录 |
 | `lib/security/rate-limit-logger.ts` | 速率限制日志 |
 | `lib/cache/query-cache-manager.ts` | 查询缓存命中统计 |
 

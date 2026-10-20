@@ -63,6 +63,12 @@ export interface MetadataSyncResult {
   /** 同步的列数量 */
   columnCount: number;
 
+  /** 结构未变化、跳过字段同步的表数量（增量同步） */
+  unchangedTableCount?: number;
+
+  /** 单个库或表的同步错误（不影响其他表，整体仍视为成功） */
+  errors?: Array<{ database: string; table?: string; error: string }>;
+
   /** 推断的关系数量 */
   relationshipCount?: number;
 
@@ -174,6 +180,7 @@ export class MetadataOrchestrator {
         minConfidence: options.minConfidence ?? 0.70,
         trackChanges: options.trackChanges ?? true,
         enableAIAnnotation: options.enableAIAnnotation ?? false,
+        fullSync: options.forceFullSync ?? false,
       });
 
       // 3. 自动识别分表组
@@ -243,6 +250,8 @@ export class MetadataOrchestrator {
         databaseCount: syncResult.databaseCount,
         tableCount: syncResult.tableCount,
         columnCount: syncResult.columnCount,
+        unchangedTableCount: syncResult.unchangedTableCount,
+        errors: syncResult.errors.length > 0 ? syncResult.errors.slice(0, 50) : undefined,
         relationshipCount: syncResult.explicitRelationshipCount + syncResult.inferredRelationshipCount,
         shardGroupCount: shardGroupCount > 0 ? shardGroupCount : undefined,
         shardedTableCount: shardedTableCount > 0 ? shardedTableCount : undefined,

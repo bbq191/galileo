@@ -6,7 +6,6 @@
 import { injectable, inject } from 'tsyringe';
 import { PrismaClient, ColumnMeta } from '@prisma/client';
 import { DI_TOKENS } from '@/lib/di/tokens';
-import { changeTracker } from './change-tracker';
 import type {
   CreateColumnMetaInput,
   UpdateColumnMetaInput,
@@ -100,8 +99,7 @@ export class ColumnMetadataRepository {
    * 创建或更新字段元数据
    */
   async upsertColumn(input: CreateColumnMetaInput): Promise<ColumnMeta> {
-    // 查询是否已存在
-    const existing = await this.getColumnByName(input.tableId, input.columnName);
+    // 变更记录由调用方（MetadataSyncService）负责，避免重复记录
 
     // 确保布尔值字段类型正确（数据库可能返回 0/1）
     const isNullable = input.isNullable !== undefined ? Boolean(input.isNullable) : true;
@@ -142,18 +140,6 @@ export class ColumnMetadataRepository {
         ordinalPosition: input.ordinalPosition,
       },
     });
-
-    // 记录变更
-    try {
-      if (!existing) {
-        await changeTracker.trackColumnChange('column_added', result);
-      } else {
-        await changeTracker.detectColumnChanges(existing, result);
-      }
-    } catch (error) {
-      console.error('记录字段变更失败:', error);
-      // 不影响主流程
-    }
 
     return result;
   }

@@ -147,11 +147,20 @@ export default function DataSourcesPage() {
       if (res.ok) {
         const stats = res.data;
         const changes = stats.changes || {};
-        const message = `同步成功！\n\n` +
+        const added = changes.added || {};
+        const updated = changes.updated || {};
+        const removed = changes.removed || {};
+        const failedTables: Array<{ database: string; table?: string; error: string }> = stats.errors || [];
+        let message = `同步成功！\n\n` +
           `数据库: ${stats.databaseCount || 0} 个\n` +
-          `表: ${stats.tableCount || 0} 个 (新增 ${changes.tablesAdded || 0}, 修改 ${changes.tablesModified || 0}, 删除 ${changes.tablesRemoved || 0})\n` +
-          `列: ${stats.columnCount || 0} 个 (新增 ${changes.columnsAdded || 0}, 修改 ${changes.columnsModified || 0}, 删除 ${changes.columnsRemoved || 0})\n\n` +
+          `表: ${stats.tableCount || 0} 个 (新增 ${added.tables || 0}, 修改 ${updated.tables || 0}, 删除 ${removed.tables || 0}, 结构未变化 ${stats.unchangedTableCount || 0})\n` +
+          `列: ${stats.columnCount || 0} 个 (新增 ${added.columns || 0}, 修改 ${updated.columns || 0}, 删除 ${removed.columns || 0})\n\n` +
           `耗时: ${formatDuration(stats.duration || 0)}`;
+        if (failedTables.length > 0) {
+          message += `\n\n⚠️ ${failedTables.length} 项同步失败：\n` +
+            failedTables.slice(0, 5).map((e) => `- ${e.database}${e.table ? '.' + e.table : ''}: ${e.error}`).join('\n') +
+            (failedTables.length > 5 ? `\n...` : '');
+        }
         alert(message);
         // 刷新列表以查看更新的同步状态
         await loadDataSources();

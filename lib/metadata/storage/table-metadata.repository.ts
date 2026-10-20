@@ -6,7 +6,6 @@
 import { injectable, inject } from 'tsyringe';
 import { PrismaClient, TableMeta } from '@prisma/client';
 import { DI_TOKENS } from '@/lib/di/tokens';
-import { changeTracker } from './change-tracker';
 import type {
   CreateTableMetaInput,
   UpdateTableMetaInput,
@@ -145,10 +144,8 @@ export class TableMetadataRepository {
    * 创建或更新表元数据
    */
   async upsertTable(input: CreateTableMetaInput): Promise<TableMeta> {
-    // 查询是否已存在
-    const existing = await this.getTableByName(input.databaseId, input.tableName);
-
-    const result = await this.prisma.tableMeta.upsert({
+    // 变更记录由调用方（MetadataSyncService）负责，按结构哈希判断，避免重复记录
+    return await this.prisma.tableMeta.upsert({
       where: {
         databaseId_tableName: {
           databaseId: input.databaseId,
@@ -178,19 +175,5 @@ export class TableMetadataRepository {
         lastSyncedAt: new Date(),
       },
     });
-
-    // 记录变更
-    try {
-      if (!existing) {
-        await changeTracker.trackTableChange('table_added', result);
-      } else {
-        await changeTracker.detectTableChanges(existing, result);
-      }
-    } catch (error) {
-      console.error('记录表变更失败:', error);
-      // 不影响主流程
-    }
-
-    return result;
   }
 }

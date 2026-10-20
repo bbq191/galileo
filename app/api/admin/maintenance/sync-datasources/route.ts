@@ -54,7 +54,9 @@ export async function POST() {
           id: ds.id,
           name: ds.name,
           success: result.success,
-          ...(result.success ? { tableCount: result.tableCount } : { error: result.error }),
+          ...(result.success
+            ? { tableCount: result.tableCount, unchangedTableCount: result.unchangedTableCount }
+            : { error: result.error }),
           duration: Date.now() - itemStart,
         });
       } catch (error) {
