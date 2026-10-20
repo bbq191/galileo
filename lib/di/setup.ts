@@ -437,7 +437,7 @@ export function getMetadataRepository() {
 /**
  * 便捷方法：获取 MetadataRetriever
  */
-export function getMetadataRetriever() {
+export function getMetadataRetriever(): import('@/lib/metadata/retrieval/metadata-retriever').MetadataRetriever {
   return getService(DI_TOKENS.MetadataRetriever);
 }
 

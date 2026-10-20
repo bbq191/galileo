@@ -17,6 +17,8 @@ export const FEATURE_FLAGS = {
   sqlPipeline: 'ENABLE_SQL_PIPELINE',
   /** 将业务规则（术语、过滤条件、聚合规则、查询模板）注入 SQL 生成 Prompt，仅作用于 SQLGenerator */
   businessRules: 'ENABLE_BUSINESS_RULES',
+  /** 使用管理员采纳的已验证查询：相同问题直接执行，相似问题作为示例注入 Prompt（仅作用于 SQLGenerator） */
+  verifiedQueries: 'ENABLE_VERIFIED_QUERIES',
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;

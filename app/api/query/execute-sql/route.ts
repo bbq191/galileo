@@ -1,20 +1,24 @@
 export const runtime = 'nodejs';
 export { dynamic } from '@/lib/api/route-config';
 
+import { randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { getQueryOrchestrator, getAuditOrchestrator } from '@/lib/di/setup';
+import { getQueryOrchestrator, getAuditOrchestrator, getPrismaClient } from '@/lib/di/setup';
 import type { QueryOrchestrator } from '@/lib/di/orchestrators/query.orchestrator';
 import { schemas } from '@/lib/validation/schemas';
 import { validateOrRespond } from '@/lib/validation/validator';
 import { safeServerErrorResponse } from '@/lib/api/response';
 import { getUserFromRequest } from '@/lib/auth/permissions';
 import type { ExecuteQueryResponse } from '@/lib/api/types';
+import { recordCorrection } from '@/lib/feedback/feedback-service';
 
 /**
  * POST /api/query/execute-sql
  *
  * 执行用户在查询页编辑后的 SQL。SQL 始终按 enforce 模式校验（只允许 SELECT、只能访问已同步的表等），
  * 路径以 /api/query/execute 开头，与自然语言查询共用 10 次/分钟的速率限制。
+ *
+ * 传入 sourceRunId（被编辑的原查询）且执行成功、SQL 有改动时，记为对原查询的纠正，进入反馈审核队列。
  */
 export async function POST(request: NextRequest) {
   try {
@@ -24,7 +28,7 @@ export async function POST(request: NextRequest) {
       return validation.response;
     }
 
-    const { sql, question, dataSourceIds, options } = validation.data;
+    const { sql, question, dataSourceIds, sourceRunId, options } = validation.data;
     const currentUser = getUserFromRequest(request);
     const sessionId = currentUser.sessionId || `session-${Date.now()}`;
 
@@ -36,8 +40,10 @@ export async function POST(request: NextRequest) {
     });
 
     // 审计：标明是用户编辑的 SQL，便于与 AI 生成的查询区分
+    const runId = result.intent && result.performance ? randomUUID() : undefined;
     if (result.intent && result.performance) {
       getAuditOrchestrator().logQuery({
+        runId,
         userId: currentUser.id,
         userName: currentUser.username,
         sessionId,
@@ -53,6 +59,7 @@ export async function POST(request: NextRequest) {
           usedDatabases: result.metadata?.usedDatabases || [],
           usedTables: result.metadata?.usedTables || [],
           usedColumns: [],
+          dataSourceIds: result.metadata?.dataSourceIds,
         },
         performance: {
           intentRecognitionTime: 0,
@@ -69,9 +76,26 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    let correctionRecorded = false;
+    if (result.success && sourceRunId && currentUser.id) {
+      try {
+        correctionRecorded = await recordCorrection(getPrismaClient(), {
+          sourceRunId,
+          userId: currentUser.id,
+          sql,
+          dataSourceIds: result.metadata?.dataSourceIds,
+        });
+      } catch (error) {
+        // 纠错记录失败不影响查询结果
+        console.error('[Execute SQL] Failed to record correction:', error);
+      }
+    }
+
     if (result.success) {
       return NextResponse.json({
         success: true,
+        runId,
+        correctionRecorded,
         data: result.data,
         metadata: result.metadata,
         warnings: result.warnings,
@@ -81,6 +105,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: false,
+      runId,
       error: result.error,
       errorCode: result.errorCode,
       metadata: result.metadata,

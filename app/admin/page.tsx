@@ -56,6 +56,13 @@ const adminModules = [
     color: 'bg-purple-500',
   },
   {
+    title: '查询反馈',
+    description: '审核用户反馈与纠错，管理已验证查询',
+    href: '/admin/feedback',
+    icon: '👍',
+    color: 'bg-teal-500',
+  },
+  {
     title: 'AI 成本',
     description: 'AI 调用统计与成本分析',
     href: '/admin/ai-cost',

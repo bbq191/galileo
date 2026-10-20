@@ -30,6 +30,7 @@ import { getContainer } from '../container';
 import { isFeatureEnabled, getSqlValidatorMode } from '@/lib/feature-flags';
 import { getDataPermissions, getDataScopeKey, type QueryUser } from '@/lib/auth/data-permissions';
 import { buildBusinessRulesContext, type BusinessRulesContext } from '@/lib/business-rules/rules-context';
+import { VerifiedQueryStore, renderVerifiedExamples, type VerifiedExamplesSection } from '@/lib/feedback/verified-queries';
 import type { BusinessRulesEngine } from '@/lib/business-rules/business-rules-engine';
 
 /**
@@ -108,6 +109,12 @@ export interface QueryResult {
 
     /** 使用的列 */
     usedColumns?: string[];
+
+    /** 直接执行的已验证查询 ID（ENABLE_VERIFIED_QUERIES=true 且问题完全相同时） */
+    verifiedQueryId?: number;
+
+    /** 作为示例注入 Prompt 的已验证查询 ID */
+    verifiedExampleIds?: number[];
   };
 
   /** 性能指标 */
@@ -184,9 +191,16 @@ interface CachedQueryEntry extends ExecutionResult {
     usedTables?: string[];
     dataSourceIds?: number[];
     appliedBusinessRules?: BusinessRulesContext['applied'];
+    verifiedExampleIds?: number[];
     warnings?: string[];
     suggestions?: QueryResult['suggestions'];
   };
+}
+
+/** 追加到 SQL 生成 Prompt 的内容（业务规则、已验证示例），digest 参与 SQL 缓存 key */
+interface PromptAppendix {
+  promptSection: string;
+  digest: string;
 }
 
 /**
@@ -254,6 +268,9 @@ export class QueryOrchestrator {
   /** 业务规则引擎，仅在 ENABLE_BUSINESS_RULES=true 时按需创建 */
   private businessRulesEngine?: BusinessRulesEngine;
 
+  /** 已验证查询，仅在 ENABLE_VERIFIED_QUERIES=true 时按需创建 */
+  private verifiedQueryStore?: VerifiedQueryStore;
+
   /**
    * 处理自然语言查询
    *
@@ -282,6 +299,12 @@ export class QueryOrchestrator {
 
     try {
       console.log(`[QueryOrchestrator] Processing NL query: "${query}"`);
+
+      // 完全相同的问题已有管理员验证过的 SQL：直接使用，不调用 AI（优先于缓存，避免返回采纳前的结果）
+      const verifiedResult = await this.tryVerifiedQuery(query, options, startTime);
+      if (verifiedResult) {
+        return verifiedResult;
+      }
 
       // 如果启用缓存，先检查缓存
       if (options.enableCache !== false) {
@@ -382,7 +405,12 @@ export class QueryOrchestrator {
       // Step 4: SQL 生成（可选注入业务规则）
       const t4 = Date.now();
       const businessRules = await this.buildBusinessRules(query, context);
-      const sqlResult = await this.generateSQL(resolvedIntent, context, businessRules);
+      const verifiedExamples = await this.buildVerifiedExamples(query, context);
+      const sqlResult = await this.generateSQL(
+        resolvedIntent,
+        context,
+        mergePromptAppendix(businessRules, verifiedExamples)
+      );
       timings.sqlGeneration = Date.now() - t4;
       console.log(`[QueryOrchestrator] SQL generated (${timings.sqlGeneration}ms)`);
 
@@ -437,6 +465,7 @@ export class QueryOrchestrator {
             usedTables: context.tables.map(t => t.tableName),
             dataSourceIds,
             appliedBusinessRules: businessRules?.applied,
+            verifiedExampleIds: verifiedExamples?.ids,
           },
           performance: {
             intentRecognitionTime: timings.intentRecognition,
@@ -509,6 +538,7 @@ export class QueryOrchestrator {
           usedTables: context.tables.map(t => t.tableName),
           dataSourceIds,
           appliedBusinessRules: businessRules?.applied,
+          verifiedExampleIds: verifiedExamples?.ids,
         },
         performance: {
           intentRecognitionTime: timings.intentRecognition,
@@ -700,12 +730,12 @@ export class QueryOrchestrator {
   private async generateSQL(
     intent: QueryIntent,
     context: MetadataContext,
-    businessRules: BusinessRulesContext | null
+    appendix: PromptAppendix | null
   ): Promise<SQLGenerationResult> {
     if (!isFeatureEnabled('sqlPipeline')) {
       return this.sqlGenerator.generate(intent, context, {
-        promptAppendix: businessRules?.promptSection,
-        promptAppendixDigest: businessRules?.digest,
+        promptAppendix: appendix?.promptSection,
+        promptAppendixDigest: appendix?.digest,
       });
     }
 
@@ -748,6 +778,101 @@ export class QueryOrchestrator {
       return rules;
     } catch (error) {
       console.error('[BusinessRules] 构建业务规则失败，按无规则生成:', error);
+      return null;
+    }
+  }
+
+  private getVerifiedQueryStore(): VerifiedQueryStore {
+    this.verifiedQueryStore ??= new VerifiedQueryStore(getContainer().resolve(DI_TOKENS.PrismaClient));
+    return this.verifiedQueryStore;
+  }
+
+  /**
+   * 完全相同的问题直接执行已验证的 SQL（ENABLE_VERIFIED_QUERIES=true 时）
+   *
+   * SQL 按编辑 SQL 的方式执行（enforce 校验）；执行失败或出现异常时返回 null，按正常流程生成。
+   * 只预览时返回已验证的 SQL，不执行。日志前缀 [VerifiedQuery]。
+   */
+  private async tryVerifiedQuery(
+    query: string,
+    options: QueryOptions,
+    startTime: number
+  ): Promise<QueryResult | null> {
+    if (!isFeatureEnabled('verifiedQueries')) {
+      return null;
+    }
+
+    try {
+      const store = this.getVerifiedQueryStore();
+      const verified = await store.findExact(query, options.dataSourceId);
+      if (!verified) {
+        return null;
+      }
+      const explanation = `已验证的查询：「${verified.question}」的 SQL 已由管理员确认`;
+
+      if (options.explainOnly) {
+        return {
+          success: true,
+          intent: { type: 'select', entities: {}, conditions: {} },
+          metadata: {
+            generatedSQL: verified.sql,
+            explanation,
+            rowCount: 0,
+            executionTime: 0,
+            fromCache: false,
+            columns: [],
+            dataSourceIds: verified.dataSourceIds,
+            verifiedQueryId: verified.id,
+          },
+          performance: {
+            intentRecognitionTime: 0,
+            metadataRetrievalTime: 0,
+            sqlGenerationTime: 0,
+            queryExecutionTime: 0,
+            totalTime: Date.now() - startTime,
+          },
+        };
+      }
+
+      const result = await this.executeUserSQL(verified.sql, { ...options, dataSourceIds: verified.dataSourceIds });
+      if (!result.success || !result.metadata) {
+        console.warn(`[VerifiedQuery] #${verified.id} 执行失败，按正常流程生成：${result.error}`);
+        return null;
+      }
+
+      console.info('[VerifiedQuery]', JSON.stringify({ query, verifiedQueryId: verified.id }));
+      await store.recordHit([verified.id]);
+      return {
+        ...result,
+        metadata: { ...result.metadata, explanation, verifiedQueryId: verified.id },
+      };
+    } catch (error) {
+      console.error('[VerifiedQuery] 查找已验证查询失败，按正常流程生成:', error);
+      return null;
+    }
+  }
+
+  /**
+   * 相似的已验证查询作为 few-shot 示例（ENABLE_VERIFIED_QUERIES=true 时，仅作用于 SQLGenerator）
+   */
+  private async buildVerifiedExamples(
+    query: string,
+    context: MetadataContext
+  ): Promise<VerifiedExamplesSection | null> {
+    if (!isFeatureEnabled('verifiedQueries') || isFeatureEnabled('sqlPipeline')) {
+      return null;
+    }
+
+    try {
+      const store = this.getVerifiedQueryStore();
+      const section = renderVerifiedExamples(await store.findSimilar(query, context));
+      if (section) {
+        console.info('[VerifiedQuery]', JSON.stringify({ query, examples: section.ids }));
+        await store.recordHit(section.ids);
+      }
+      return section;
+    } catch (error) {
+      console.error('[VerifiedQuery] 查找相似示例失败，按无示例生成:', error);
       return null;
     }
   }
@@ -831,7 +956,8 @@ export class QueryOrchestrator {
   private resultCacheKey(query: string, dataScope: string, dataSourceId?: number): string {
     // 开关切换后不复用另一种模式下生成的结果
     const rules = isFeatureEnabled('businessRules') ? 'on' : 'off';
-    return `nlq:${dataScope}:src=${dataSourceId ?? 'any'}:br=${rules}:${query}`;
+    const verified = isFeatureEnabled('verifiedQueries') ? 'on' : 'off';
+    return `nlq:${dataScope}:src=${dataSourceId ?? 'any'}:br=${rules}:vq=${verified}:${query}`;
   }
 
   /**
@@ -867,6 +993,7 @@ export class QueryOrchestrator {
           usedTables: cached.nlq.usedTables,
           dataSourceIds: cached.nlq.dataSourceIds,
           appliedBusinessRules: cached.nlq.appliedBusinessRules,
+          verifiedExampleIds: cached.nlq.verifiedExampleIds,
         },
         warnings: cached.nlq.warnings,
         suggestions: cached.nlq.suggestions,
@@ -917,6 +1044,7 @@ export class QueryOrchestrator {
           usedTables: result.metadata.usedTables,
           dataSourceIds: result.metadata.dataSourceIds,
           appliedBusinessRules: result.metadata.appliedBusinessRules,
+          verifiedExampleIds: result.metadata.verifiedExampleIds,
           warnings: result.warnings,
           suggestions: result.suggestions,
         },
@@ -952,4 +1080,14 @@ export class QueryOrchestrator {
 
     return suggestions;
   }
+}
+
+function mergePromptAppendix(...parts: Array<PromptAppendix | null>): PromptAppendix | null {
+  const present = parts.filter((p): p is PromptAppendix => !!p);
+  if (present.length === 0) return null;
+  if (present.length === 1) return present[0];
+  return {
+    promptSection: present.map((p) => p.promptSection).join('\n'),
+    digest: present.map((p) => p.digest).join(':'),
+  };
 }

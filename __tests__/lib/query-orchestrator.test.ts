@@ -221,10 +221,10 @@ describe('QueryOrchestrator - 结果缓存', () => {
     const { orchestrator, deps } = createOrchestrator();
 
     await orchestrator.processNaturalLanguageQuery('统计总数');
-    expect(deps.cacheManager.setResult).toHaveBeenLastCalledWith('nlq:all:src=any:br=off:统计总数', expect.anything());
+    expect(deps.cacheManager.setResult).toHaveBeenLastCalledWith('nlq:all:src=any:br=off:vq=off:统计总数', expect.anything());
 
     await orchestrator.processNaturalLanguageQuery('统计总数', { dataSourceId: 1 });
-    expect(deps.cacheManager.setResult).toHaveBeenLastCalledWith('nlq:all:src=1:br=off:统计总数', expect.anything());
+    expect(deps.cacheManager.setResult).toHaveBeenLastCalledWith('nlq:all:src=1:br=off:vq=off:统计总数', expect.anything());
   });
 
   it('缓存命中时返回真实的 SQL、意图与建议，而不是自然语言原文', async () => {
@@ -242,7 +242,7 @@ describe('QueryOrchestrator - 结果缓存', () => {
 
   it('旧格式缓存条目（缺少 nlq）按未命中处理', async () => {
     const { orchestrator, deps, cache } = createOrchestrator();
-    cache.set('nlq:all:src=any:br=off:统计总数', { success: true, data: [], rowCount: 0, executionTime: 0, fromCache: false, metadata: { columns: [] } });
+    cache.set('nlq:all:src=any:br=off:vq=off:统计总数', { success: true, data: [], rowCount: 0, executionTime: 0, fromCache: false, metadata: { columns: [] } });
 
     const result = await orchestrator.processNaturalLanguageQuery('统计总数');
 
@@ -391,6 +391,97 @@ describe('QueryOrchestrator - 业务规则', () => {
 
     await orchestrator.processNaturalLanguageQuery('统计总数');
 
-    expect(deps.cacheManager.setResult).toHaveBeenCalledWith('nlq:all:src=any:br=on:统计总数', expect.anything());
+    expect(deps.cacheManager.setResult).toHaveBeenCalledWith('nlq:all:src=any:br=on:vq=off:统计总数', expect.anything());
+  });
+});
+
+describe('QueryOrchestrator - 已验证查询', () => {
+  const VERIFIED_SQL = "SELECT COUNT(*) FROM `db`.`t` WHERE status = 'paid'";
+  const snapshot = JSON.stringify([{ tableId: 1, databaseName: 'db', tableName: 't', structureHash: 'h' }]);
+
+  function setup(verifiedRows: any[]) {
+    const prisma = {
+      verifiedQuery: {
+        findMany: jest.fn(async (args: any) =>
+          args.where.questionHash ? verifiedRows.filter((r) => r.questionHash === args.where.questionHash) : verifiedRows
+        ),
+        update: jest.fn(async () => ({})),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
+      tableMeta: { findMany: jest.fn(async () => [{ id: 1, structureHash: 'h' }]) },
+    };
+    resolvePipeline.mockImplementation(() => prisma);
+    const created = createOrchestrator();
+    const sqlContext = { tables: [{ id: 1, databaseName: 'db', tableName: 't', database: { sourceId: 1 } }], relationships: [], columns: [] };
+    (created.deps.metadataRetriever as any).retrieveContextForSQL = jest.fn(async () => sqlContext);
+    (created.deps.metadataRetriever as any).retrieveContext = jest.fn(async () => sqlContext);
+    return { ...created, prisma };
+  }
+
+  const { questionHash } = jest.requireActual('@/lib/feedback/question') as typeof import('@/lib/feedback/question');
+  const row = (question: string) => ({
+    id: 5, question, questionHash: questionHash(question), sql: VERIFIED_SQL, dataSourceIds: '[1]', tableSnapshot: snapshot,
+  });
+
+  beforeEach(() => {
+    resolvePipeline.mockReset();
+    process.env.ENABLE_VERIFIED_QUERIES = 'true';
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+
+  it('完全相同的问题：直接执行已验证的 SQL（enforce 校验），不调用 AI，记录命中', async () => {
+    const { orchestrator, deps, prisma } = setup([row('统计总数')]);
+
+    const result = await orchestrator.processNaturalLanguageQuery('统计 总数？', { user: { id: '7', role: UserRole.USER } });
+
+    expect(result.success).toBe(true);
+    expect(result.metadata).toMatchObject({ generatedSQL: VERIFIED_SQL, verifiedQueryId: 5, dataSourceIds: [1] });
+    expect(deps.intentRecognizer.recognize).not.toHaveBeenCalled();
+    expect(deps.sqlGenerator.generate).not.toHaveBeenCalled();
+    expect(deps.queryExecutor.execute).toHaveBeenCalledWith(VERIFIED_SQL, expect.anything(), expect.anything());
+    expect(prisma.verifiedQuery.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: [5] } } }));
+  });
+
+  it('预览：返回已验证的 SQL，不执行', async () => {
+    const { orchestrator, deps } = setup([row('统计总数')]);
+
+    const result = await orchestrator.processNaturalLanguageQuery('统计总数', { explainOnly: true });
+
+    expect(result.metadata).toMatchObject({ generatedSQL: VERIFIED_SQL, verifiedQueryId: 5 });
+    expect(deps.queryExecutor.execute).not.toHaveBeenCalled();
+  });
+
+  it('已验证的 SQL 执行失败：按正常流程生成', async () => {
+    const { orchestrator, deps } = setup([row('统计总数')]);
+    deps.queryExecutor.execute.mockResolvedValueOnce({ success: false, error: 'Unknown column' });
+
+    const result = await orchestrator.processNaturalLanguageQuery('统计总数', { enableCache: false });
+
+    expect(deps.sqlGenerator.generate).toHaveBeenCalled();
+    expect(result.metadata?.verifiedQueryId).toBeUndefined();
+    expect(result.metadata?.generatedSQL).toBe(SQL);
+  });
+
+  it('相似问题：作为示例注入 Prompt，并返回示例 ID', async () => {
+    const { orchestrator, deps } = setup([row('统计总数是多少')]);
+
+    const result = await orchestrator.processNaturalLanguageQuery('统计总数', { enableCache: false });
+
+    const options = (deps.sqlGenerator.generate.mock.calls[0] as any[])[2];
+    expect(options.promptAppendix).toContain('已验证的查询示例');
+    expect(options.promptAppendix).toContain(VERIFIED_SQL);
+    expect(options.promptAppendixDigest).toEqual(expect.any(String));
+    expect(result.metadata?.verifiedExampleIds).toEqual([5]);
+  });
+
+  it('开关关闭：不访问已验证查询，缓存 key 区分开关状态', async () => {
+    delete process.env.ENABLE_VERIFIED_QUERIES;
+    const { orchestrator, deps, prisma } = setup([row('统计总数')]);
+
+    const result = await orchestrator.processNaturalLanguageQuery('统计总数');
+
+    expect(result.metadata?.verifiedQueryId).toBeUndefined();
+    expect(prisma.verifiedQuery.findMany).not.toHaveBeenCalled();
+    expect(deps.cacheManager.setResult).toHaveBeenCalledWith('nlq:all:src=any:br=off:vq=off:统计总数', expect.anything());
   });
 });

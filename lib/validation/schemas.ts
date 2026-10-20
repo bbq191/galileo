@@ -110,6 +110,8 @@ export const SqlExecuteSchema = z.object({
   question: z.string().max(5000).optional(),
   /** 生成该 SQL 时涉及的数据源，用于定位 SQL 中的表 */
   dataSourceIds: z.array(z.number().int().positive()).max(20).optional(),
+  /** 被编辑的原查询 runId：执行成功且 SQL 有改动时记为对原查询的纠正 */
+  sourceRunId: z.string().uuid().optional(),
   options: z
     .object({
       maxRows: z.number().int().min(1).max(10000).optional(),
@@ -118,10 +120,28 @@ export const SqlExecuteSchema = z.object({
     .optional(),
 });
 
+// 查询结果反馈
+export const QueryFeedbackSchema = z.object({
+  runId: z.string().uuid('runId 格式不正确'),
+  rating: z.enum(['up', 'down']),
+  reason: z.enum(['wrong_table', 'wrong_filter', 'wrong_metric', 'other']).optional(),
+  comment: z.string().max(1000, '说明不能超过 1000 字符').optional(),
+});
+
+// 审核反馈
+export const FeedbackReviewSchema = z.object({
+  action: z.enum(['accept', 'reject']),
+  /** 采纳时可修改问题与 SQL（默认使用纠正后的 SQL，没有纠正时使用原 SQL） */
+  question: z.string().trim().max(5000).optional(),
+  sql: z.string().trim().max(20000).optional(),
+});
+
 // 导出所有 schemas
 export const schemas = {
   login: LoginSchema,
   sqlExecute: SqlExecuteSchema,
+  queryFeedback: QueryFeedbackSchema,
+  feedbackReview: FeedbackReviewSchema,
   queryExecute: QueryExecuteSchema,
   metadataSync: MetadataSyncSchema,
   datasourceCreate: DatasourceCreateSchema,

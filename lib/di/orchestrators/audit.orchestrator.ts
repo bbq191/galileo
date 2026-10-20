@@ -19,6 +19,9 @@ import { PrismaClient } from '@prisma/client';
  * 查询审计日志条目
  */
 export interface QueryAuditEntry {
+  /** 单次请求标识（返回给前端，用于反馈与纠错） */
+  runId?: string;
+
   /** 用户 ID */
   userId?: string;
 
@@ -49,6 +52,8 @@ export interface QueryAuditEntry {
     usedDatabases: string[];
     usedTables: string[];
     usedColumns: string[];
+    /** 涉及的数据源 ID */
+    dataSourceIds?: number[];
   };
 
   /** 性能指标 */
@@ -141,6 +146,7 @@ export class AuditOrchestrator {
 
       await this.prisma.queryAuditLog.create({
         data: {
+          runId: entry.runId,
           userId: entry.userId,
           userName: entry.userName,
           sessionId: entry.sessionId,
@@ -152,6 +158,7 @@ export class AuditOrchestrator {
           rowCount: entry.executionResult.rowCount,
           usedDatabases: JSON.stringify(entry.metadata.usedDatabases),
           usedTables: JSON.stringify(entry.metadata.usedTables),
+          dataSourceIds: entry.metadata.dataSourceIds?.length ? JSON.stringify(entry.metadata.dataSourceIds) : null,
           intentRecognitionTime: entry.performance.intentRecognitionTime,
           sqlGenerationTime: entry.performance.sqlGenerationTime,
           validationTime: entry.performance.validationTime,

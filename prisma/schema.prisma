@@ -258,6 +258,7 @@ model DataDictionary {
 
 model QueryAuditLog {
   id                    BigInt   @id @default(autoincrement())
+  runId                 String?  @unique @map("run_id") @db.VarChar(36)          // 单次请求标识，返回给前端用于反馈与纠错
   userId                String?  @map("user_id") @db.VarChar(100)
   userName              String?  @map("user_name") @db.VarChar(100)
   sessionId             String   @map("session_id") @db.VarChar(100)
@@ -269,6 +270,7 @@ model QueryAuditLog {
   rowCount              Int?     @map("row_count")
   usedDatabases         String   @map("used_databases") @db.LongText
   usedTables            String   @map("used_tables") @db.LongText
+  dataSourceIds         String?  @map("data_source_ids") @db.VarChar(255)        // JSON 数组
   intentRecognitionTime Int      @map("intent_recognition_time")
   sqlGenerationTime     Int      @map("sql_generation_time")
   validationTime        Int      @map("validation_time")
@@ -579,4 +581,73 @@ model User {
 
   @@index([isActive])
   @@map("users")
+}
+
+// ============================================
+// 查询反馈与已验证查询
+// ============================================
+
+enum FeedbackRating {
+  up
+  down
+  corrected // 用户编辑 SQL 后执行成功
+}
+
+enum FeedbackReason {
+  wrong_table
+  wrong_filter
+  wrong_metric
+  other
+}
+
+enum ReviewStatus {
+  pending
+  accepted
+  rejected
+}
+
+/// 用户对单次查询结果的反馈。问题与 SQL 冗余保存，审计日志过期清理后仍可审核
+model QueryFeedback {
+  id              Int             @id @default(autoincrement())
+  runId           String          @map("run_id") @db.VarChar(36)
+  userId          String          @map("user_id") @db.VarChar(100)
+  rating          FeedbackRating
+  reason          FeedbackReason?
+  comment         String?         @db.Text
+  question        String          @db.Text
+  generatedSql    String          @map("generated_sql") @db.Text
+  correctedSql    String?         @map("corrected_sql") @db.Text
+  dataSourceIds   String?         @map("data_source_ids") @db.VarChar(255)   // JSON 数组
+  status          ReviewStatus    @default(pending)
+  reviewedBy      String?         @map("reviewed_by") @db.VarChar(100)
+  reviewedAt      DateTime?       @map("reviewed_at")
+  verifiedQueryId Int?            @map("verified_query_id")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  @@unique([runId, userId])
+  @@index([status, createdAt])
+  @@map("query_feedback")
+}
+
+/// 管理员审核通过的「问题 → SQL」，用于完全相同问题直接执行与相似问题的 few-shot 示例
+model VerifiedQuery {
+  id               Int       @id @default(autoincrement())
+  question         String    @db.Text
+  questionHash     String    @map("question_hash") @db.Char(32)    // 归一化问题的 md5，见 lib/feedback/question.ts
+  sql              String    @db.Text
+  dataSourceIds    String    @map("data_source_ids") @db.VarChar(255)   // JSON 数组
+  tableSnapshot    String    @map("table_snapshot") @db.Text      // JSON：采纳时各表的 structureHash，结构变化后自动停用
+  sourceFeedbackId Int?      @map("source_feedback_id")
+  createdBy        String?   @map("created_by") @db.VarChar(100)
+  hitCount         Int       @default(0) @map("hit_count")
+  lastHitAt        DateTime? @map("last_hit_at")
+  isActive         Boolean   @default(true) @map("is_active")
+  invalidReason    String?   @map("invalid_reason") @db.VarChar(255)
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@index([questionHash])
+  @@index([isActive])
+  @@map("verified_queries")
 }

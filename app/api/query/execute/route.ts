@@ -1,6 +1,7 @@
 export const runtime = 'nodejs';
 export { dynamic } from '@/lib/api/route-config';
 
+import { randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { getQueryOrchestrator, getAuditOrchestrator } from '@/lib/di/setup';
 import type { QueryOrchestrator } from '@/lib/di/orchestrators/query.orchestrator';
@@ -72,12 +73,15 @@ export const POST = withQueryRateLimit(async (request: Request) => {
       user: { id: userId, role: currentUser.role },
     });
 
-    // 记录审计日志
+    // 记录审计日志；runId 返回给前端，用于结果反馈与编辑 SQL 后的纠错关联
     const auditOrchestrator = getAuditOrchestrator();
+    const logged = !!(result.intent && result.metadata && result.performance);
+    const runId = logged ? randomUUID() : undefined;
 
     // 异步记录审计日志，不阻塞响应
     if (result.intent && result.metadata && result.performance) {
       auditOrchestrator.logQuery({
+        runId,
         userId,
         userName,
         sessionId,
@@ -93,6 +97,7 @@ export const POST = withQueryRateLimit(async (request: Request) => {
           usedDatabases: result.metadata.usedDatabases || [],
           usedTables: result.metadata.usedTables || [],
           usedColumns: result.metadata.usedColumns || (await extractUsedColumns(result.metadata.generatedSQL)),
+          dataSourceIds: result.metadata.dataSourceIds,
         },
         performance: {
           intentRecognitionTime: result.performance.intentRecognitionTime,
@@ -118,6 +123,7 @@ export const POST = withQueryRateLimit(async (request: Request) => {
     if (result.success) {
       return NextResponse.json({
         success: true,
+        runId,
         data: result.data,
         metadata: result.metadata,
         warnings: result.warnings,
@@ -129,6 +135,7 @@ export const POST = withQueryRateLimit(async (request: Request) => {
         : result.error?.includes('未找到') ? 404 : 500;
       return NextResponse.json({
         success: false,
+        runId,
         error: result.error,
         errorCode: result.errorCode,
         metadata: result.metadata,

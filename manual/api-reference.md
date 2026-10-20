@@ -153,6 +153,42 @@
 
 源码: `app/api/query/history/[id]/route.ts`
 
+### 2.5 查询结果反馈
+
+**POST /api/query/feedback**
+
+对自己的一次查询结果点赞 / 点踩，进入管理员审核队列。`runId` 来自 `/api/query/execute` 的响应（已记录审计日志时返回，失败的查询同样返回）。
+
+请求体：
+```json
+{
+  "runId": "1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed",
+  "rating": "down",
+  "reason": "wrong_filter",
+  "comment": "应该只统计已支付订单"
+}
+```
+
+- `rating`: `up` | `down`；`reason`（仅 `down`）: `wrong_table` | `wrong_filter` | `wrong_metric` | `other`
+- 重复提交覆盖原反馈；不是自己的查询返回 403，查询记录不存在或已过期返回 404，已审核返回 409
+
+编辑 SQL 后执行（`POST /api/query/execute-sql`）时传入 `sourceRunId`（原查询的 runId），执行成功且 SQL 有改动时自动记为「已纠正」，响应中 `correctionRecorded: true`。
+
+源码: `app/api/query/feedback/route.ts`
+
+### 2.6 反馈审核与已验证查询（管理员）
+
+| 端点 | 说明 |
+|------|------|
+| `GET /api/admin/feedback?status=pending&rating=&page=1&limit=20` | 审核队列；`status`: `pending`（默认）\| `accepted` \| `rejected` \| `all`；`rating`: `up` \| `down` \| `corrected` |
+| `POST /api/admin/feedback/{id}` | `{ "action": "accept" \| "reject", "question"?, "sql"? }`；采纳时 SQL 默认取用户纠正后的版本，SQL 中的表必须都已同步（否则 400） |
+| `GET /api/admin/verified-queries?active=true&page=1&limit=20` | 已验证查询列表 |
+| `PATCH /api/admin/verified-queries/{id}` | `{ "isActive": boolean }`；重新启用时按当前元数据刷新表结构快照 |
+
+已验证查询在 `ENABLE_VERIFIED_QUERIES=true` 时生效，见 `manual/operations.md` 第 8 节。
+
+源码: `app/api/admin/feedback/`、`app/api/admin/verified-queries/`
+
 ---
 
 ## 3. Datasources - 数据源管理

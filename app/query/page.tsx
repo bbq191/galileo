@@ -6,6 +6,7 @@ import SQLPreview from '@/components/query/SQLPreview';
 import ResultTable from '@/components/query/ResultTable';
 import PerformanceMetrics from '@/components/query/PerformanceMetrics';
 import ChartVisualization from '@/components/query/ChartVisualization';
+import ResultFeedback from '@/components/query/ResultFeedback';
 import { apiFetch } from '@/lib/client/api-fetch';
 
 interface DataSourceOption {
@@ -15,6 +16,10 @@ interface DataSourceOption {
 
 interface QueryResult {
   success: boolean;
+  /** 本次执行的标识，用于反馈与纠错 */
+  runId?: string;
+  /** 编辑 SQL 执行后：是否已记为对原查询的纠正 */
+  correctionRecorded?: boolean;
   data?: any[];
   metadata?: {
     generatedSQL: string;
@@ -29,6 +34,8 @@ interface QueryResult {
     usedDatabases?: string[];
     dataSourceIds?: number[];
     appliedBusinessRules?: { terms: string[]; filters: string[]; aggregations: string[]; templates: string[] };
+    verifiedQueryId?: number;
+    verifiedExampleIds?: number[];
   };
   warnings?: string[];
   optimizationSuggestions?: Array<{
@@ -51,6 +58,8 @@ export default function QueryPage() {
   const [dataSources, setDataSources] = useState<DataSourceOption[]>([]);
   // 未选择时在全部数据源中检索
   const [dataSourceId, setDataSourceId] = useState<number | undefined>(undefined);
+  // 最近一次自然语言查询的 runId：编辑 SQL 后执行时关联为对它的纠正
+  const [sourceRunId, setSourceRunId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     apiFetch<DataSourceOption[]>('/api/datasources').then((res) => {
@@ -86,10 +95,12 @@ export default function QueryPage() {
 
     if (res.ok) {
       setResult({ success: true, data: res.data, ...res.meta } as QueryResult);
+      setSourceRunId(res.meta.runId as string | undefined);
     } else {
       // 执行失败或被拦截时仍展示已生成的 SQL
       const body = res.body as QueryResult | undefined;
       setResult(body?.metadata ? { ...body, success: false } : null);
+      setSourceRunId(body?.runId);
       setError(res.error.message);
     }
     setLoading(false);
@@ -106,6 +117,7 @@ export default function QueryPage() {
         sql,
         question: query.trim() || undefined,
         dataSourceIds: result?.metadata?.dataSourceIds,
+        sourceRunId,
         options: { maxRows: 10000, timeout: 30000 },
       },
     });
@@ -135,6 +147,7 @@ export default function QueryPage() {
       explanation: string;
       dataSourceIds?: number[];
       appliedBusinessRules?: NonNullable<QueryResult['metadata']>['appliedBusinessRules'];
+      verifiedQueryId?: number;
       warnings?: string[];
       optimizationSuggestions?: QueryResult['optimizationSuggestions'];
     }>('/api/query/preview', {
@@ -146,7 +159,8 @@ export default function QueryPage() {
     });
 
     if (res.ok) {
-      // 预览模式：只显示 SQL，不显示结果
+      // 预览模式：只显示 SQL，不显示结果（没有执行记录，不能反馈）
+      setSourceRunId(undefined);
       setResult({
         success: true,
         metadata: {
@@ -158,6 +172,7 @@ export default function QueryPage() {
           columns: [],
           dataSourceIds: res.data.dataSourceIds,
           appliedBusinessRules: res.data.appliedBusinessRules,
+          verifiedQueryId: res.data.verifiedQueryId,
         },
         warnings: res.data.warnings,
         optimizationSuggestions: res.data.optimizationSuggestions,
@@ -256,6 +271,22 @@ export default function QueryPage() {
               </div>
             )}
 
+            {/* 已验证查询 */}
+            {result.metadata?.verifiedQueryId !== undefined && (
+              <div className="text-sm">
+                <span className="badge badge-success badge-sm mr-2">已验证</span>
+                该问题的 SQL 已由管理员确认，未调用 AI 生成
+              </div>
+            )}
+            {!!result.metadata?.verifiedExampleIds?.length && (
+              <div className="text-sm opacity-70">
+                参考了 {result.metadata.verifiedExampleIds.length} 条已验证的相似查询
+              </div>
+            )}
+            {result.correctionRecorded && (
+              <div className="text-sm text-success">已将修改后的 SQL 记为对原查询的纠正，管理员审核后会用于同类问题</div>
+            )}
+
             {/* SQL 预览 */}
             {result.metadata?.generatedSQL && (
               <SQLPreview
@@ -263,6 +294,14 @@ export default function QueryPage() {
                 explanation={result.metadata.explanation}
                 editable={!loading}
                 onSQLChange={handleExecuteEditedSQL}
+              />
+            )}
+
+            {/* 结果反馈（编辑 SQL 的执行结果不再单独反馈，修改本身已记为纠正） */}
+            {result.runId && result.runId === sourceRunId && (
+              <ResultFeedback
+                runId={result.runId}
+                prompt={!result.success || result.metadata?.rowCount === 0}
               />
             )}
 

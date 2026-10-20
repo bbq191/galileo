@@ -174,6 +174,8 @@ export interface ExecuteQueryRequest {
  */
 export interface ExecuteQueryResponse {
   success: boolean;
+  /** 本次查询的标识（已记录审计日志时返回），用于 POST /api/query/feedback 与编辑 SQL 的 sourceRunId */
+  runId?: string;
   data?: any[];
   metadata?: {
     generatedSQL: string;
@@ -216,6 +218,8 @@ export interface PreviewQueryResponse {
   success: boolean;
   sql?: string;
   explanation?: string;
+  /** 问题与已验证查询完全相同时，返回的是已验证的 SQL */
+  verifiedQueryId?: number;
   confidence?: number;
   intent?: {
     type: string;

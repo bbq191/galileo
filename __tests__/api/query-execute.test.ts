@@ -69,6 +69,7 @@ describe('POST /api/query/execute', () => {
     expect(res.status).toBe(200);
     expect(body).toEqual({
       success: true,
+      runId: expect.stringMatching(/^[0-9a-f-]{36}$/),
       data: [{ total: 42 }],
       metadata: expect.objectContaining({
         generatedSQL: expect.any(String),
@@ -86,6 +87,8 @@ describe('POST /api/query/execute', () => {
       expect.objectContaining({ enableCache: true, sessionId: expect.any(String) })
     );
     expect(logQuery).toHaveBeenCalledTimes(1);
+    // 审计日志与响应使用同一个 runId，反馈和编辑 SQL 通过它关联到本次查询
+    expect(logQuery).toHaveBeenCalledWith(expect.objectContaining({ runId: body.runId }));
   });
 
   it('未找到相关表：404 + success: false', async () => {

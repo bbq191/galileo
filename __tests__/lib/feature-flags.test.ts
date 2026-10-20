@@ -25,6 +25,6 @@ describe('feature-flags', () => {
     process.env.ENABLE_SQL_PIPELINE = 'true';
     delete process.env.ENABLE_BUSINESS_RULES;
 
-    expect(getFeatureFlags()).toEqual({ sqlPipeline: true, businessRules: false });
+    expect(getFeatureFlags()).toEqual({ sqlPipeline: true, businessRules: false, verifiedQueries: false });
   });
 });
