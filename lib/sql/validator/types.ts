@@ -85,6 +85,12 @@ export interface UserPermissions {
   allowedOperations?: string[];
 
   /**
+   * 不受库表限制（仍只允许 SELECT）
+   * 为 false 时，SQL 无法解析将被拒绝，避免解析失败导致权限检查被绕过
+   */
+  unrestricted?: boolean;
+
+  /**
    * 检查是否可以访问指定表
    */
   canAccessTable(database: string, table: string): boolean;

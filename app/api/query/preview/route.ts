@@ -6,6 +6,7 @@ import { getQueryOrchestrator } from '@/lib/di/setup';
 import type { QueryOrchestrator } from '@/lib/di/orchestrators/query.orchestrator';
 import { performanceMonitor } from '@/lib/api/performance-monitor';
 import type { PreviewQueryRequest, PreviewQueryResponse } from '@/lib/api/types';
+import { getUserFromRequest } from '@/lib/auth/permissions';
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
@@ -25,15 +26,22 @@ export async function POST(request: NextRequest) {
 
     // 使用 QueryOrchestrator 处理查询（仅解释，不执行）
     const queryOrchestrator = getQueryOrchestrator() as QueryOrchestrator;
+    const currentUser = getUserFromRequest(request);
     const result = await queryOrchestrator.processNaturalLanguageQuery(body.query, {
       explainOnly: true,
+      user: { id: currentUser.id, role: currentUser.role },
     });
 
     if (!result.success || !result.metadata) {
+      const status = result.errorCode === 'validation_failed'
+        ? 422
+        : result.error?.includes('未找到') ? 404 : 500;
       return NextResponse.json({
         success: false,
         error: result.error || '未找到相关的数据表，请检查查询内容',
-      } as PreviewQueryResponse, { status: result.error?.includes('未找到') ? 404 : 500 });
+        errorCode: result.errorCode,
+        sql: result.metadata?.generatedSQL,
+      } as PreviewQueryResponse, { status });
     }
 
     // 记录性能指标

@@ -39,7 +39,10 @@ describe('POST /api/query/preview', () => {
 
     expect(res.status).toBe(200);
     expect(body).toEqual({ success: true, sql: 'SELECT 1', explanation: '说明', usedTables: ['t'] });
-    expect(processNaturalLanguageQuery).toHaveBeenCalledWith('查询', { explainOnly: true });
+    expect(processNaturalLanguageQuery).toHaveBeenCalledWith('查询', {
+      explainOnly: true,
+      user: { id: undefined, role: 'guest' },
+    });
   });
 
   it('透传 warnings 与 optimizationSuggestions（与 execute 接口一致）', async () => {
@@ -63,6 +66,20 @@ describe('POST /api/query/preview', () => {
 
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({ success: false, error: expect.any(String) });
+  });
+
+  it('未通过 SQL 校验：422，并返回被拦截的 SQL', async () => {
+    processNaturalLanguageQuery.mockResolvedValue({
+      success: false,
+      errorCode: 'validation_failed',
+      error: '查询未通过安全校验：不允许执行 DELETE 操作',
+      metadata: { generatedSQL: 'DELETE FROM t' },
+    });
+
+    const res = await POST(request({ query: '查询' }));
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ success: false, errorCode: 'validation_failed', sql: 'DELETE FROM t' });
   });
 
   it('未找到相关表：404', async () => {

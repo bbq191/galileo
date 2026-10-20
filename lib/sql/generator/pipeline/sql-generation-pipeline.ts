@@ -39,19 +39,16 @@ import { SQLCacheChecker } from './stages/sql-cache-checker-stage';
 import { AIGenerator } from './stages/ai-generator-stage';
 import { QualityEnhancer } from './stages/quality-enhancer-stage';
 import { Validator } from './stages/validator-stage';
+import { BasePipelineStage } from './base-stage';
 import { DI_TOKENS } from '@/lib/di/tokens';
 
 @injectable()
 export class SQLGenerationPipeline {
-  /** 管道阶段列表（按优先级排序） */
-  private stages = [
-    this.templateMatcher,
-    this.promptCacheChecker,
-    this.sqlCacheChecker,
-    this.aiGenerator,
-    this.qualityEnhancer,
-    this.validator
-  ];
+  /**
+   * 管道阶段列表（按优先级排序）
+   * 在构造函数体内赋值：若用字段初始化器引用参数属性，结果取决于编译器的 class 字段语义
+   */
+  private readonly stages: BasePipelineStage[];
 
   /** 统计信息 */
   private stats: PipelineStatistics = {
@@ -80,6 +77,15 @@ export class SQLGenerationPipeline {
     @inject(DI_TOKENS.QualityEnhancer) private readonly qualityEnhancer: QualityEnhancer,
     @inject(DI_TOKENS.Validator) private readonly validator: Validator
   ) {
+    this.stages = [
+      this.templateMatcher,
+      this.promptCacheChecker,
+      this.sqlCacheChecker,
+      this.aiGenerator,
+      this.qualityEnhancer,
+      this.validator
+    ];
+
     // 初始化阶段统计
     for (const stage of this.stages) {
       this.stats.stageStats.set(stage.name, {

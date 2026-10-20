@@ -33,3 +33,17 @@ export function getFeatureFlags(): Record<FeatureFlag, boolean> {
     (Object.keys(FEATURE_FLAGS) as FeatureFlag[]).map((flag) => [flag, isFeatureEnabled(flag)])
   ) as Record<FeatureFlag, boolean>;
 }
+
+/**
+ * SQL 校验模式（SQL_VALIDATOR_MODE）
+ *
+ * - off：不执行 SQLValidator（仅保留 SQLGenerator 内置的基础校验）
+ * - shadow（默认）：执行校验并记录日志，不拦截查询，用于评估误拦截率
+ * - enforce：校验不通过时拒绝执行
+ */
+export type SqlValidatorMode = 'off' | 'shadow' | 'enforce';
+
+export function getSqlValidatorMode(): SqlValidatorMode {
+  const mode = process.env.SQL_VALIDATOR_MODE;
+  return mode === 'off' || mode === 'enforce' ? mode : 'shadow';
+}

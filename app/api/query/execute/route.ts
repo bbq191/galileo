@@ -69,6 +69,7 @@ export const POST = withQueryRateLimit(async (request: Request) => {
     const result = await queryOrchestrator.processNaturalLanguageQuery(query, {
       ...options,
       sessionId,
+      user: { id: userId, role: currentUser.role },
     });
 
     // 记录审计日志
@@ -123,11 +124,15 @@ export const POST = withQueryRateLimit(async (request: Request) => {
         optimizationSuggestions: result.suggestions,
       } as ExecuteQueryResponse);
     } else {
+      const status = result.errorCode === 'validation_failed'
+        ? 422
+        : result.error?.includes('未找到') ? 404 : 500;
       return NextResponse.json({
         success: false,
         error: result.error,
+        errorCode: result.errorCode,
         metadata: result.metadata,
-      } as ExecuteQueryResponse, { status: result.error?.includes('未找到') ? 404 : 500 });
+      } as ExecuteQueryResponse, { status });
     }
 
   } catch (error: any) {

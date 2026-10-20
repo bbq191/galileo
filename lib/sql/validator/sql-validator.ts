@@ -178,12 +178,15 @@ export class SQLValidator {
         // 对于包含数据库前缀的SQL，使用简单的字符串匹配来验证
         console.log('Using simple semantic validation for database-prefixed SQL');
 
-        // 提取所有可能的表引用（格式：`db`.`table` 或 db.table）
-        const tableMatches = sql.match(/(?:`([^`]+)`|(\w+))\s*\.\s*(?:`([^`]+)`|(\w+))/g) || [];
+        // 只提取 FROM / JOIN 之后的表引用（格式：`db`.`table` 或 db.table），
+        // 否则 SELECT 列表、ON 条件中的「别名.字段」（如 u.name）会被误判为「库.表」
+        const tableMatches = sql.matchAll(
+          /\b(?:FROM|JOIN)\s+((?:`[^`]+`|\w+)\s*\.\s*(?:`[^`]+`|\w+))/gi
+        );
 
-        for (const match of tableMatches) {
+        for (const [, reference] of tableMatches) {
           // 解析数据库名和表名
-          const parts = match.replace(/`/g, '').split('.');
+          const parts = reference.replace(/`/g, '').split('.');
           if (parts.length === 2) {
             const [dbName, tableName] = parts.map(p => p.trim());
 

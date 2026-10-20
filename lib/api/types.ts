@@ -193,6 +193,8 @@ export interface ExecuteQueryResponse {
     impact: string;
   }>;
   error?: string;
+  /** validation_failed：SQL 未通过校验（HTTP 422） */
+  errorCode?: 'validation_failed';
   errors?: Array<{
     type: string;
     message: string;
@@ -249,6 +251,8 @@ export interface PreviewQueryResponse {
     impact: string;
   }>;
   error?: string;
+  /** validation_failed：SQL 未通过校验（HTTP 422） */
+  errorCode?: 'validation_failed';
 }
 
 /**

@@ -21,6 +21,14 @@ import type { ResultFormatter } from '@/lib/sql/executor/result-formatter';
 import type { QueryCacheManager } from '@/lib/cache/query-cache-manager';
 import type { MetadataRetriever } from '@/lib/metadata/retrieval/metadata-retriever';
 import type { MetadataContext } from '@/lib/metadata/types';
+import type { SQLGenerationResult } from '@/lib/sql/generator/types';
+import type { SQLGenerationPipeline } from '@/lib/sql/generator/pipeline/sql-generation-pipeline';
+import type { SQLValidator } from '@/lib/sql/validator/sql-validator';
+import type { UserPermissions } from '@/lib/sql/validator/types';
+import type { ExecutionResult } from '@/lib/sql/executor/types';
+import { getContainer } from '../container';
+import { isFeatureEnabled, getSqlValidatorMode } from '@/lib/feature-flags';
+import { getDataPermissions, getDataScopeKey, type QueryUser } from '@/lib/auth/data-permissions';
 
 /**
  * 查询选项
@@ -40,6 +48,9 @@ export interface QueryOptions {
 
   /** 会话 ID */
   sessionId?: string;
+
+  /** 当前用户（决定数据访问权限与缓存隔离范围） */
+  user?: QueryUser;
 }
 
 /**
@@ -127,6 +138,38 @@ export interface QueryResult {
 
   /** 错误信息 */
   error?: string;
+
+  /** 错误类型：validation_failed 表示 SQL 未通过校验（SQL_VALIDATOR_MODE=enforce） */
+  errorCode?: 'validation_failed';
+}
+
+/**
+ * SQL 校验结论
+ */
+interface SQLValidationOutcome {
+  /** 是否拒绝执行（仅 enforce 模式） */
+  blocked: boolean;
+  /** 校验是否通过（off 模式视为通过；校验器异常视为未通过） */
+  passed: boolean;
+  errors: string[];
+  warnings: string[];
+  suggestions: NonNullable<QueryResult['suggestions']>;
+}
+
+/**
+ * 自然语言查询的结果缓存条目
+ * 除执行结果外保存生成的 SQL 与意图，缓存命中时可如实展示 SQL 并记录审计日志
+ */
+interface CachedQueryEntry extends ExecutionResult {
+  nlq: {
+    generatedSQL: string;
+    explanation: string;
+    intent?: QueryIntent;
+    usedDatabases?: string[];
+    usedTables?: string[];
+    warnings?: string[];
+    suggestions?: QueryResult['suggestions'];
+  };
 }
 
 /**
@@ -182,8 +225,14 @@ export class QueryOrchestrator {
     private readonly cacheManager: QueryCacheManager,
 
     @inject(DI_TOKENS.MetadataRetriever)
-    private readonly metadataRetriever: MetadataRetriever
+    private readonly metadataRetriever: MetadataRetriever,
+
+    @inject(DI_TOKENS.SQLValidator)
+    private readonly sqlValidator: SQLValidator
   ) {}
+
+  /** 6 阶段生成管道，仅在 ENABLE_SQL_PIPELINE=true 时按需解析，避免关闭时也构造全部阶段 */
+  private pipeline?: SQLGenerationPipeline;
 
   /**
    * 处理自然语言查询
@@ -207,12 +256,16 @@ export class QueryOrchestrator {
     const startTime = Date.now();
     const timings: Record<string, number> = {};
 
+    // 数据访问权限决定 SQL 校验范围，也决定能共享哪些缓存
+    const permissions = getDataPermissions(options.user);
+    const dataScope = getDataScopeKey(permissions);
+
     try {
       console.log(`[QueryOrchestrator] Processing NL query: "${query}"`);
 
       // 如果启用缓存，先检查缓存
       if (options.enableCache !== false) {
-        const cachedResult = await this.checkCache(query);
+        const cachedResult = await this.checkCache(query, dataScope);
         if (cachedResult) {
           console.log(`[QueryOrchestrator] Cache hit for query`);
           return {
@@ -279,9 +332,43 @@ export class QueryOrchestrator {
 
       // Step 4: SQL 生成
       const t4 = Date.now();
-      const sqlResult = await this.sqlGenerator.generate(resolvedIntent, context);
+      const sqlResult = await this.generateSQL(resolvedIntent, context);
       timings.sqlGeneration = Date.now() - t4;
       console.log(`[QueryOrchestrator] SQL generated (${timings.sqlGeneration}ms)`);
+
+      // Step 4.5: SQL 校验（按 SQL_VALIDATOR_MODE 记录或拦截）
+      const t4_5 = Date.now();
+      const validation = await this.validateSQL(sqlResult.sql, context, permissions, query);
+      timings.validation = Date.now() - t4_5;
+
+      if (validation.blocked) {
+        return {
+          success: false,
+          errorCode: 'validation_failed',
+          intent: resolvedIntent,
+          error: `查询未通过安全校验：${validation.errors.join('；')}`,
+          metadata: {
+            generatedSQL: sqlResult.sql,
+            explanation: sqlResult.explanation,
+            rowCount: 0,
+            executionTime: 0,
+            fromCache: false,
+            columns: [],
+          },
+          performance: {
+            intentRecognitionTime: timings.intentRecognition,
+            domainInferenceTime: timings.domainInference,
+            metadataRetrievalTime: timings.metadataRetrieval,
+            sqlGenerationTime: timings.sqlGeneration,
+            validationTime: timings.validation,
+            queryExecutionTime: 0,
+            totalTime: Date.now() - startTime,
+          },
+          domainInference: domainInference || undefined,
+        };
+      }
+
+      const warnings = [...(sqlResult.warnings ?? []), ...validation.warnings];
 
       // 如果只是解释查询，不执行
       if (options.explainOnly) {
@@ -303,11 +390,13 @@ export class QueryOrchestrator {
             domainInferenceTime: timings.domainInference,
             metadataRetrievalTime: timings.metadataRetrieval,
             sqlGenerationTime: timings.sqlGeneration,
+            validationTime: timings.validation,
             queryExecutionTime: 0,
             totalTime: Date.now() - startTime,
           },
           domainInference: domainInference || undefined,
-          warnings: sqlResult.warnings,
+          warnings,
+          suggestions: validation.suggestions,
         };
       }
 
@@ -368,16 +457,18 @@ export class QueryOrchestrator {
           domainInferenceTime: timings.domainInference,
           metadataRetrievalTime: timings.metadataRetrieval,
           sqlGenerationTime: timings.sqlGeneration,
+          validationTime: timings.validation,
           queryExecutionTime: timings.queryExecution,
           totalTime: Date.now() - startTime,
         },
         domainInference: domainInference || undefined,
-        warnings: sqlResult.warnings,
+        warnings,
+        suggestions: validation.suggestions,
       };
 
-      // 缓存结果
-      if (options.enableCache !== false && execResult.data) {
-        await this.cacheResult(query, result);
+      // 缓存结果（未通过校验的结果不缓存，避免切换到 enforce 后仍从缓存返回）
+      if (options.enableCache !== false && execResult.data && validation.passed) {
+        await this.cacheResult(query, dataScope, result);
       }
 
       return result;
@@ -560,6 +651,73 @@ export class QueryOrchestrator {
   }
 
   /**
+   * 生成 SQL：ENABLE_SQL_PIPELINE=true 时使用 6 阶段管道，否则使用 SQLGenerator
+   */
+  private async generateSQL(
+    intent: QueryIntent,
+    context: MetadataContext
+  ): Promise<SQLGenerationResult> {
+    if (!isFeatureEnabled('sqlPipeline')) {
+      return this.sqlGenerator.generate(intent, context);
+    }
+
+    this.pipeline ??= getContainer().resolve<SQLGenerationPipeline>(DI_TOKENS.SQLGenerationPipeline);
+    // 管道内置的 Validator 阶段会无条件拦截且不了解用户权限，校验统一交给 validateSQL
+    const { result } = await this.pipeline.generate(intent, context, {}, { disabledStages: ['Validator'] });
+    return result;
+  }
+
+  /**
+   * 执行 SQLValidator（安全、权限、语义、性能分析）
+   *
+   * shadow 模式只记录日志，日志前缀 [SQLValidator]，wouldBlock=true 表示 enforce 模式下会被拦截
+   */
+  private async validateSQL(
+    sql: string,
+    context: MetadataContext,
+    permissions: UserPermissions,
+    query: string
+  ): Promise<SQLValidationOutcome> {
+    const mode = getSqlValidatorMode();
+    if (mode === 'off') {
+      return { blocked: false, passed: true, errors: [], warnings: [], suggestions: [] };
+    }
+
+    try {
+      const result = await this.sqlValidator.validate(sql, context, permissions);
+      const errors = result.errors.map((e) => e.message);
+      const wouldBlock = !result.isValid;
+
+      console.info('[SQLValidator]', JSON.stringify({
+        mode,
+        wouldBlock,
+        errors,
+        userId: permissions.userId,
+        query,
+        sql: sql.substring(0, 500),
+      }));
+
+      return {
+        blocked: mode === 'enforce' && wouldBlock,
+        passed: !wouldBlock,
+        errors,
+        warnings: result.warnings.map((w) => w.message),
+        suggestions: result.optimizationSuggestions.map(({ type, message, impact }) => ({ type, message, impact })),
+      };
+    } catch (error) {
+      console.error('[SQLValidator] 校验异常:', error);
+      // enforce 模式下无法确认安全性时拒绝执行
+      return {
+        blocked: mode === 'enforce',
+        passed: false,
+        errors: ['SQL 校验异常，请稍后重试'],
+        warnings: [],
+        suggestions: [],
+      };
+    }
+  }
+
+  /**
    * 解析实体和时间
    */
   private async resolveEntities(intent: QueryIntent, query: string): Promise<QueryIntent> {
@@ -583,36 +741,50 @@ export class QueryOrchestrator {
   }
 
   /**
+   * 结果缓存 key：数据可见范围不同的用户不共享缓存
+   */
+  private resultCacheKey(query: string, dataScope: string): string {
+    return `nlq:${dataScope}:${query}`;
+  }
+
+  /**
    * 检查缓存
    */
-  private async checkCache(query: string): Promise<QueryResult | null> {
+  private async checkCache(query: string, dataScope: string): Promise<QueryResult | null> {
     try {
-      const cacheKey = `nlq:${query}`;
-      const cached = await this.cacheManager.getResult(cacheKey);
+      const cached = (await this.cacheManager.getResult(
+        this.resultCacheKey(query, dataScope)
+      )) as CachedQueryEntry | null;
 
-      if (cached) {
-        return {
-          success: true,
-          data: cached.data,
-          metadata: {
-            generatedSQL: query, // 使用原始查询作为生成的 SQL
-            explanation: 'Cached result',
-            rowCount: cached.rowCount,
-            executionTime: cached.executionTime,
-            fromCache: true,
-            columns: cached.metadata?.columns.map(c => ({ name: c.name, type: c.type })) || [],
-          },
-          performance: {
-            intentRecognitionTime: 0,
-            metadataRetrievalTime: 0,
-            sqlGenerationTime: 0,
-            queryExecutionTime: 0,
-            totalTime: 0,
-          },
-        };
+      // 缺少 nlq 字段的条目无法还原 SQL 与意图，按未命中处理
+      if (!cached?.nlq) {
+        return null;
       }
 
-      return null;
+      return {
+        success: true,
+        data: cached.data,
+        intent: cached.nlq.intent,
+        metadata: {
+          generatedSQL: cached.nlq.generatedSQL,
+          explanation: cached.nlq.explanation,
+          rowCount: cached.rowCount,
+          executionTime: cached.executionTime,
+          fromCache: true,
+          columns: cached.metadata?.columns.map(c => ({ name: c.name, type: c.type })) || [],
+          usedDatabases: cached.nlq.usedDatabases,
+          usedTables: cached.nlq.usedTables,
+        },
+        warnings: cached.nlq.warnings,
+        suggestions: cached.nlq.suggestions,
+        performance: {
+          intentRecognitionTime: 0,
+          metadataRetrievalTime: 0,
+          sqlGenerationTime: 0,
+          queryExecutionTime: 0,
+          totalTime: 0,
+        },
+      };
     } catch (error) {
       console.error(`[QueryOrchestrator] Cache check failed:`, error);
       return null;
@@ -622,14 +794,12 @@ export class QueryOrchestrator {
   /**
    * 缓存查询结果
    */
-  private async cacheResult(query: string, result: QueryResult): Promise<void> {
+  private async cacheResult(query: string, dataScope: string, result: QueryResult): Promise<void> {
     try {
       if (!result.metadata || !result.data) {
         return; // 没有元数据或数据时不缓存
       }
-      const cacheKey = `nlq:${query}`;
-      // 构建 ExecutionResult 对象
-      const executionResult: import('@/lib/sql/executor/types').ExecutionResult = {
+      const entry: CachedQueryEntry = {
         success: result.success,
         data: result.data,
         executionTime: result.metadata.executionTime,
@@ -641,8 +811,17 @@ export class QueryOrchestrator {
             type: c.type,
           })),
         },
+        nlq: {
+          generatedSQL: result.metadata.generatedSQL,
+          explanation: result.metadata.explanation,
+          intent: result.intent,
+          usedDatabases: result.metadata.usedDatabases,
+          usedTables: result.metadata.usedTables,
+          warnings: result.warnings,
+          suggestions: result.suggestions,
+        },
       };
-      await this.cacheManager.setResult(cacheKey, executionResult);
+      await this.cacheManager.setResult(this.resultCacheKey(query, dataScope), entry);
     } catch (error) {
       console.error(`[QueryOrchestrator] Cache write failed:`, error);
       // 不抛出错误，缓存失败不应影响正常流程

@@ -66,8 +66,14 @@ export class PermissionChecker {
         }
       }
     } catch (error: any) {
-      // 解析失败，可能是语法错误，由语法验证器处理
       console.error('Permission check parse error:', error);
+      // 存在库表限制时无法确认访问范围，拒绝执行；不受限时交由语法验证器处理
+      if (!permissions.unrestricted) {
+        errors.push({
+          type: 'permission',
+          message: '无法解析 SQL，不能确认数据访问权限'
+        });
+      }
     }
 
     return errors;

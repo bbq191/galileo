@@ -66,9 +66,29 @@ export class QueryExecutor {
     this.statisticsTracker.startTracking(queryId, sql, databases, tables);
 
     try {
-      // 1. 检查缓存
+      // 1. 确定主数据源（查询涉及的第一个数据库）
+      const primaryDb = context.tables[0]?.databaseName;
+      if (!primaryDb) {
+        throw new ExecutorErrorClass(
+          ExecutorErrorClass.prototype.constructor.name as any,
+          '无法确定主数据源：上下文中没有表信息'
+        );
+      }
+
+      // 2. 获取数据源 ID
+      const sourceId = context.tables[0].database?.sourceId;
+      if (!sourceId) {
+        throw new ExecutorErrorClass(
+          ExecutorErrorClass.prototype.constructor.name as any,
+          '无法获取数据源 ID'
+        );
+      }
+
+      // 3. 检查缓存
+      // key 包含数据源（库表同名时相同 SQL 结果不同）与 maxRows（决定自动追加的 LIMIT）
+      const resultCacheKey = `source:${sourceId}:rows:${mergedOptions.maxRows}:${sql}`;
       if (mergedOptions.enableCache) {
-        const cached = await this.queryCacheManager.getResult<T>(sql);
+        const cached = await this.queryCacheManager.getResult<T>(resultCacheKey);
 
         if (cached) {
           console.log(`[QueryExecutor] 缓存命中: ${queryId}`);
@@ -81,24 +101,6 @@ export class QueryExecutor {
             fromCache: true,
           };
         }
-      }
-
-      // 2. 确定主数据源（查询涉及的第一个数据库）
-      const primaryDb = context.tables[0]?.databaseName;
-      if (!primaryDb) {
-        throw new ExecutorErrorClass(
-          ExecutorErrorClass.prototype.constructor.name as any,
-          '无法确定主数据源：上下文中没有表信息'
-        );
-      }
-
-      // 3. 获取数据库连接
-      const sourceId = context.tables[0].database?.sourceId;
-      if (!sourceId) {
-        throw new ExecutorErrorClass(
-          ExecutorErrorClass.prototype.constructor.name as any,
-          '无法获取数据源 ID'
-        );
       }
 
       const pool = await this.connectionManager.getConnection(sourceId.toString());
@@ -140,7 +142,7 @@ export class QueryExecutor {
 
       // 7. 缓存结果（由 queryCacheManager 内部判断是否缓存）
       if (mergedOptions.enableCache) {
-        await this.queryCacheManager.setResult(sql, result);
+        await this.queryCacheManager.setResult(resultCacheKey, result);
       }
 
       console.log(

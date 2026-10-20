@@ -12,6 +12,7 @@
 1. [安全概览](#安全概览)
 2. [环境变量配置](#环境变量配置)
 3. [认证与访问控制](#认证与访问控制)
+   - [SQL 校验](#sql-校验)
 4. [速率限制](#速率限制)
 5. [代码混淆与压缩](#代码混淆与压缩)
 6. [安全响应头](#安全响应头)
@@ -143,6 +144,49 @@ import { getUserFromRequest, isAdmin } from '@/lib/auth/permissions';
 const user = getUserFromRequest(request);
 // user.id / user.username / user.role / user.sessionId / user.permissions
 ```
+
+---
+
+## SQL 校验
+
+AI 生成的 SQL 在执行前依次经过两层校验：
+
+1. `SQLGenerator` 内置的基础校验（只允许 SELECT / WITH、危险关键字），始终开启
+2. `SQLValidator` 完整校验（安全检查、权限检查、元数据语义检查、性能分析），由 `SQL_VALIDATOR_MODE` 控制
+
+| 模式 | 行为 |
+|------|------|
+| `off` | 不执行完整校验 |
+| `shadow`（默认） | 执行校验并记录日志，**不拦截**；性能建议照常返回给前端 |
+| `enforce` | 校验不通过时拒绝执行，接口返回 HTTP 422、`errorCode: "validation_failed"` |
+
+校验器自身异常时：`shadow` 放行，`enforce` 拒绝执行。未通过校验的结果不会写入查询缓存。
+
+### 从 shadow 切换到 enforce
+
+每次校验向标准输出写一行 `[SQLValidator] {...}`（不进入 pino 的 `app.log`），
+`wouldBlock=true` 表示在 enforce 模式下会被拦截。使用 `scripts/deploy.sh` 部署时位于 pm2 的输出日志：
+
+```bash
+LOG=~/.pm2/logs/galileo-out.log
+
+# 校验总数与「会被拦截」的数量
+grep -c '\[SQLValidator\]' $LOG
+grep '\[SQLValidator\]' $LOG | grep -c '"wouldBlock":true'
+
+# 逐条查看会被拦截的查询，确认是真实风险还是误判
+grep '\[SQLValidator\]' $LOG | grep '"wouldBlock":true' \
+  | sed 's/.*\[SQLValidator\] //' | jq '{query, errors, sql}'
+```
+
+确认误拦截可以接受后，设置 `SQL_VALIDATOR_MODE=enforce` 并重启。
+
+### 数据访问权限
+
+`lib/auth/data-permissions.ts` 负责把登录用户映射为库表级权限。**当前所有角色都可以查询全部已同步的表**，
+权限检查只拒绝非 SELECT 语句。引入库表级规则时只需修改该文件；存在库表限制时，无法解析的 SQL 会被拒绝。
+
+查询结果缓存按数据可见范围（`getDataScopeKey`）隔离，执行层缓存按数据源和 `maxRows` 隔离。
 
 ---
 

@@ -118,6 +118,40 @@ describe('POST /api/query/execute', () => {
     expect(body).toMatchObject({ success: false, error: 'Unknown column', metadata: { generatedSQL: 'SELECT x FROM t' } });
   });
 
+  it('未通过 SQL 校验：422 + errorCode，并带回被拦截的 SQL', async () => {
+    processNaturalLanguageQuery.mockResolvedValue({
+      success: false,
+      errorCode: 'validation_failed',
+      error: '查询未通过安全校验：检测到严重安全问题',
+      metadata: { generatedSQL: 'SELECT SLEEP(10)', explanation: '', rowCount: 0, executionTime: 0, fromCache: false, columns: [] },
+      performance,
+    });
+
+    const res = await POST(request({ query: '查询' }));
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({
+      success: false,
+      errorCode: 'validation_failed',
+      metadata: { generatedSQL: 'SELECT SLEEP(10)' },
+    });
+  });
+
+  it('把当前用户传给编排器', async () => {
+    processNaturalLanguageQuery.mockResolvedValue({ success: true, data: [], metadata: { columns: [] } });
+
+    await POST(new NextRequest('http://localhost/api/query/execute', {
+      method: 'POST',
+      body: JSON.stringify({ query: '查询' }),
+      headers: { 'x-user-id': '7', 'x-user-role': 'user', 'x-session-id': 'sid-7' },
+    }));
+
+    expect(processNaturalLanguageQuery).toHaveBeenCalledWith('查询', expect.objectContaining({
+      sessionId: 'sid-7',
+      user: { id: '7', role: 'user' },
+    }));
+  });
+
   it('输入校验失败：400 + { error, details }', async () => {
     const res = await POST(request({ query: '' }));
     const body = await res.json();
