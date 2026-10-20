@@ -1,11 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import QueryInput from '@/components/query/QueryInput';
 import SQLPreview from '@/components/query/SQLPreview';
 import ResultTable from '@/components/query/ResultTable';
 import PerformanceMetrics from '@/components/query/PerformanceMetrics';
 import ChartVisualization from '@/components/query/ChartVisualization';
+import { apiFetch } from '@/lib/client/api-fetch';
+
+interface DataSourceOption {
+  id: number;
+  name: string;
+}
 
 interface QueryResult {
   success: boolean;
@@ -20,6 +26,8 @@ interface QueryResult {
       name: string;
       type: string;
     }>;
+    usedDatabases?: string[];
+    dataSourceIds?: number[];
   };
   warnings?: string[];
   optimizationSuggestions?: Array<{
@@ -39,6 +47,18 @@ export default function QueryPage() {
   const [result, setResult] = useState<QueryResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dataSources, setDataSources] = useState<DataSourceOption[]>([]);
+  // 未选择时在全部数据源中检索
+  const [dataSourceId, setDataSourceId] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    apiFetch<DataSourceOption[]>('/api/datasources').then((res) => {
+      if (res.ok) setDataSources(res.data);
+    });
+  }, []);
+
+  const dataSourceNames = (ids?: number[]) =>
+    (ids ?? []).map((id) => dataSources.find((d) => d.id === id)?.name ?? `#${id}`).join('、');
 
   // 执行查询
   const handleExecute = async () => {
@@ -50,35 +70,28 @@ export default function QueryPage() {
     setLoading(true);
     setError(null);
 
-    try {
-      const response = await fetch('/api/query/execute', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+    const res = await apiFetch<any[]>('/api/query/execute', {
+      method: 'POST',
+      json: {
+        query: query.trim(),
+        options: {
+          enableCache: true,
+          maxRows: 10000,
+          timeout: 30000,
+          ...(dataSourceId !== undefined && { dataSourceId }),
         },
-        body: JSON.stringify({
-          query: query.trim(),
-          options: {
-            enableCache: true,
-            maxRows: 10000,
-            timeout: 30000,
-          },
-        }),
-      });
+      },
+    });
 
-      const data: QueryResult = await response.json();
-      setResult(data);
-
-      if (!data.success) {
-        setError(data.error || '查询执行失败');
-      }
-    } catch (err) {
-      console.error('Query execution failed:', err);
-      setError(err instanceof Error ? err.message : '查询执行失败，请稍后重试');
-      setResult(null);
-    } finally {
-      setLoading(false);
+    if (res.ok) {
+      setResult({ success: true, data: res.data, ...res.meta } as QueryResult);
+    } else {
+      // 执行失败或被拦截时仍展示已生成的 SQL
+      const body = res.body as QueryResult | undefined;
+      setResult(body?.metadata ? { ...body, success: false } : null);
+      setError(res.error.message);
     }
+    setLoading(false);
   };
 
   // 预览 SQL（不执行）
@@ -91,43 +104,40 @@ export default function QueryPage() {
     setLoading(true);
     setError(null);
 
-    try {
-      const response = await fetch('/api/query/preview', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+    const res = await apiFetch<{
+      sql: string;
+      explanation: string;
+      dataSourceIds?: number[];
+      warnings?: string[];
+      optimizationSuggestions?: QueryResult['optimizationSuggestions'];
+    }>('/api/query/preview', {
+      method: 'POST',
+      json: {
+        query: query.trim(),
+        ...(dataSourceId !== undefined && { dataSourceId }),
+      },
+    });
+
+    if (res.ok) {
+      // 预览模式：只显示 SQL，不显示结果
+      setResult({
+        success: true,
+        metadata: {
+          generatedSQL: res.data.sql,
+          explanation: res.data.explanation,
+          rowCount: 0,
+          executionTime: 0,
+          fromCache: false,
+          columns: [],
+          dataSourceIds: res.data.dataSourceIds,
         },
-        body: JSON.stringify({
-          query: query.trim(),
-        }),
+        warnings: res.data.warnings,
+        optimizationSuggestions: res.data.optimizationSuggestions,
       });
-
-      const data = await response.json();
-
-      if (data.success) {
-        // 预览模式：只显示 SQL，不显示结果
-        setResult({
-          success: true,
-          metadata: {
-            generatedSQL: data.sql,
-            explanation: data.explanation,
-            rowCount: 0,
-            executionTime: 0,
-            fromCache: false,
-            columns: [],
-          },
-          warnings: data.warnings,
-          optimizationSuggestions: data.optimizationSuggestions,
-        });
-      } else {
-        setError(data.error || 'SQL 生成失败');
-      }
-    } catch (err) {
-      console.error('SQL preview failed:', err);
-      setError(err instanceof Error ? err.message : 'SQL 预览失败，请稍后重试');
-    } finally {
-      setLoading(false);
+    } else {
+      setError(res.error.message);
     }
+    setLoading(false);
   };
 
   // 清除结果
@@ -138,6 +148,25 @@ export default function QueryPage() {
 
   return (
     <div className="space-y-6">
+        {/* 数据源范围 */}
+        {dataSources.length > 1 && (
+          <div className="flex items-center gap-2">
+            <span className="text-sm opacity-70 shrink-0">数据源</span>
+            <select
+              className="select select-bordered select-sm w-full max-w-xs"
+              value={dataSourceId ?? ''}
+              onChange={(e) => setDataSourceId(e.target.value ? Number(e.target.value) : undefined)}
+            >
+              <option value="">全部数据源</option>
+              {dataSources.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* 查询输入 */}
         <QueryInput
           value={query}
@@ -176,6 +205,16 @@ export default function QueryPage() {
         {/* 查询结果 */}
         {result && (
           <>
+            {/* 实际涉及的数据源与库 */}
+            {!!result.metadata?.dataSourceIds?.length && (
+              <div className="text-sm opacity-70">
+                数据源：{dataSourceNames(result.metadata.dataSourceIds)}
+                {!!result.metadata.usedDatabases?.length && (
+                  <> · 库：{result.metadata.usedDatabases.join('、')}</>
+                )}
+              </div>
+            )}
+
             {/* SQL 预览 */}
             {result.metadata?.generatedSQL && (
               <SQLPreview

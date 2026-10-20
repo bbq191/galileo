@@ -27,13 +27,17 @@ export async function POST(request: NextRequest) {
     // 使用 QueryOrchestrator 处理查询（仅解释，不执行）
     const queryOrchestrator = getQueryOrchestrator() as QueryOrchestrator;
     const currentUser = getUserFromRequest(request);
+    const dataSourceId = Number.isInteger(body.dataSourceId) && body.dataSourceId! > 0
+      ? body.dataSourceId
+      : undefined;
     const result = await queryOrchestrator.processNaturalLanguageQuery(body.query, {
       explainOnly: true,
       user: { id: currentUser.id, role: currentUser.role },
+      dataSourceId,
     });
 
     if (!result.success || !result.metadata) {
-      const status = result.errorCode === 'validation_failed'
+      const status = result.errorCode
         ? 422
         : result.error?.includes('未找到') ? 404 : 500;
       return NextResponse.json({
@@ -53,6 +57,7 @@ export async function POST(request: NextRequest) {
       sql: result.metadata.generatedSQL,
       explanation: result.metadata.explanation,
       usedTables: result.metadata.usedTables,
+      dataSourceIds: result.metadata.dataSourceIds,
       warnings: result.warnings,
       optimizationSuggestions: result.suggestions,
     } as PreviewQueryResponse);

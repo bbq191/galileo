@@ -15,8 +15,6 @@
 export const FEATURE_FLAGS = {
   /** 查询主链路使用 SQLGenerationPipeline 替代 SQLGenerator */
   sqlPipeline: 'ENABLE_SQL_PIPELINE',
-  /** 按数据源分组执行跨数据源查询 */
-  crossSourceExecution: 'ENABLE_CROSS_SOURCE_EXECUTION',
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;

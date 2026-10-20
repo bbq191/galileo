@@ -14,6 +14,7 @@ export const QueryExecuteSchema = z.object({
       enableCache: z.boolean().optional(),
       maxRows: z.number().int().min(1).max(10000).optional(),
       timeout: z.number().int().min(1000).max(300000).optional(), // 1秒到5分钟
+      dataSourceId: z.number().int().positive().optional(), // 只在指定数据源中检索
     })
     .optional(),
 });

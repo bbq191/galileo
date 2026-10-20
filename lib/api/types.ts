@@ -193,8 +193,8 @@ export interface ExecuteQueryResponse {
     impact: string;
   }>;
   error?: string;
-  /** validation_failed：SQL 未通过校验（HTTP 422） */
-  errorCode?: 'validation_failed';
+  /** validation_failed：SQL 未通过校验；cross_source_unsupported：涉及不同实例的多个数据源（均为 HTTP 422） */
+  errorCode?: 'validation_failed' | 'cross_source_unsupported';
   errors?: Array<{
     type: string;
     message: string;
@@ -206,6 +206,7 @@ export interface ExecuteQueryResponse {
  */
 export interface PreviewQueryRequest {
   query: string;  // 自然语言查询
+  dataSourceId?: number;  // 只在指定数据源中检索
 }
 
 /**
@@ -243,6 +244,8 @@ export interface PreviewQueryResponse {
   };
   usedTables?: string[];
   usedColumns?: string[];
+  /** 涉及的数据源 ID */
+  dataSourceIds?: number[];
   /** 与 ExecuteQueryResponse 保持一致的顶层字段 */
   warnings?: string[];
   optimizationSuggestions?: Array<{
@@ -251,8 +254,8 @@ export interface PreviewQueryResponse {
     impact: string;
   }>;
   error?: string;
-  /** validation_failed：SQL 未通过校验（HTTP 422） */
-  errorCode?: 'validation_failed';
+  /** validation_failed：SQL 未通过校验；cross_source_unsupported：涉及不同实例的多个数据源（均为 HTTP 422） */
+  errorCode?: 'validation_failed' | 'cross_source_unsupported';
 }
 
 /**

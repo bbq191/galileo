@@ -21,6 +21,7 @@ import type {
   QueryStatistics,
 } from './types';
 import { ExecutorError as ExecutorErrorClass } from './types';
+import { collectSourceIds, planSources, type SourcePlan } from './source-router';
 import { DI_TOKENS } from '@/lib/di/tokens';
 import type { QueryStatisticsTracker } from './query-statistics-tracker';
 
@@ -66,27 +67,12 @@ export class QueryExecutor {
     this.statisticsTracker.startTracking(queryId, sql, databases, tables);
 
     try {
-      // 1. 确定主数据源（查询涉及的第一个数据库）
-      const primaryDb = context.tables[0]?.databaseName;
-      if (!primaryDb) {
-        throw new ExecutorErrorClass(
-          ExecutorErrorClass.prototype.constructor.name as any,
-          '无法确定主数据源：上下文中没有表信息'
-        );
-      }
-
-      // 2. 获取数据源 ID
-      const sourceId = context.tables[0].database?.sourceId;
-      if (!sourceId) {
-        throw new ExecutorErrorClass(
-          ExecutorErrorClass.prototype.constructor.name as any,
-          '无法获取数据源 ID'
-        );
-      }
+      // 1-2. 确定执行的数据源（多数据源时检查是否位于同一实例）
+      const { sourceId, sourceIds } = await this.resolveSource(context);
 
       // 3. 检查缓存
       // key 包含数据源（库表同名时相同 SQL 结果不同）与 maxRows（决定自动追加的 LIMIT）
-      const resultCacheKey = `source:${sourceId}:rows:${mergedOptions.maxRows}:${sql}`;
+      const resultCacheKey = `source:${sourceIds.join(',')}:rows:${mergedOptions.maxRows}:${sql}`;
       if (mergedOptions.enableCache) {
         const cached = await this.queryCacheManager.getResult<T>(resultCacheKey);
 
@@ -169,12 +155,35 @@ export class QueryExecutor {
       return {
         success: false,
         error: normalizedError,
+        errorType: error instanceof ExecutorErrorClass ? error.type : undefined,
         executionTime,
         rowCount: 0,
         fromCache: false,
         metadata: { columns: [] },
       };
     }
+  }
+
+  /**
+   * 确定查询在哪个数据源上执行（见 source-router.ts）
+   *
+   * 编排器在生成 SQL 前调用，提前拒绝跨实例查询以节省 AI 调用；execute 内部会再次调用。
+   *
+   * @throws ExecutorError CROSS_SOURCE_UNSUPPORTED 多个数据源位于不同实例
+   */
+  async resolveSource(context: MetadataContext): Promise<SourcePlan> {
+    const sourceIds = collectSourceIds(context);
+    if (sourceIds.length === 1) {
+      return { sourceId: sourceIds[0], sourceIds };
+    }
+
+    const endpoints = await Promise.all(
+      sourceIds.map(async (id) => {
+        const { host, port } = (await this.connectionManager.getConnection(id)).getConfig();
+        return { sourceId: id, host, port };
+      })
+    );
+    return planSources(endpoints, context);
   }
 
   /**

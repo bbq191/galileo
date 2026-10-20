@@ -52,6 +52,8 @@ export interface ExecutionResult<T = any> {
   data?: T[];
   /** 错误信息 */
   error?: string;
+  /** 错误类型（ExecutorError 抛出时） */
+  errorType?: ExecutorErrorType;
   /** 执行耗时（毫秒） */
   executionTime: number;
   /** 返回行数 */
@@ -127,6 +129,8 @@ export enum ExecutorErrorType {
   PERMISSION_ERROR = 'PERMISSION_ERROR',
   /** 表或字段不存在 */
   NOT_FOUND_ERROR = 'NOT_FOUND_ERROR',
+  /** 查询涉及位于不同实例的多个数据源 */
+  CROSS_SOURCE_UNSUPPORTED = 'CROSS_SOURCE_UNSUPPORTED',
   /** 未知错误 */
   UNKNOWN_ERROR = 'UNKNOWN_ERROR',
 }

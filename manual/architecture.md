@@ -236,37 +236,56 @@
 ### 3.1 自然语言查询流程
 
 ```
-用户输入
+用户输入（可选：指定数据源）
     │
     ▼
-[API] /api/query/execute
+[API] /api/query/execute ── middleware：登录校验、身份注入、限流
     │
     ▼
-[缓存检查] ─── 命中 ──→ 返回结果
+[结果缓存] key = 数据可见范围 + 指定数据源 + 问题 ─── 命中 ──→ 返回结果
     │ 未命中
     ▼
-[意图识别] IntentRecognizer
+[意图识别] IntentRecognizer → [业务域推断] QueryDomainInferencer → [实体/时间解析]
     │
     ▼
-[元数据检索] MetadataRetriever
+[元数据检索] MetadataRetriever（指定数据源时只在该数据源的表中检索）
     │
     ▼
-[SQL生成] SQLGenerationPipeline
+[数据源路由] QueryExecutor.resolveSource ── 跨实例 ──→ 422 cross_source_unsupported（不调用 AI）
     │
     ▼
-[SQL验证] SQLValidator
+[SQL 生成] SQLGenerator，或 SQLGenerationPipeline（ENABLE_SQL_PIPELINE=true）
     │
     ▼
-[执行] QueryExecutor
+[SQL 校验] SQLValidator（SQL_VALIDATOR_MODE：off / shadow / enforce）── enforce 不通过 ──→ 422 validation_failed
     │
     ▼
-[审计] AuditOrchestrator
+[执行] QueryExecutor（执行层缓存 key = 数据源 + maxRows + SQL）
     │
     ▼
-返回结果
+[审计] AuditOrchestrator（异步）
+    │
+    ▼
+返回结果（含 dataSourceIds、usedDatabases）
 ```
 
-详见 `lib/di/orchestrators/query.orchestrator.ts` 第 50-150 行。
+详见 `lib/di/orchestrators/query.orchestrator.ts` 的 `processNaturalLanguageQuery`。
+
+#### 多数据源执行规则
+
+元数据检索可能命中多个数据源的表，执行方式由 `lib/sql/executor/source-router.ts` 决定：
+
+| 情况 | 行为 |
+|------|------|
+| 只涉及一个数据源 | 在该数据源执行 |
+| 多个数据源，位于同一实例（host 忽略大小写 + port 相同） | 用第一个数据源的连接执行跨库 SQL（SQL 已带库名前缀） |
+| 多个数据源，位于不同实例 | 返回 422 `cross_source_unsupported`，提示用户在查询页指定数据源 |
+
+限制：
+
+- 跨实例查询（应用层 JOIN）未实现
+- 同一台服务器用不同主机名（IP 与域名）登记的数据源会被视为不同实例
+- 同实例执行时使用第一个数据源的账号，该账号需要对所有涉及的库有读权限
 
 ### 3.2 元数据同步流程
 

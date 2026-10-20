@@ -67,7 +67,23 @@ export class SemanticSearch {
    * 生成缓存键
    */
   private getCacheKey(query: string, options: SearchOptions): string {
-    return `${query}:${options.limit || 10}:${options.threshold || 0.3}`;
+    const domains = options.domainIds?.join(',') || 'all';
+    const source = options.dataSourceId ?? 'all';
+    return `${query}:${options.limit || 10}:${options.threshold || 0.3}:d=${domains}:s=${source}`;
+  }
+
+  /**
+   * 业务域、数据源过滤条件（作用于 tableMeta.database）
+   */
+  private databaseFilter(options: SearchOptions): Record<string, unknown> | undefined {
+    const filter: Record<string, unknown> = {};
+    if (options.domainIds && options.domainIds.length > 0) {
+      filter.domainId = { in: options.domainIds };
+    }
+    if (options.dataSourceId !== undefined) {
+      filter.sourceId = options.dataSourceId;
+    }
+    return Object.keys(filter).length > 0 ? filter : undefined;
   }
 
   /**
@@ -186,13 +202,10 @@ export class SemanticSearch {
       ],
     };
 
-    // 如果指定了业务域，添加过滤条件
-    if (options.domainIds && options.domainIds.length > 0) {
-      whereCondition.database = {
-        domainId: {
-          in: options.domainIds,
-        },
-      };
+    // 业务域、数据源过滤
+    const databaseFilter = this.databaseFilter(options);
+    if (databaseFilter) {
+      whereCondition.database = databaseFilter;
     }
 
     const tables = await this.prisma.tableMeta.findMany({
@@ -233,11 +246,10 @@ export class SemanticSearch {
       ],
     };
 
-    // 如果指定了业务域，添加过滤条件
-    if (options.domainIds && options.domainIds.length > 0) {
-      whereCondition.AND = [
-        { database: { domainId: { in: options.domainIds } } },
-      ];
+    // 业务域、数据源过滤
+    const databaseFilter = this.databaseFilter(options);
+    if (databaseFilter) {
+      whereCondition.AND = [{ database: databaseFilter }];
     }
 
     const tables = await this.prisma.tableMeta.findMany({
@@ -333,7 +345,7 @@ export class SemanticSearch {
     const limit = options.limit || 10;
 
     // 检查缓存（懒加载优化）
-    const cacheKey = `${query}:${tableId || 'all'}:${limit}`;
+    const cacheKey = `${query}:${tableId || 'all'}:${limit}:s=${options.dataSourceId ?? 'all'}`;
     const cached = this.getFromCache(this.columnSearchCache, cacheKey);
     if (cached) {
       console.log(`字段搜索缓存命中: ${cacheKey}`);
@@ -351,6 +363,11 @@ export class SemanticSearch {
 
       if (tableId) {
         where.tableId = tableId;
+      }
+
+      const databaseFilter = this.databaseFilter(options);
+      if (databaseFilter) {
+        where.table = { database: databaseFilter };
       }
 
       const columns = await this.prisma.columnMeta.findMany({
@@ -439,13 +456,10 @@ export class SemanticSearch {
         id: { in: tableIds },
       };
 
-      // 如果指定了业务域，添加过滤条件
-      if (options.domainIds && options.domainIds.length > 0) {
-        whereCondition.database = {
-          domainId: {
-            in: options.domainIds,
-          },
-        };
+      // 业务域、数据源过滤
+      const databaseFilter = this.databaseFilter(options);
+      if (databaseFilter) {
+        whereCondition.database = databaseFilter;
       }
 
       const tables = await this.prisma.tableMeta.findMany({
@@ -544,12 +558,14 @@ export class SemanticSearch {
     const limit = options.limit || 10;
     const threshold = options.threshold || 0.3;
     const results = new Map<string, TableSearchResult[]>();
+    const databaseFilter = this.databaseFilter(options);
 
     try {
       // 批量精确匹配（懒加载优化：不加载列数据）
       const exactMatches = await this.prisma.tableMeta.findMany({
         where: {
           tableName: { in: queries },
+          ...(databaseFilter && { database: databaseFilter }),
         },
         include: {
           database: true,
@@ -585,6 +601,7 @@ export class SemanticSearch {
               { tableComment: { contains: query } },
               { semanticDescription: { contains: query } },
             ]),
+            ...(databaseFilter && { database: databaseFilter }),
           },
           include: {
             database: true,

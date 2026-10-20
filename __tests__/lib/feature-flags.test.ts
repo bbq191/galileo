@@ -22,9 +22,8 @@ describe('feature-flags', () => {
   });
 
   it('getFeatureFlags 返回全部开关', () => {
-    process.env.ENABLE_CROSS_SOURCE_EXECUTION = 'true';
-    delete process.env.ENABLE_SQL_PIPELINE;
+    process.env.ENABLE_SQL_PIPELINE = 'true';
 
-    expect(getFeatureFlags()).toEqual({ sqlPipeline: false, crossSourceExecution: true });
+    expect(getFeatureFlags()).toEqual({ sqlPipeline: true });
   });
 });

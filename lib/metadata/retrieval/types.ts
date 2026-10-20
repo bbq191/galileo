@@ -105,6 +105,8 @@ export interface SearchOptions {
   includeIndexes?: boolean;
   /** 业务域过滤（按业务域 ID 列表） */
   domainIds?: number[];
+  /** 数据源过滤（只在指定数据源的表中检索） */
+  dataSourceId?: number;
   /** 查询业务域推断结果 */
   domainInference?: {
     domainId: number;

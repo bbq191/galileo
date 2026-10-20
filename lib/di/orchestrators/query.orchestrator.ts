@@ -25,7 +25,7 @@ import type { SQLGenerationResult } from '@/lib/sql/generator/types';
 import type { SQLGenerationPipeline } from '@/lib/sql/generator/pipeline/sql-generation-pipeline';
 import type { SQLValidator } from '@/lib/sql/validator/sql-validator';
 import type { UserPermissions } from '@/lib/sql/validator/types';
-import type { ExecutionResult } from '@/lib/sql/executor/types';
+import { ExecutorError, ExecutorErrorType, type ExecutionResult } from '@/lib/sql/executor/types';
 import { getContainer } from '../container';
 import { isFeatureEnabled, getSqlValidatorMode } from '@/lib/feature-flags';
 import { getDataPermissions, getDataScopeKey, type QueryUser } from '@/lib/auth/data-permissions';
@@ -51,6 +51,9 @@ export interface QueryOptions {
 
   /** 当前用户（决定数据访问权限与缓存隔离范围） */
   user?: QueryUser;
+
+  /** 只在指定数据源中检索表 */
+  dataSourceId?: number;
 }
 
 /**
@@ -94,6 +97,9 @@ export interface QueryResult {
 
     /** 使用的表 */
     usedTables?: string[];
+
+    /** 涉及的数据源 ID */
+    dataSourceIds?: number[];
 
     /** 使用的列 */
     usedColumns?: string[];
@@ -139,8 +145,12 @@ export interface QueryResult {
   /** 错误信息 */
   error?: string;
 
-  /** 错误类型：validation_failed 表示 SQL 未通过校验（SQL_VALIDATOR_MODE=enforce） */
-  errorCode?: 'validation_failed';
+  /**
+   * 错误类型
+   * - validation_failed：SQL 未通过校验（SQL_VALIDATOR_MODE=enforce）
+   * - cross_source_unsupported：查询涉及位于不同实例的多个数据源
+   */
+  errorCode?: 'validation_failed' | 'cross_source_unsupported';
 }
 
 /**
@@ -167,6 +177,7 @@ interface CachedQueryEntry extends ExecutionResult {
     intent?: QueryIntent;
     usedDatabases?: string[];
     usedTables?: string[];
+    dataSourceIds?: number[];
     warnings?: string[];
     suggestions?: QueryResult['suggestions'];
   };
@@ -265,7 +276,7 @@ export class QueryOrchestrator {
 
       // 如果启用缓存，先检查缓存
       if (options.enableCache !== false) {
-        const cachedResult = await this.checkCache(query, dataScope);
+        const cachedResult = await this.checkCache(query, dataScope, options.dataSourceId);
         if (cachedResult) {
           console.log(`[QueryOrchestrator] Cache hit for query`);
           return {
@@ -306,6 +317,7 @@ export class QueryOrchestrator {
       const t3 = Date.now();
       const context = await this.metadataRetriever.retrieveContext(resolvedIntent, {
         domainInference: domainInference || undefined,
+        dataSourceId: options.dataSourceId,
       });
       timings.metadataRetrieval = Date.now() - t3;
       console.log(
@@ -328,6 +340,34 @@ export class QueryOrchestrator {
           },
           domainInference: domainInference || undefined,
         };
+      }
+
+      const dataSourceIds = Array.from(
+        new Set(context.tables.map(t => t.database?.sourceId).filter((id): id is number => id !== undefined))
+      );
+
+      // Step 3.5: 多数据源检查（在调用 AI 生成 SQL 之前拒绝无法执行的跨实例查询）
+      try {
+        await this.queryExecutor.resolveSource(context);
+      } catch (error) {
+        if (error instanceof ExecutorError && error.type === ExecutorErrorType.CROSS_SOURCE_UNSUPPORTED) {
+          return {
+            success: false,
+            errorCode: 'cross_source_unsupported',
+            intent: resolvedIntent,
+            error: error.message,
+            performance: {
+              intentRecognitionTime: timings.intentRecognition,
+              domainInferenceTime: timings.domainInference,
+              metadataRetrievalTime: timings.metadataRetrieval,
+              sqlGenerationTime: 0,
+              queryExecutionTime: 0,
+              totalTime: Date.now() - startTime,
+            },
+            domainInference: domainInference || undefined,
+          };
+        }
+        throw error;
       }
 
       // Step 4: SQL 生成
@@ -384,6 +424,7 @@ export class QueryOrchestrator {
             columns: [],
             usedDatabases: Array.from(new Set(context.tables.map(t => t.databaseName))),
             usedTables: context.tables.map(t => t.tableName),
+            dataSourceIds,
           },
           performance: {
             intentRecognitionTime: timings.intentRecognition,
@@ -415,6 +456,9 @@ export class QueryOrchestrator {
       if (!execResult.success) {
         return {
           success: false,
+          errorCode: execResult.errorType === ExecutorErrorType.CROSS_SOURCE_UNSUPPORTED
+            ? 'cross_source_unsupported'
+            : undefined,
           intent: resolvedIntent,
           error: execResult.error || 'Query execution failed',
           metadata: {
@@ -451,6 +495,7 @@ export class QueryOrchestrator {
           columns: execResult.metadata.columns,
           usedDatabases: Array.from(new Set(context.tables.map(t => t.databaseName))),
           usedTables: context.tables.map(t => t.tableName),
+          dataSourceIds,
         },
         performance: {
           intentRecognitionTime: timings.intentRecognition,
@@ -468,7 +513,7 @@ export class QueryOrchestrator {
 
       // 缓存结果（未通过校验的结果不缓存，避免切换到 enforce 后仍从缓存返回）
       if (options.enableCache !== false && execResult.data && validation.passed) {
-        await this.cacheResult(query, dataScope, result);
+        await this.cacheResult(query, dataScope, options.dataSourceId, result);
       }
 
       return result;
@@ -743,17 +788,21 @@ export class QueryOrchestrator {
   /**
    * 结果缓存 key：数据可见范围不同的用户不共享缓存
    */
-  private resultCacheKey(query: string, dataScope: string): string {
-    return `nlq:${dataScope}:${query}`;
+  private resultCacheKey(query: string, dataScope: string, dataSourceId?: number): string {
+    return `nlq:${dataScope}:src=${dataSourceId ?? 'any'}:${query}`;
   }
 
   /**
    * 检查缓存
    */
-  private async checkCache(query: string, dataScope: string): Promise<QueryResult | null> {
+  private async checkCache(
+    query: string,
+    dataScope: string,
+    dataSourceId?: number
+  ): Promise<QueryResult | null> {
     try {
       const cached = (await this.cacheManager.getResult(
-        this.resultCacheKey(query, dataScope)
+        this.resultCacheKey(query, dataScope, dataSourceId)
       )) as CachedQueryEntry | null;
 
       // 缺少 nlq 字段的条目无法还原 SQL 与意图，按未命中处理
@@ -774,6 +823,7 @@ export class QueryOrchestrator {
           columns: cached.metadata?.columns.map(c => ({ name: c.name, type: c.type })) || [],
           usedDatabases: cached.nlq.usedDatabases,
           usedTables: cached.nlq.usedTables,
+          dataSourceIds: cached.nlq.dataSourceIds,
         },
         warnings: cached.nlq.warnings,
         suggestions: cached.nlq.suggestions,
@@ -794,7 +844,12 @@ export class QueryOrchestrator {
   /**
    * 缓存查询结果
    */
-  private async cacheResult(query: string, dataScope: string, result: QueryResult): Promise<void> {
+  private async cacheResult(
+    query: string,
+    dataScope: string,
+    dataSourceId: number | undefined,
+    result: QueryResult
+  ): Promise<void> {
     try {
       if (!result.metadata || !result.data) {
         return; // 没有元数据或数据时不缓存
@@ -817,11 +872,12 @@ export class QueryOrchestrator {
           intent: result.intent,
           usedDatabases: result.metadata.usedDatabases,
           usedTables: result.metadata.usedTables,
+          dataSourceIds: result.metadata.dataSourceIds,
           warnings: result.warnings,
           suggestions: result.suggestions,
         },
       };
-      await this.cacheManager.setResult(this.resultCacheKey(query, dataScope), entry);
+      await this.cacheManager.setResult(this.resultCacheKey(query, dataScope, dataSourceId), entry);
     } catch (error) {
       console.error(`[QueryOrchestrator] Cache write failed:`, error);
       // 不抛出错误，缓存失败不应影响正常流程

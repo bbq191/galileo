@@ -124,7 +124,7 @@ export const POST = withQueryRateLimit(async (request: Request) => {
         optimizationSuggestions: result.suggestions,
       } as ExecuteQueryResponse);
     } else {
-      const status = result.errorCode === 'validation_failed'
+      const status = result.errorCode
         ? 422
         : result.error?.includes('未找到') ? 404 : 500;
       return NextResponse.json({

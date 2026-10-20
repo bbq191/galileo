@@ -137,6 +137,30 @@ describe('POST /api/query/execute', () => {
     });
   });
 
+  it('跨实例查询：422 + cross_source_unsupported', async () => {
+    processNaturalLanguageQuery.mockResolvedValue({
+      success: false,
+      errorCode: 'cross_source_unsupported',
+      error: '查询涉及位于不同数据库实例的多个数据源',
+      performance,
+    });
+
+    const res = await POST(request({ query: '查询' }));
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ errorCode: 'cross_source_unsupported' });
+  });
+
+  it('options.dataSourceId 透传给编排器，非法值被拒绝', async () => {
+    processNaturalLanguageQuery.mockResolvedValue({ success: true, data: [], metadata: { columns: [] } });
+
+    await POST(request({ query: '查询', options: { dataSourceId: 3 } }));
+    expect(processNaturalLanguageQuery).toHaveBeenLastCalledWith('查询', expect.objectContaining({ dataSourceId: 3 }));
+
+    const res = await POST(request({ query: '查询', options: { dataSourceId: -1 } }));
+    expect(res.status).toBe(400);
+  });
+
   it('把当前用户传给编排器', async () => {
     processNaturalLanguageQuery.mockResolvedValue({ success: true, data: [], metadata: { columns: [] } });
 

@@ -99,6 +99,7 @@ export class MetadataRetriever {
           {
             limit: 5,
             threshold: 0.3,
+            dataSourceId: options.dataSourceId,
           }
         );
 
@@ -119,6 +120,7 @@ export class MetadataRetriever {
         const results = await this.semanticSearch.searchTables(tableHint, {
           limit: 5,
           threshold: 0.3,
+          dataSourceId: options.dataSourceId,
         });
 
         const exactMatches = results.filter(r => r.score >= 0.95);
@@ -140,7 +142,7 @@ export class MetadataRetriever {
           const columnResults = await this.semanticSearch.searchColumns(
             columnHint,
             undefined,
-            { limit: 3 }
+            { limit: 3, dataSourceId: options.dataSourceId }
           );
 
           // 将字段所属的表加入结果

@@ -8,6 +8,7 @@ jest.mock('@/lib/di/container', () => ({
 
 import { QueryOrchestrator } from '@/lib/di/orchestrators/query.orchestrator';
 import { UserRole } from '@/lib/auth/permissions';
+import { ExecutorError, ExecutorErrorType } from '@/lib/sql/executor/types';
 
 const SQL = 'SELECT COUNT(*) FROM `db`.`t`';
 
@@ -41,7 +42,8 @@ function createOrchestrator() {
     },
     crossDbHandler: {},
     queryExecutor: {
-      execute: jest.fn(async () => ({
+      resolveSource: jest.fn(async (..._args: any[]): Promise<any> => ({ sourceId: '1', sourceIds: ['1'] })),
+      execute: jest.fn(async (..._args: any[]): Promise<any> => ({
         success: true,
         data: [{ total: 1 }],
         rowCount: 1,
@@ -56,7 +58,7 @@ function createOrchestrator() {
         cache.set(key, value);
       }),
     },
-    metadataRetriever: { retrieveContext: jest.fn(async () => context) },
+    metadataRetriever: { retrieveContext: jest.fn(async (..._args: any[]) => context) },
     sqlValidator: { validate: jest.fn(async (..._args: any[]): Promise<any> => validationResult()) },
   };
 
@@ -204,12 +206,14 @@ describe('QueryOrchestrator - SQL 生成路径', () => {
 });
 
 describe('QueryOrchestrator - 结果缓存', () => {
-  it('缓存 key 包含数据可见范围', async () => {
+  it('缓存 key 包含数据可见范围与指定的数据源', async () => {
     const { orchestrator, deps } = createOrchestrator();
 
     await orchestrator.processNaturalLanguageQuery('统计总数');
+    expect(deps.cacheManager.setResult).toHaveBeenLastCalledWith('nlq:all:src=any:统计总数', expect.anything());
 
-    expect(deps.cacheManager.setResult).toHaveBeenCalledWith('nlq:all:统计总数', expect.anything());
+    await orchestrator.processNaturalLanguageQuery('统计总数', { dataSourceId: 1 });
+    expect(deps.cacheManager.setResult).toHaveBeenLastCalledWith('nlq:all:src=1:统计总数', expect.anything());
   });
 
   it('缓存命中时返回真实的 SQL、意图与建议，而不是自然语言原文', async () => {
@@ -227,11 +231,71 @@ describe('QueryOrchestrator - 结果缓存', () => {
 
   it('旧格式缓存条目（缺少 nlq）按未命中处理', async () => {
     const { orchestrator, deps, cache } = createOrchestrator();
-    cache.set('nlq:all:统计总数', { success: true, data: [], rowCount: 0, executionTime: 0, fromCache: false, metadata: { columns: [] } });
+    cache.set('nlq:all:src=any:统计总数', { success: true, data: [], rowCount: 0, executionTime: 0, fromCache: false, metadata: { columns: [] } });
 
     const result = await orchestrator.processNaturalLanguageQuery('统计总数');
 
     expect(result.metadata?.fromCache).toBe(false);
     expect(deps.sqlGenerator.generate).toHaveBeenCalled();
+  });
+});
+
+describe('QueryOrchestrator - 多数据源', () => {
+  it('把指定的数据源传给元数据检索，并在结果中返回涉及的数据源', async () => {
+    const { orchestrator, deps } = createOrchestrator();
+
+    const result = await orchestrator.processNaturalLanguageQuery('统计总数', { dataSourceId: 1, enableCache: false });
+
+    expect(deps.metadataRetriever.retrieveContext).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ dataSourceId: 1 })
+    );
+    expect(result.metadata?.dataSourceIds).toEqual([1]);
+  });
+
+  it('跨实例：在生成 SQL 之前返回 cross_source_unsupported，不调用 AI', async () => {
+    const { orchestrator, deps } = createOrchestrator();
+    deps.queryExecutor.resolveSource.mockRejectedValue(
+      new ExecutorError(ExecutorErrorType.CROSS_SOURCE_UNSUPPORTED, '查询涉及位于不同数据库实例的多个数据源')
+    );
+
+    const result = await orchestrator.processNaturalLanguageQuery('统计总数');
+
+    expect(result).toMatchObject({
+      success: false,
+      errorCode: 'cross_source_unsupported',
+      error: '查询涉及位于不同数据库实例的多个数据源',
+    });
+    expect(result.intent).toBeDefined();
+    expect(deps.sqlGenerator.generate).not.toHaveBeenCalled();
+    expect(deps.queryExecutor.execute).not.toHaveBeenCalled();
+  });
+
+  it('执行阶段返回 CROSS_SOURCE_UNSUPPORTED 时同样映射错误码', async () => {
+    const { orchestrator, deps } = createOrchestrator();
+    deps.queryExecutor.execute.mockResolvedValue({
+      success: false,
+      error: '跨实例',
+      errorType: ExecutorErrorType.CROSS_SOURCE_UNSUPPORTED,
+      executionTime: 0,
+      rowCount: 0,
+      fromCache: false,
+      metadata: { columns: [] },
+    });
+
+    const result = await orchestrator.processNaturalLanguageQuery('统计总数', { enableCache: false });
+
+    expect(result.errorCode).toBe('cross_source_unsupported');
+  });
+
+  it('其他数据源检查错误（如连接不可用）不吞掉', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { orchestrator, deps } = createOrchestrator();
+    deps.queryExecutor.resolveSource.mockRejectedValue(new Error('Connection 2 is unhealthy'));
+
+    const result = await orchestrator.processNaturalLanguageQuery('统计总数');
+
+    expect(result).toMatchObject({ success: false, error: 'Connection 2 is unhealthy' });
+    expect(result.errorCode).toBeUndefined();
   });
 });
