@@ -55,3 +55,23 @@ export interface HealthResponse {
 
 /** 请求 /api/health 时使用的 apiFetch 选项 */
 export const HEALTH_FETCH_OPTIONS = { envelope: 'none', acceptStatuses: [503] } as const;
+
+export type UserRoleName = 'admin' | 'user' | 'guest';
+
+/**
+ * GET /api/auth/me 的 data 字段
+ */
+export interface AuthMe {
+  user: { id: string; username: string; role: UserRoleName };
+  permissions: string[];
+  /** Access Token 过期时间（毫秒时间戳），API Key 调用时为 null */
+  expiresAt: number | null;
+}
+
+/**
+ * POST /api/auth/login、POST /api/auth/refresh 的 data 字段
+ */
+export interface AuthSession {
+  user: { id: string; username: string; displayName: string | null; role: UserRoleName };
+  expiresAt: number;
+}

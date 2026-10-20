@@ -553,3 +553,29 @@ model SystemAlert {
   @@index([createdAt])
   @@map("system_alerts")
 }
+
+// ============================================
+// 用户与认证
+// ============================================
+
+enum UserRole {
+  admin
+  user
+  guest
+}
+
+model User {
+  id           Int       @id @default(autoincrement())
+  username     String    @unique @db.VarChar(64)
+  passwordHash String    @map("password_hash") @db.VarChar(255)     // scrypt 哈希，见 lib/auth/password.ts
+  displayName  String?   @map("display_name") @db.VarChar(100)
+  role         UserRole  @default(user)
+  isActive     Boolean   @default(true) @map("is_active")
+  tokenVersion Int       @default(0) @map("token_version")          // 递增后所有 refresh token 失效（登出、改密、禁用）
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([isActive])
+  @@map("users")
+}

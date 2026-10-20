@@ -11,6 +11,7 @@ import { extractColumnsFromSQL } from '@/lib/sql/parser/column-extractor';
 import { withQueryRateLimit } from '@/lib/security/api-rate-limit-middleware';
 import { performanceMonitor } from '@/lib/api/performance-monitor';
 import type { ExecuteQueryRequest, ExecuteQueryResponse } from '@/lib/api/types';
+import { getUserFromRequest } from '@/lib/auth/permissions';
 
 /**
  * 从 SQL 提取使用的列名
@@ -37,11 +38,12 @@ async function extractUsedColumns(sql: string): Promise<string[]> {
  */
 export const POST = withQueryRateLimit(async (request: Request) => {
   const startTime = Date.now();
-  const sessionId = request.headers.get('x-session-id') || `session-${Date.now()}`;
 
-  // 提取用户信息和请求元数据
-  const userId = request.headers.get('x-user-id') || undefined;
-  const userName = request.headers.get('x-user-name') || undefined;
+  // 用户身份由 middleware 校验 Token 后注入（客户端传入的同名请求头已被剥离）
+  const currentUser = getUserFromRequest(request);
+  const sessionId = currentUser.sessionId || `session-${Date.now()}`;
+  const userId = currentUser.id;
+  const userName = currentUser.username;
   const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || undefined;
   const userAgent = request.headers.get('user-agent') || undefined;
 

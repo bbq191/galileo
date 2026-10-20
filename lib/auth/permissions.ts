@@ -5,12 +5,15 @@
  * - 用户角色管理
  * - 权限检查
  * - API 访问控制
+ *
+ * 注意：本模块同时被 middleware（Edge Runtime）引用，不能依赖 Node.js 专有 API。
  */
 
-import { NextRequest } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { IDENTITY_HEADERS } from './config';
 
 /**
- * 用户角色枚举
+ * 用户角色枚举（与 Prisma 的 UserRole 枚举取值一致）
  */
 export enum UserRole {
   /** 管理员 - 拥有所有权限 */
@@ -41,6 +44,9 @@ export enum Permission {
 
 /**
  * 角色权限映射
+ *
+ * 审计日志包含所有用户的查询记录，仅管理员可见；
+ * 普通用户通过查询历史查看自己的记录。
  */
 const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   [UserRole.ADMIN]: [
@@ -53,7 +59,6 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
   [UserRole.USER]: [
     Permission.QUERY_EXECUTE,
-    Permission.AUDIT_VIEW,
   ],
   [UserRole.GUEST]: [
     Permission.QUERY_EXECUTE,
@@ -61,63 +66,52 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
 };
 
 /**
+ * 根据角色获取权限列表
+ */
+export function getPermissionsByRole(role: UserRole): Permission[] {
+  return ROLE_PERMISSIONS[role] || [];
+}
+
+export function isUserRole(value: unknown): value is UserRole {
+  return Object.values(UserRole).includes(value as UserRole);
+}
+
+/**
  * 从请求中提取用户信息
  *
- * 注意：这是一个简化的实现
- * 实际生产环境应该：
- * 1. 使用 JWT 或 Session 进行身份验证
- * 2. 从数据库查询用户角色
- * 3. 实现完整的认证中间件
+ * 身份由 middleware 校验 Token 后通过可信请求头注入（见 IDENTITY_HEADERS），
+ * 未注入时视为访客。
  */
-export function getUserFromRequest(request: NextRequest): {
+export function getUserFromRequest(request: NextRequest | Request): {
   id?: string;
   role: UserRole;
   permissions: Permission[];
   username?: string;
-  email?: string;
+  sessionId?: string;
 } {
-  // 从请求头获取用户信息
-  const authHeader = request.headers.get('Authorization');
-  const apiKey = request.headers.get('X-API-Key');
+  const id = request.headers.get(IDENTITY_HEADERS.userId) || undefined;
+  const roleHeader = request.headers.get(IDENTITY_HEADERS.role);
+  const role = id && isUserRole(roleHeader) ? roleHeader : UserRole.GUEST;
 
-  // 简化实现：通过环境变量配置的管理员 API Key
-  const adminApiKey = process.env.ADMIN_API_KEY;
-  if (adminApiKey && apiKey === adminApiKey) {
-    return {
-      id: 'admin',
-      role: UserRole.ADMIN,
-      permissions: ROLE_PERMISSIONS[UserRole.ADMIN],
-    };
-  }
-
-  // JWT Token 验证
-  if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.substring(7);
-
-    // 使用 JWT 验证器验证 Token
-    const { verifyToken, getPermissionsByRole } = require('./jwt-verifier');
-    const verifyResult = verifyToken(token);
-
-    if (verifyResult.success && verifyResult.payload) {
-      const { userId, role, username, email } = verifyResult.payload;
-      return {
-        id: userId,
-        role,
-        permissions: getPermissionsByRole(role),
-        username,
-        email,
-      };
-    }
-
-    // Token 验证失败，记录日志
-    console.warn('[Auth] JWT 验证失败:', verifyResult.error);
-  }
-
-  // 默认为访客权限
   return {
-    role: UserRole.GUEST,
-    permissions: ROLE_PERMISSIONS[UserRole.GUEST],
+    id,
+    role,
+    permissions: getPermissionsByRole(role),
+    username: decodeHeader(request.headers.get(IDENTITY_HEADERS.userName)),
+    sessionId: request.headers.get(IDENTITY_HEADERS.sessionId) || undefined,
   };
+}
+
+/**
+ * 用户名可能包含非 ASCII 字符，middleware 注入时做了 URL 编码
+ */
+function decodeHeader(value: string | null): string | undefined {
+  if (!value) return undefined;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 /**

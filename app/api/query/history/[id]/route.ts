@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPrismaClient } from '@/lib/di/setup';
 import { safeServerErrorResponse } from '@/lib/api/response';
 import type { QueryDetailResponse } from '@/lib/api/types';
+import { getUserFromRequest, isAdmin } from '@/lib/auth/permissions';
 
 export async function GET(
   request: NextRequest,
@@ -35,7 +36,9 @@ export async function GET(
 
     console.log('[Query Detail] Query result:', !!log);
 
-    if (!log) {
+    // 非本人的记录对普通用户按不存在处理，避免泄露记录是否存在
+    const currentUser = getUserFromRequest(request);
+    if (!log || (!isAdmin(currentUser) && log.userId !== currentUser.id)) {
       return NextResponse.json({
         success: false,
         error: '查询记录不存在',

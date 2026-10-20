@@ -49,11 +49,15 @@ npm run db:migrate
 
 ### 4. 初始化种子数据
 
-执行种子脚本，初始化数据字典：
+执行种子脚本，初始化管理员账号、业务域和数据字典：
 
 ```bash
 npm run db:seed
 ```
+
+管理员账号默认用户名为 `admin`，可通过 `ADMIN_USERNAME` / `ADMIN_INITIAL_PASSWORD` 指定；
+未指定密码时随机生成，**只在 seed 输出中显示一次**。账号已存在时跳过，不会重置密码。
+创建其他用户或重置密码见 `manual/security.md` 的「认证与访问控制」。
 
 ### 5. 验证数据库
 

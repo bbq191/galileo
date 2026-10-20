@@ -97,8 +97,14 @@ export const AuditLogQuerySchema = z.object({
   endDate: z.string().optional(),
 });
 
+export const LoginSchema = z.object({
+  username: z.string({ message: '请输入用户名' }).trim().min(1, '请输入用户名').max(64),
+  password: z.string({ message: '请输入密码' }).min(1, '请输入密码').max(256),
+});
+
 // 导出所有 schemas
 export const schemas = {
+  login: LoginSchema,
   queryExecute: QueryExecuteSchema,
   metadataSync: MetadataSyncSchema,
   datasourceCreate: DatasourceCreateSchema,

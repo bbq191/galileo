@@ -168,3 +168,63 @@ describe('formatApiError', () => {
     expect(formatApiError(new ApiError({ kind: 'server', status: 500, message: '服务异常' }))).toBe('服务异常');
   });
 });
+
+describe('apiFetch - 401 自动续期', () => {
+  const urls = () => fetchMock.mock.calls.map(([url]) => url);
+
+  it('续期成功后重试原请求', async () => {
+    respond({ success: false, error: '未登录' }, { status: 401 });
+    respond({ success: true });
+    respond({ success: true, data: [1] });
+
+    const res = await apiFetch('/api/datasources');
+
+    expect(res).toMatchObject({ ok: true, data: [1] });
+    expect(urls()).toEqual(['/api/datasources', '/api/auth/refresh', '/api/datasources']);
+  });
+
+  it('续期失败时返回 401 错误', async () => {
+    respond({ success: false, error: '未登录' }, { status: 401 });
+    respond({ success: false }, { status: 401 });
+
+    const res = await apiFetch('/api/datasources');
+
+    expect(!res.ok && res.error.kind).toBe('unauthorized');
+    expect(urls()).toEqual(['/api/datasources', '/api/auth/refresh']);
+  });
+
+  it('重试后仍为 401 时不再续期，避免死循环', async () => {
+    respond({ success: false }, { status: 401 });
+    respond({ success: true });
+    respond({ success: false }, { status: 401 });
+
+    const res = await apiFetch('/api/datasources');
+
+    expect(res.ok).toBe(false);
+    expect(urls()).toHaveLength(3);
+  });
+
+  it('并发的 401 共享同一次续期请求', async () => {
+    fetchMock.mockImplementation(async (url) => {
+      if (url === '/api/auth/refresh') return new Response(JSON.stringify({ success: true }));
+      const retried = fetchMock.mock.calls.filter(([u]) => u === url).length > 1;
+      return retried
+        ? new Response(JSON.stringify({ success: true, data: url }))
+        : new Response(JSON.stringify({ success: false }), { status: 401 });
+    });
+
+    const [a, b] = await Promise.all([apiFetch('/api/a'), apiFetch('/api/b')]);
+
+    expect(a.ok && b.ok).toBe(true);
+    expect(urls().filter((u) => u === '/api/auth/refresh')).toHaveLength(1);
+  });
+
+  it('/api/auth/* 的 401 不触发续期', async () => {
+    respond({ success: false, error: '用户名或密码错误' }, { status: 401 });
+
+    const res = await apiFetch('/api/auth/login', { method: 'POST', json: {} });
+
+    expect(!res.ok && res.error.message).toBe('用户名或密码错误');
+    expect(urls()).toEqual(['/api/auth/login']);
+  });
+});

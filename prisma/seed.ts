@@ -6,11 +6,17 @@
 import prisma from '@/lib/prisma/client';
 import seedDataDictionary from './seeds/data-dictionary';
 import seedBusinessDomains from './seeds/business-domains';
+import seedAdminUser from './seeds/admin-user';
 
 async function main() {
   console.log('========================================');
   console.log('开始执行数据库种子数据初始化...');
   console.log('========================================\n');
+
+  // 初始化管理员账号
+  await seedAdminUser();
+
+  console.log('');
 
   // 初始化业务域
   await seedBusinessDomains();

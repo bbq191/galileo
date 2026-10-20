@@ -4,7 +4,8 @@
  * 职责：
  * - 抹平后端两种响应信封：`{ status: 'success' | 'error' }` 与 `{ success: boolean }`
  * - 将 401 / 403 / 429 / 网络异常等统一转换为 ApiError，避免页面静默失败
- * - 作为后续鉴权接入（凭证注入、401 跳转）的唯一切入点
+ * - 收到 401 时自动用 Refresh Token 续期并重试一次，续期失败跳转登录页
+ *   （凭证通过 httpOnly Cookie 自动携带，无需手动注入）
  *
  * 使用示例：
  * ```typescript
@@ -73,6 +74,8 @@ export interface ApiFetchOptions extends Omit<RequestInit, 'body'> {
   envelope?: 'auto' | 'none';
   /** 视为成功的额外 HTTP 状态码（如 /api/health 降级时返回 503 但响应体仍有效） */
   acceptStatuses?: readonly number[];
+  /** 收到 401 时不尝试续期（/api/auth/* 默认不续期） */
+  skipAuthRefresh?: boolean;
 }
 
 const ENVELOPE_KEYS = new Set(['success', 'status', 'data', 'error', 'message']);
@@ -159,11 +162,42 @@ function buildError(status: number, body: unknown, headers: Headers): ApiError {
   return new ApiError({ kind, status, message, code, details, retryAfter });
 }
 
+let pendingRefresh: Promise<boolean> | null = null;
+
+/**
+ * 用 Refresh Token 续期；并发调用共享同一次请求
+ */
+export function refreshSession(): Promise<boolean> {
+  pendingRefresh ??= fetch('/api/auth/refresh', { method: 'POST' })
+    .then((res) => res.ok)
+    .catch(() => false)
+    .finally(() => {
+      pendingRefresh = null;
+    });
+  return pendingRefresh;
+}
+
+/**
+ * 跳转登录页，登录后返回当前页面
+ */
+export function redirectToLogin(): void {
+  if (typeof window === 'undefined' || window.location.pathname === '/login') return;
+  const next = window.location.pathname + window.location.search;
+  window.location.href = `/login?next=${encodeURIComponent(next)}`;
+}
+
 export async function apiFetch<T = unknown>(
   input: string,
   options: ApiFetchOptions = {}
 ): Promise<ApiResult<T>> {
-  const { json, envelope = 'auto', acceptStatuses = [], headers, ...init } = options;
+  const {
+    json,
+    envelope = 'auto',
+    acceptStatuses = [],
+    skipAuthRefresh = false,
+    headers,
+    ...init
+  } = options;
 
   const requestHeaders = new Headers(headers);
   if (json !== undefined) {
@@ -186,6 +220,13 @@ export async function apiFetch<T = unknown>(
         details: err instanceof Error ? err.message : err,
       }),
     };
+  }
+
+  if (response.status === 401 && !skipAuthRefresh && !input.startsWith('/api/auth/')) {
+    if (await refreshSession()) {
+      return apiFetch<T>(input, { ...options, skipAuthRefresh: true });
+    }
+    redirectToLogin();
   }
 
   const status = response.status;

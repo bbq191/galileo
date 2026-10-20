@@ -244,26 +244,39 @@ export const distributedRateLimiters = {
     window: 60,
     name: 'ai',
   }),
+
+  /** 登录（防暴力破解，按 IP 计数）- 10 req/min */
+  auth: createDistributedRateLimiter({
+    requests: 10,
+    window: 60,
+    name: 'auth',
+  }),
 };
+
+/**
+ * 获取客户端 IP
+ */
+export function getClientIp(request: Request): string {
+  const forwarded = request.headers.get('x-forwarded-for');
+  const realIp = request.headers.get('x-real-ip');
+  return forwarded?.split(',')[0].trim() || realIp || '127.0.0.1';
+}
 
 /**
  * 从请求中获取唯一标识符
  *
  * 优先级：用户 ID > IP 地址
+ *
+ * 注意：x-user-id 只有在经过 middleware 之后才可信（middleware 会剥离客户端传入的值），
+ * 在 middleware 内部请直接使用校验后的身份。
  */
 export function getRequestIdentifier(request: Request): string {
-  // 1. 优先使用用户 ID（如果有认证系统）
   const userId = request.headers.get('x-user-id');
   if (userId) {
     return `user:${userId}`;
   }
 
-  // 2. 回退到 IP 地址
-  const forwarded = request.headers.get('x-forwarded-for');
-  const realIp = request.headers.get('x-real-ip');
-  const ip = forwarded?.split(',')[0] || realIp || '127.0.0.1';
-
-  return `ip:${ip}`;
+  return `ip:${getClientIp(request)}`;
 }
 
 /**

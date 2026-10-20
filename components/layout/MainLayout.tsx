@@ -2,7 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ReactNode, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
+import { apiFetch, redirectToLogin } from '@/lib/client/api-fetch';
+import type { AuthMe, AuthSession } from '@/lib/client/contracts';
 
 // 图标组件
 const Icons = {
@@ -84,8 +86,12 @@ const Icons = {
   ),
 };
 
-// 导航配置
-const navGroups = [
+// 导航配置（adminOnly 分组仅管理员可见，服务端同样按 lib/auth/route-policy.ts 拦截）
+const navGroups: Array<{
+  title: string;
+  adminOnly?: boolean;
+  items: Array<{ href: string; label: string; icon: () => JSX.Element }>;
+}> = [
   {
     title: '智能查询',
     items: [
@@ -104,6 +110,7 @@ const navGroups = [
   },
   {
     title: '系统管理',
+    adminOnly: true,
     items: [
       { href: '/admin/health', label: '健康监控', icon: Icons.Health },
       { href: '/admin/statistics', label: '统计概览', icon: Icons.Chart },
@@ -125,9 +132,58 @@ interface MainLayoutProps {
   children: ReactNode;
 }
 
+/** 不使用侧边栏与导航的页面 */
+const BARE_PATHS = ['/login'];
+
+/** Access Token 过期前多久主动续期 */
+const REFRESH_AHEAD_MS = 2 * 60 * 1000;
+
+const ROLE_LABELS: Record<AuthMe['user']['role'], string> = {
+  admin: '管理员',
+  user: '普通用户',
+  guest: '访客',
+};
+
 export default function MainLayout({ children }: MainLayoutProps) {
   const pathname = usePathname() ?? '/';
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [me, setMe] = useState<AuthMe | null>(null);
+  const [expiresAt, setExpiresAt] = useState<number | null>(null);
+  const isBare = BARE_PATHS.includes(pathname);
+  const isAdmin = me?.user.role === 'admin';
+
+  // 加载当前用户
+  useEffect(() => {
+    if (isBare) return;
+    apiFetch<AuthMe>('/api/auth/me').then((res) => {
+      if (res.ok) {
+        setMe(res.data);
+        setExpiresAt(res.data.expiresAt);
+      }
+    });
+  }, [isBare]);
+
+  // 在 Access Token 过期前续期，避免尚未迁移到 apiFetch 的请求因过期失败
+  useEffect(() => {
+    if (isBare || !expiresAt) return;
+    const delay = Math.max(expiresAt - Date.now() - REFRESH_AHEAD_MS, 30 * 1000);
+    const timer = setTimeout(async () => {
+      const res = await apiFetch<AuthSession>('/api/auth/refresh', { method: 'POST' });
+      if (res.ok) {
+        setExpiresAt(res.data.expiresAt);
+      } else {
+        redirectToLogin();
+      }
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [isBare, expiresAt]);
+
+  const handleLogout = async () => {
+    await apiFetch('/api/auth/logout', { method: 'POST' });
+    window.location.href = '/login';
+  };
+
+  const visibleNavGroups = navGroups.filter((group) => !group.adminOnly || isAdmin);
 
   // 最长前缀匹配，避免 /query 与 /query/history 同时高亮
   const activeItem = navGroups
@@ -163,7 +219,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
 
       {/* 导航菜单 */}
       <nav className="flex-1 overflow-y-auto p-4">
-        {navGroups.map((group) => (
+        {visibleNavGroups.map((group) => (
           <div key={group.title} className="mb-6">
             <h2 className="text-xs font-semibold uppercase tracking-wider opacity-50 mb-2 px-3">
               {group.title}
@@ -202,6 +258,10 @@ export default function MainLayout({ children }: MainLayoutProps) {
       </div>
     </div>
   );
+
+  if (isBare) {
+    return <>{children}</>;
+  }
 
   return (
     <div className="min-h-screen bg-base-100">
@@ -250,6 +310,22 @@ export default function MainLayout({ children }: MainLayoutProps) {
               <Link href="/query" className="btn btn-primary btn-sm">
                 新建查询
               </Link>
+              {me && (
+                <div className="dropdown dropdown-end">
+                  <div tabIndex={0} role="button" className="btn btn-ghost btn-sm">
+                    {me.user.username}
+                  </div>
+                  <ul
+                    tabIndex={0}
+                    className="dropdown-content menu z-50 w-40 rounded-box border border-base-300 bg-base-100 p-2 shadow"
+                  >
+                    <li className="menu-title">{ROLE_LABELS[me.user.role]}</li>
+                    <li>
+                      <button onClick={handleLogout}>退出登录</button>
+                    </li>
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
         </header>
@@ -292,15 +368,17 @@ export default function MainLayout({ children }: MainLayoutProps) {
             <Icons.Database />
             <span className="text-xs">数据</span>
           </Link>
-          <Link
-            href="/admin"
-            className={`flex flex-col items-center gap-1 px-4 py-2 ${
-              pathname.startsWith('/admin') ? 'text-primary' : 'opacity-60'
-            }`}
-          >
-            <Icons.Settings />
-            <span className="text-xs">管理</span>
-          </Link>
+          {isAdmin && (
+            <Link
+              href="/admin"
+              className={`flex flex-col items-center gap-1 px-4 py-2 ${
+                pathname.startsWith('/admin') ? 'text-primary' : 'opacity-60'
+              }`}
+            >
+              <Icons.Settings />
+              <span className="text-xs">管理</span>
+            </Link>
+          )}
         </div>
       </nav>
     </div>

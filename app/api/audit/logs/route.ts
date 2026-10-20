@@ -10,14 +10,15 @@ import type { AuditLogsResponse } from '@/lib/api/types';
 
 export async function GET(request: NextRequest) {
   try {
-    // TODO: 添加管理员权限验证
-    // const isAdmin = await checkAdminPermission(request);
-    // if (!isAdmin) {
-    //   return NextResponse.json({
-    //     success: false,
-    //     error: '需要管理员权限',
-    //   } as AuditLogsResponse, { status: 403 });
-    // }
+    // 管理员权限验证（middleware 已按路由策略拦截，此处为纵深防御）
+    const { checkAdminPermission } = await import('@/lib/auth/permissions');
+    const isAdmin = await checkAdminPermission(request);
+    if (!isAdmin) {
+      return NextResponse.json({
+        success: false,
+        error: '需要管理员权限',
+      } as AuditLogsResponse, { status: 403 });
+    }
 
     // 解析查询参数
     const searchParams = request.nextUrl.searchParams;

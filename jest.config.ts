@@ -24,6 +24,9 @@ const config: Config = {
     '/.next/',
   ],
 
+  // jose 仅提供 ESM，需要经过转换
+  transformIgnorePatterns: ['/node_modules/(?!jose/)'],
+
   // TypeScript 转换配置
   transform: {
     '^.+\\.tsx?$': ['ts-jest', {
@@ -32,6 +35,7 @@ const config: Config = {
         emitDecoratorMetadata: true,
       },
     }],
+    '^.+/node_modules/jose/.+\\.js$': '<rootDir>/jest.esm-transform.js',
   },
 
   // 覆盖率配置

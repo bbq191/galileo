@@ -17,12 +17,12 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset",
-    "security:generate-keys": "tsx scripts/generate-security-keys.ts"
+    "security:generate-keys": "tsx scripts/generate-security-keys.ts",
+    "user:create": "tsx scripts/create-user.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.17.1",
     "@types/ioredis": "^4.28.10",
-    "@types/jsonwebtoken": "^9.0.10",
     "@types/node-cron": "^3.0.11",
     "@upstash/ratelimit": "^2.0.7",
     "@upstash/redis": "^1.35.6",
@@ -32,7 +32,7 @@
     "crypto-js": "^4.2.0",
     "formdata-node": "^6.0.3",
     "ioredis": "^5.8.2",
-    "jsonwebtoken": "^9.0.2",
+    "jose": "^6.2.12",
     "mysql2": "^3.15.2",
     "next": "^14.2.15",
     "node-cron": "^4.2.1",

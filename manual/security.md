@@ -11,7 +11,7 @@
 
 1. [安全概览](#安全概览)
 2. [环境变量配置](#环境变量配置)
-3. [JWT 认证配置](#jwt-认证配置)
+3. [认证与访问控制](#认证与访问控制)
 4. [速率限制](#速率限制)
 5. [代码混淆与压缩](#代码混淆与压缩)
 6. [安全响应头](#安全响应头)
@@ -28,7 +28,7 @@ Galileo 实施了多层安全防护：
 ### 🔒 已实施的安全措施
 
 - ✅ **代码混淆和压缩** - 防止源码泄露和逆向工程
-- ✅ **JWT 认证** - 基于令牌的用户身份验证
+- ✅ **登录认证** - 本地用户表 + httpOnly Cookie 中的 JWT，按角色控制访问
 - ✅ **速率限制** - 防止 API 滥用和 DoS 攻击
 - ✅ **数据加密** - 敏感数据加密存储
 - ✅ **安全响应头** - XSS、点击劫持等防护
@@ -77,60 +77,71 @@ npm run security:generate-keys
 
 ---
 
-## JWT 认证配置
+## 认证与访问控制
 
-### 1. 生成 JWT 密钥
-
-```bash
-# 方式 1: 使用项目脚本（推荐）
-npm run security:generate-keys
-
-# 方式 2: 手动生成
-node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
-```
-
-### 2. 配置 JWT 参数
-
-在 `.env` 文件中配置：
+### 1. 配置
 
 ```bash
-# JWT 密钥（128 字符，512 位强度）
-JWT_SECRET="your-generated-secret-key-here"
+# JWT 密钥（必需）：未配置、少于 32 个字符或仍为 .env.example 示例值时，
+# 所有需要登录的页面和接口返回 500
+npm run security:generate-keys   # 生成后写入 JWT_SECRET
 
-# Token 有效期
-JWT_EXPIRES_IN="7d"          # Access Token: 7 天
-JWT_REFRESH_EXPIRES_IN="30d" # Refresh Token: 30 天
+JWT_EXPIRES_IN="30m"          # Access Token 有效期
+JWT_REFRESH_EXPIRES_IN="7d"   # Refresh Token 有效期
+# AUTH_COOKIE_SECURE=false    # 生产环境通过纯 HTTP 访问时需要关闭
 ```
 
-### 3. JWT 使用示例
+### 2. 账号管理
 
-```typescript
-import { generateToken, verifyToken } from '@/lib/auth/jwt-verifier';
+```bash
+# 初始管理员：随 seed 创建，已存在则跳过（不会重置密码）
+# 可通过 ADMIN_USERNAME / ADMIN_INITIAL_PASSWORD 指定，未指定密码时随机生成并打印一次
+npm run db:seed
 
-// 生成 Token
-const token = generateToken({
-  userId: '123',
-  role: UserRole.USER,
-  username: 'alice',
-});
+# 创建其他用户（角色：admin / user / guest，默认 user）
+npm run user:create -- alice --role user
 
-// 验证 Token
-const result = verifyToken(token);
-if (result.success) {
-  console.log('用户 ID:', result.payload?.userId);
-}
+# 重置密码（同时使该用户的所有 Refresh Token 失效）
+npm run user:create -- alice --reset
 ```
 
-### 4. Token 刷新机制
+### 3. 认证流程
+
+| 环节 | 实现 |
+|------|------|
+| 凭证存储 | httpOnly + SameSite=Lax Cookie：`galileo_at`（Access Token，路径 `/`）、`galileo_rt`（Refresh Token，路径 `/api/auth`） |
+| 校验 | `middleware.ts` 在 Edge Runtime 中用 jose 无状态校验 Access Token |
+| 续期 | 前端在 Access Token 过期前 2 分钟调用 `POST /api/auth/refresh`；`apiFetch` 收到 401 时自动续期并重试一次；页面请求时由 middleware 跳转 `GET /api/auth/refresh?next=` |
+| 吊销 | 刷新时比对数据库中的 `tokenVersion` 与账号状态。登出、重置密码会递增 `tokenVersion`，使该用户**所有设备**的 Refresh Token 失效；已签发的 Access Token 在剩余有效期内仍可用 |
+| 密码 | Node 内置 scrypt 哈希（`lib/auth/password.ts`）；登录失败统一提示，用户不存在时同样执行一次哈希比对 |
+| 防暴力破解 | `/api/auth/login` 按 IP 限流 10 次/分钟 |
+| 跨站请求 | SameSite=Lax 阻止跨站写请求携带 Cookie；middleware 额外拒绝 Origin 与站点不一致的写请求（反向代理需透传 `X-Forwarded-Host`） |
+| 脚本调用 | 请求头 `X-API-Key` 等于 `ADMIN_API_KEY` 时以管理员身份访问 |
+
+### 4. 访问策略
+
+所有路由的访问级别集中定义在 `lib/auth/route-policy.ts`，由 middleware 统一执行：
+
+| 范围 | 访问级别 |
+|------|----------|
+| `/login`、`/api/auth/login`、`/api/auth/refresh`、`/api/auth/logout`、`/api/health` | 公开 |
+| 查询（`/api/query/*`） | 所有登录用户；普通用户只能看到自己的查询历史 |
+| 数据资产读取（数据源、元数据、业务域、关系图谱） | 所有登录用户 |
+| 数据资产写入（含同步、标注、关系推断、业务域推断） | 管理员 |
+| 管理后台页面、审计、统计（首页概览除外）、性能、AI 成本 | 管理员 |
+| 缓存清理、Prompt 缓存管理 | 管理员 |
+| 其他 | 所有登录用户 |
+
+### 5. 在 API Route 中获取当前用户
+
+middleware 会先删除客户端传入的 `x-user-id`、`x-user-name`、`x-user-role`、`x-session-id`，
+再根据 Token 重新注入，因此 API Route 可以直接信任：
 
 ```typescript
-import { refreshTokens } from '@/lib/auth/jwt-verifier';
+import { getUserFromRequest, isAdmin } from '@/lib/auth/permissions';
 
-// 刷新 Token
-const newTokens = await refreshTokens(refreshToken);
-if (newTokens) {
-  // 返回新的 Access Token 和 Refresh Token
-}
+const user = getUserFromRequest(request);
+// user.id / user.username / user.role / user.sessionId / user.permissions
 ```
 
 ---

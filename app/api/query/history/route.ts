@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuditOrchestrator } from '@/lib/di/setup';
 import { safeServerErrorResponse } from '@/lib/api/response';
 import type { QueryHistoryResponse } from '@/lib/api/types';
+import { getUserFromRequest, isAdmin } from '@/lib/auth/permissions';
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,7 +13,13 @@ export async function GET(request: NextRequest) {
 
     // 解析查询参数
     const searchParams = request.nextUrl.searchParams;
-    const userId = searchParams.get('userId');
+    // 普通用户只能查看自己的历史；管理员可按 userId 筛选
+    const currentUser = getUserFromRequest(request);
+    if (!isAdmin(currentUser) && !currentUser.id) {
+      // userId 为空会查询全部记录，必须拒绝
+      return NextResponse.json({ success: false, error: '未登录' }, { status: 401 });
+    }
+    const userId = isAdmin(currentUser) ? searchParams.get('userId') : currentUser.id;
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '20', 10);
     const success = searchParams.get('success');
