@@ -72,7 +72,7 @@ export interface ApiFetchOptions extends Omit<RequestInit, 'body'> {
    */
   envelope?: 'auto' | 'none';
   /** 视为成功的额外 HTTP 状态码（如 /api/health 降级时返回 503 但响应体仍有效） */
-  acceptStatuses?: number[];
+  acceptStatuses?: readonly number[];
 }
 
 const ENVELOPE_KEYS = new Set(['success', 'status', 'data', 'error', 'message']);
@@ -222,4 +222,13 @@ export async function apiFetch<T = unknown>(
   // 有 data 字段时取 data，否则（如 /api/query/preview）整个响应体去掉信封字段后作为 data
   const data = ('data' in body ? body.data : extractMeta(body)) as T;
   return { ok: true, status, data, meta: extractMeta(body) };
+}
+
+/**
+ * 将 ApiError 格式化为面向用户的文本（摘要 + 字符串形式的详情）
+ */
+export function formatApiError(error: ApiError): string {
+  return typeof error.details === 'string' && error.details !== error.message
+    ? `${error.message}\n\n详细错误: ${error.details}`
+    : error.message;
 }

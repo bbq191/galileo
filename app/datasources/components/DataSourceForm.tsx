@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { apiFetch, formatApiError } from '@/lib/client/api-fetch';
 
 interface DataSource {
   id?: number;
@@ -115,20 +116,12 @@ export default function DataSourceForm({
         : '/api/datasources';
       const method = dataSource ? 'PUT' : 'POST';
 
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(submitData),
-      });
+      const res = await apiFetch(url, { method, json: submitData });
 
-      const result = await response.json();
-
-      if (result.status === 'success') {
+      if (res.ok) {
         onSuccess();
       } else {
-        throw new Error(result.message || result.error || 'Operation failed');
+        throw new Error(formatApiError(res.error));
       }
     } catch (err) {
       console.error('Error submitting form:', err);

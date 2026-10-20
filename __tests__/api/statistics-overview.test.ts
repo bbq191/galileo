@@ -21,11 +21,11 @@ function overview(healthScore: number) {
       totalQueries: 100,
       successfulQueries: 95,
       failedQueries: 5,
-      successRate: 0.95,
+      successRate: 95, // 0-100
       averageDuration: 120,
       p95Duration: 400,
     },
-    cache: { totalHitRate: 0.6, totalHits: 60, totalMisses: 40 },
+    cache: { totalHitRate: 0.6 /* 0-1 */, totalHits: 60, totalMisses: 40 },
     audit: { totalQueriesLogged: 1000, avgRecordsPerDay: 33 },
   };
 }
@@ -49,7 +49,7 @@ describe('GET /api/statistics/overview', () => {
           total: 100,
           success: 95,
           failed: 5,
-          successRate: 0.95,
+          successRate: 95,
           avgExecutionTime: 120,
           p95ExecutionTime: 400,
         },

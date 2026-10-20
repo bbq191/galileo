@@ -129,22 +129,22 @@ export default function MainLayout({ children }: MainLayoutProps) {
   const pathname = usePathname() ?? '/';
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // 最长前缀匹配，避免 /query 与 /query/history 同时高亮
+  const activeItem = navGroups
+    .flatMap((group) => group.items)
+    .filter((item) => pathname === item.href || pathname.startsWith(item.href + '/'))
+    .sort((a, b) => b.href.length - a.href.length)[0];
+
   // 获取当前页面标题
   const getCurrentTitle = () => {
-    for (const group of navGroups) {
-      for (const item of group.items) {
-        if (pathname === item.href || pathname.startsWith(item.href + '/')) {
-          return item.label;
-        }
-      }
-    }
-    return pathname === '/' ? '首页' : '页面';
+    if (activeItem) return activeItem.label;
+    if (pathname === '/') return '首页';
+    // /admin 不在侧边栏中，但是移动端「管理」Tab 的入口
+    if (pathname === '/admin') return '管理后台';
+    return '页面';
   };
 
-  const isActive = (href: string) => {
-    if (href === '/') return pathname === '/';
-    return pathname === href || pathname.startsWith(href + '/');
-  };
+  const isActive = (href: string) => activeItem?.href === href;
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
@@ -284,7 +284,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
           <Link
             href="/datasources"
             className={`flex flex-col items-center gap-1 px-4 py-2 ${
-              pathname.startsWith('/datasources') || pathname.startsWith('/metadata')
+              ['/datasources', '/metadata', '/relationships'].some((p) => pathname.startsWith(p))
                 ? 'text-primary'
                 : 'opacity-60'
             }`}

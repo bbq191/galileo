@@ -307,6 +307,7 @@ export class QueryOrchestrator {
             totalTime: Date.now() - startTime,
           },
           domainInference: domainInference || undefined,
+          warnings: sqlResult.warnings,
         };
       }
 
@@ -371,6 +372,7 @@ export class QueryOrchestrator {
           totalTime: Date.now() - startTime,
         },
         domainInference: domainInference || undefined,
+        warnings: sqlResult.warnings,
       };
 
       // 缓存结果

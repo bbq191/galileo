@@ -156,7 +156,7 @@ Galileo 采用**双层速率限制**架构：
 | 端点类型 | 限制策略 | 说明 |
 |----------|----------|------|
 | `/api/query/execute` | 10 req/min | 查询执行（最昂贵） |
-| `/api/metadata/sync` | 5 req/hour | 元数据同步 |
+| `/api/datasources/{id}/sync` | 5 req/hour | 元数据同步 |
 | `/api/ai/*` | 20 req/min | AI 相关接口 |
 | 其他 API | 30 req/min | 通用 API |
 

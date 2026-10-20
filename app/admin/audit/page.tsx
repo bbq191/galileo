@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { apiFetch } from '@/lib/client/api-fetch';
 
 /**
  * 审计日志数据类型
@@ -55,6 +56,7 @@ interface AuditStats {
 export default function AuditPage() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [stats, setStats] = useState<AuditStats | null>(null);
+  const [statsError, setStatsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
@@ -108,20 +110,22 @@ export default function AuditPage() {
    * 获取审计统计
    */
   const fetchStats = async () => {
-    try {
-      const params = new URLSearchParams();
-      if (detectAnomalies) {
-        params.append('detectAnomalies', 'true');
-      }
+    const params = new URLSearchParams();
+    if (detectAnomalies) {
+      params.append('detectAnomalies', 'true');
+    }
 
-      const response = await fetch(`/api/audit/stats?${params}`);
-      const data = await response.json();
-
-      if (data.success) {
-        setStats(data.data);
-      }
-    } catch (err) {
-      console.error('获取审计统计失败:', err);
+    const res = await apiFetch<AuditStats>(`/api/audit/stats?${params}`);
+    if (res.ok) {
+      setStats(res.data);
+      setStatsError(null);
+    } else {
+      setStats(null);
+      setStatsError(
+        res.error.kind === 'forbidden'
+          ? '审计统计需要管理员权限'
+          : res.error.message
+      );
     }
   };
 
@@ -149,6 +153,11 @@ export default function AuditPage() {
   return (
     <div className="space-y-6">
         {/* 统计概览 */}
+        {statsError && (
+          <div className="alert alert-warning">
+            <span>{statsError}</span>
+          </div>
+        )}
         {stats && (
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div className="stat bg-base-100 shadow rounded-lg">

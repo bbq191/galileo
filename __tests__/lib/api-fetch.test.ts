@@ -1,5 +1,5 @@
 import { describe, it, expect, jest, afterEach } from '@jest/globals';
-import { apiFetch, ApiError } from '@/lib/client/api-fetch';
+import { apiFetch, ApiError, formatApiError } from '@/lib/client/api-fetch';
 
 const fetchMock = jest.fn<typeof fetch>();
 global.fetch = fetchMock;
@@ -154,5 +154,17 @@ describe('apiFetch - 请求构造', () => {
     expect(init?.method).toBe('POST');
     expect(init?.body).toBe('{"query":"q"}');
     expect(new Headers(init?.headers).get('Content-Type')).toBe('application/json');
+  });
+});
+
+describe('formatApiError', () => {
+  it('字符串详情附加在摘要后', () => {
+    const error = new ApiError({ kind: 'server', status: 500, message: '同步失败', details: 'ECONNREFUSED' });
+    expect(formatApiError(error)).toBe('同步失败\n\n详细错误: ECONNREFUSED');
+  });
+
+  it('对象详情或无详情时只返回摘要', () => {
+    expect(formatApiError(new ApiError({ kind: 'validation', status: 400, message: '输入验证失败', details: { a: 1 } }))).toBe('输入验证失败');
+    expect(formatApiError(new ApiError({ kind: 'server', status: 500, message: '服务异常' }))).toBe('服务异常');
   });
 });

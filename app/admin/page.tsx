@@ -2,30 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-
-/**
- * 系统概览数据
- */
-interface SystemOverview {
-  system: {
-    healthScore: number;
-    status: string;
-  };
-  queries: {
-    total: number;
-    successRate: number;
-  };
-  cache: {
-    hitRate: number;
-  };
-}
-
-/**
- * 健康状态数据
- */
-interface HealthStatus {
-  status: 'ok' | 'degraded' | 'error';
-}
+import { apiFetch } from '@/lib/client/api-fetch';
+import {
+  HEALTH_FETCH_OPTIONS,
+  type HealthResponse,
+  type StatisticsOverview,
+} from '@/lib/client/contracts';
 
 /**
  * 功能模块配置
@@ -88,25 +70,23 @@ const adminModules = [
  * @author xusy
  */
 export default function AdminPage() {
-  const [overview, setOverview] = useState<SystemOverview | null>(null);
-  const [health, setHealth] = useState<HealthStatus | null>(null);
+  const [overview, setOverview] = useState<StatisticsOverview | null>(null);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         const [overviewRes, healthRes] = await Promise.all([
-          fetch('/api/statistics/overview').catch(() => null),
-          fetch('/api/health').catch(() => null),
+          apiFetch<StatisticsOverview>('/api/statistics/overview'),
+          apiFetch<HealthResponse>('/api/health', HEALTH_FETCH_OPTIONS),
         ]);
 
-        if (overviewRes?.ok) {
-          const data = await overviewRes.json();
-          setOverview(data);
+        if (overviewRes.ok) {
+          setOverview(overviewRes.data);
         }
-        if (healthRes?.ok) {
-          const data = await healthRes.json();
-          setHealth(data);
+        if (healthRes.ok) {
+          setHealth(healthRes.data);
         }
       } finally {
         setLoading(false);
@@ -188,7 +168,7 @@ export default function AdminPage() {
           ) : (
             <div className="text-2xl font-bold text-secondary">
               {overview?.queries?.successRate != null
-                ? `${(overview.queries.successRate * 100).toFixed(1)}%`
+                ? `${overview.queries.successRate.toFixed(1)}%`
                 : '-'}
             </div>
           )}

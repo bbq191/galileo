@@ -42,7 +42,21 @@ describe('POST /api/query/preview', () => {
     expect(processNaturalLanguageQuery).toHaveBeenCalledWith('查询', { explainOnly: true });
   });
 
-  it.todo('P1：返回 warnings 与 optimizationSuggestions（前端已读取，接口尚未返回）');
+  it('透传 warnings 与 optimizationSuggestions（与 execute 接口一致）', async () => {
+    processNaturalLanguageQuery.mockResolvedValue({
+      success: true,
+      metadata: { generatedSQL: 'SELECT 1', explanation: '', usedTables: [] },
+      warnings: ['跨库 JOIN 可能影响性能'],
+      suggestions: [{ type: 'index', message: 'm', impact: 'low' }],
+    });
+
+    const body = await (await POST(request({ query: '查询' }))).json();
+
+    expect(body).toMatchObject({
+      warnings: ['跨库 JOIN 可能影响性能'],
+      optimizationSuggestions: [{ type: 'index', message: 'm', impact: 'low' }],
+    });
+  });
 
   it('空查询：400', async () => {
     const res = await POST(request({ query: '  ' }));

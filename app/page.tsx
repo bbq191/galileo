@@ -2,32 +2,25 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-
-interface HealthStatus {
-  status: string;
-  database?: { status: string };
-  redis?: { status: string };
-}
-
-interface Statistics {
-  totalQueries?: number;
-  todayQueries?: number;
-  avgResponseTime?: number;
-  successRate?: number;
-}
+import { apiFetch } from '@/lib/client/api-fetch';
+import {
+  HEALTH_FETCH_OPTIONS,
+  type HealthResponse,
+  type StatisticsOverview,
+} from '@/lib/client/contracts';
 
 export default function Home() {
-  const [health, setHealth] = useState<HealthStatus | null>(null);
-  const [stats, setStats] = useState<Statistics>({});
+  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [overview, setOverview] = useState<StatisticsOverview | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/health').then(r => r.json()).catch(() => null),
-      fetch('/api/statistics/overview').then(r => r.json()).catch(() => ({})),
+      apiFetch<HealthResponse>('/api/health', HEALTH_FETCH_OPTIONS),
+      apiFetch<StatisticsOverview>('/api/statistics/overview'),
     ]).then(([h, s]) => {
-      setHealth(h);
-      setStats(s);
+      setHealth(h.ok ? h.data : null);
+      setOverview(s.ok ? s.data : null);
       setLoading(false);
     });
   }, []);
@@ -39,12 +32,29 @@ export default function Home() {
     { href: '/admin/statistics', label: '统计', desc: '查看系统统计' },
   ];
 
+  const queries = overview?.queries;
   const statCards = [
-    { label: '总查询数', value: stats.totalQueries ?? '-', color: 'text-primary' },
-    { label: '今日查询', value: stats.todayQueries ?? '-', color: 'text-secondary' },
-    { label: '平均响应', value: stats.avgResponseTime ? `${stats.avgResponseTime}ms` : '-', color: 'text-accent' },
-    { label: '成功率', value: stats.successRate ? `${(stats.successRate * 100).toFixed(1)}%` : '-', color: 'text-success' },
+    { label: '总查询数', value: queries?.total ?? '-', color: 'text-primary' },
+    {
+      label: '缓存命中率',
+      value: overview ? `${(overview.cache.hitRate * 100).toFixed(1)}%` : '-',
+      color: 'text-secondary',
+    },
+    {
+      label: '平均响应',
+      value: queries ? `${Math.round(queries.avgExecutionTime)}ms` : '-',
+      color: 'text-accent',
+    },
+    { label: '成功率', value: queries ? `${queries.successRate.toFixed(1)}%` : '-', color: 'text-success' },
   ];
+
+  const systemStatus = {
+    ok: { text: '正常', dot: 'bg-success', label: 'text-success' },
+    degraded: { text: '降级', dot: 'bg-warning', label: 'text-warning' },
+    error: { text: '异常', dot: 'bg-error', label: 'text-error' },
+  }[health?.status ?? 'error'];
+  const databaseOk = health?.checks.prisma?.status === 'ok';
+  const redisOk = health?.checks.redis?.connected === true;
 
   return (
     <div className="space-y-6">
@@ -111,24 +121,22 @@ export default function Home() {
           ) : (
             <div className="flex flex-wrap gap-6">
               <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${health?.status === 'healthy' ? 'bg-success' : 'bg-error'}`} />
+                <div className={`w-2 h-2 rounded-full ${systemStatus.dot}`} />
                 <span className="text-sm">系统</span>
-                <span className={`text-sm font-medium ${health?.status === 'healthy' ? 'text-success' : 'text-error'}`}>
-                  {health?.status === 'healthy' ? '正常' : '异常'}
-                </span>
+                <span className={`text-sm font-medium ${systemStatus.label}`}>{systemStatus.text}</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${health?.database?.status === 'connected' ? 'bg-success' : 'bg-error'}`} />
+                <div className={`w-2 h-2 rounded-full ${databaseOk ? 'bg-success' : 'bg-error'}`} />
                 <span className="text-sm">数据库</span>
-                <span className={`text-sm font-medium ${health?.database?.status === 'connected' ? 'text-success' : 'text-error'}`}>
-                  {health?.database?.status === 'connected' ? '已连接' : '未连接'}
+                <span className={`text-sm font-medium ${databaseOk ? 'text-success' : 'text-error'}`}>
+                  {databaseOk ? '已连接' : '未连接'}
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${health?.redis?.status === 'connected' ? 'bg-success' : 'bg-warning'}`} />
+                <div className={`w-2 h-2 rounded-full ${redisOk ? 'bg-success' : 'bg-warning'}`} />
                 <span className="text-sm">Redis</span>
-                <span className={`text-sm font-medium ${health?.redis?.status === 'connected' ? 'text-success' : 'text-warning'}`}>
-                  {health?.redis?.status === 'connected' ? '已连接' : '未连接'}
+                <span className={`text-sm font-medium ${redisOk ? 'text-success' : 'text-warning'}`}>
+                  {redisOk ? '已连接' : '未连接'}
                 </span>
               </div>
             </div>

@@ -8,7 +8,7 @@
  *
  * 不同端点使用不同的限制策略：
  * - /api/query/execute: 10 req/min（最昂贵）
- * - /api/metadata/sync: 5 req/hour
+ * - /api/datasources/{id}/sync: 5 req/hour
  * - /api/ai/*: 20 req/min
  * - 其他 API: 30 req/min
  *
@@ -59,9 +59,6 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith('/api/query/execute')) {
     limiter = distributedRateLimiters.query;
     limiterName = 'query';
-  } else if (pathname.startsWith('/api/metadata/sync')) {
-    limiter = distributedRateLimiters.metadata;
-    limiterName = 'metadata';
   } else if (pathname.startsWith('/api/datasources/') && pathname.endsWith('/sync')) {
     limiter = distributedRateLimiters.metadata;
     limiterName = 'metadata';

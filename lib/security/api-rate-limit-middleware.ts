@@ -124,7 +124,7 @@ export function withQueryRateLimit(handler: ApiHandler): ApiHandler {
 
 /**
  * 元数据同步速率限制（5 req/hour）
- * 用于：/api/metadata/sync, /api/datasources/{id}/sync
+ * 用于：/api/datasources/{id}/sync
  */
 export function withMetadataRateLimit(handler: ApiHandler): ApiHandler {
   return withRateLimit('metadata', handler);

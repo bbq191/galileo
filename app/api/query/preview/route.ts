@@ -45,6 +45,8 @@ export async function POST(request: NextRequest) {
       sql: result.metadata.generatedSQL,
       explanation: result.metadata.explanation,
       usedTables: result.metadata.usedTables,
+      warnings: result.warnings,
+      optimizationSuggestions: result.suggestions,
     } as PreviewQueryResponse);
 
   } catch (error: any) {

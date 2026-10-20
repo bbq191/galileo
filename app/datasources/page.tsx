@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import DataSourceList from './components/DataSourceList';
 import DataSourceForm from './components/DataSourceForm';
+import { apiFetch, formatApiError } from '@/lib/client/api-fetch';
 
 export default function DataSourcesPage() {
   const [dataSources, setDataSources] = useState<any[]>([]);
@@ -36,18 +37,12 @@ export default function DataSourcesPage() {
       setLoading(true);
       setError(null);
 
-      const response = await fetch('/api/datasources');
+      const res = await apiFetch<any[]>('/api/datasources');
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const result = await response.json();
-
-      if (result.status === 'success') {
-        setDataSources(result.data || []);
+      if (res.ok) {
+        setDataSources(res.data || []);
       } else {
-        throw new Error(result.message || 'Failed to load data sources');
+        throw new Error(formatApiError(res.error));
       }
     } catch (err) {
       console.error('Error loading data sources:', err);
@@ -80,17 +75,15 @@ export default function DataSourcesPage() {
     }
 
     try {
-      const response = await fetch(`/api/datasources/${id}`, {
+      const res = await apiFetch(`/api/datasources/${id}`, {
         method: 'DELETE',
       });
 
-      const result = await response.json();
-
-      if (result.status === 'success') {
+      if (res.ok) {
         // 刷新列表
         await loadDataSources();
       } else {
-        throw new Error(result.message || 'Failed to delete data source');
+        throw new Error(formatApiError(res.error));
       }
     } catch (err) {
       console.error('Error deleting data source:', err);
@@ -109,18 +102,16 @@ export default function DataSourcesPage() {
       setOperationInProgress(id);
       setTestingConnections(prev => new Set(prev).add(id));
 
-      const response = await fetch(`/api/datasources/${id}/test`, {
+      const res = await apiFetch(`/api/datasources/${id}/test`, {
         method: 'POST',
       });
 
-      const result = await response.json();
-
-      if (result.status === 'success') {
+      if (res.ok) {
         alert('连接测试成功！');
         // 刷新列表以查看更新的连接状态
         await loadDataSources();
       } else {
-        alert(`连接测试失败：${result.message || result.error}`);
+        alert(`连接测试失败：${formatApiError(res.error)}`);
       }
     } catch (err) {
       console.error('Error testing connection:', err);
@@ -146,20 +137,15 @@ export default function DataSourcesPage() {
       setOperationInProgress(id);
       setSyncingDataSources(prev => new Set(prev).add(id));
 
-      const response = await fetch(`/api/datasources/${id}/sync`, {
+      const res = await apiFetch<any>(`/api/datasources/${id}/sync`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+        json: {
           inferRelationships: false, // 明确禁用自动关系推断
-        }),
+        },
       });
 
-      const result = await response.json();
-
-      if (result.status === 'success') {
-        const stats = result.data;
+      if (res.ok) {
+        const stats = res.data;
         const changes = stats.changes || {};
         const message = `同步成功！\n\n` +
           `数据库: ${stats.databaseCount || 0} 个\n` +
@@ -170,11 +156,7 @@ export default function DataSourcesPage() {
         // 刷新列表以查看更新的同步状态
         await loadDataSources();
       } else {
-        // 显示详细错误信息
-        const errorMsg = result.error
-          ? `${result.message}\n\n详细错误: ${result.error}`
-          : result.message;
-        alert(`同步失败：${errorMsg}`);
+        alert(`同步失败：${formatApiError(res.error)}`);
       }
     } catch (err) {
       console.error('Error triggering sync:', err);
@@ -206,24 +188,19 @@ export default function DataSourcesPage() {
         ? dataSource.databases
         : undefined;
 
-      const response = await fetch('/api/metadata/relationships/infer', {
+      const res = await apiFetch<any>('/api/metadata/relationships/infer', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+        json: {
           dataSourceId: dataSource.id.toString(),
           ...(databases && { databases }), // 只有当 databases 存在时才传递
           crossDatabase: true, // 启用跨库推断以支持跨库查询场景
           minConfidence: 0.7,
           incrementalMode, // 增量模式
-        }),
+        },
       });
 
-      const result = await response.json();
-
-      if (result.status === 'success') {
-        const data = result.data;
+      if (res.ok) {
+        const data = res.data;
 
         // 直接使用新的返回数据结构
         const relationshipsCount = data.inferredCount || 0;
@@ -255,7 +232,7 @@ export default function DataSourcesPage() {
           `耗时: ${formatDuration(durationMs)}`;
         alert(message);
       } else {
-        alert(`关系推断失败：${result.message || result.error}`);
+        alert(`关系推断失败：${formatApiError(res.error)}`);
       }
     } catch (err) {
       console.error('Error inferring relationships:', err);
@@ -281,20 +258,15 @@ export default function DataSourcesPage() {
       setOperationInProgress(id);
       setAnnotatingDataSources(prev => new Set(prev).add(id));
 
-      const response = await fetch(`/api/datasources/${id}/annotate`, {
+      const res = await apiFetch<any>(`/api/datasources/${id}/annotate`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+        json: {
           force: false, // 不强制重新标注已有描述的项
-        }),
+        },
       });
 
-      const result = await response.json();
-
-      if (result.status === 'success') {
-        const stats = result.data.summary;
+      if (res.ok) {
+        const stats = res.data.summary;
         const message = `语义标注完成！\n\n` +
           `数据库: ${stats.databases} 个\n` +
           `表: ${stats.tables} 个\n` +
@@ -304,12 +276,12 @@ export default function DataSourcesPage() {
           `  - AI 处理: ${stats.aiProcessed} 个\n` +
           `  - 已跳过: ${stats.skipped} 个\n` +
           `  - 失败: ${stats.failed} 个\n\n` +
-          `耗时: ${formatDuration(result.data.duration || 0)}`;
+          `耗时: ${formatDuration(res.data.duration || 0)}`;
         alert(message);
         // 刷新列表
         await loadDataSources();
       } else {
-        alert(`语义标注失败：${result.message || result.error}`);
+        alert(`语义标注失败：${formatApiError(res.error)}`);
       }
     } catch (err) {
       console.error('Error annotating semantics:', err);
