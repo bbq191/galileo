@@ -327,11 +327,124 @@ function VerifiedTab() {
   );
 }
 
+interface SuggestionItem {
+  id: number;
+  question: string;
+  source: 'verified' | 'popular' | 'template';
+  userCount: number;
+  successRate: number;
+  isHidden: boolean;
+  updatedAt: string;
+}
+
+const SOURCE_LABELS: Record<SuggestionItem['source'], string> = {
+  verified: '已验证',
+  popular: '多人问过',
+  template: '查询模板',
+};
+
+function SuggestionsTab() {
+  const [page, setPage] = useState(1);
+  const [items, setItems] = useState<SuggestionItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const res = await apiFetch<SuggestionItem[]>(`/api/admin/suggestions?page=${page}&limit=${PAGE_SIZE}`);
+    if (res.ok) {
+      setItems(res.data);
+      setTotal(Number(res.meta.total ?? 0));
+    } else {
+      setError(res.error.message);
+    }
+    setLoading(false);
+  }, [page]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const toggle = async (item: SuggestionItem) => {
+    setError(null);
+    const res = await apiFetch(`/api/admin/suggestions/${item.id}`, { method: 'PATCH', json: { isHidden: !item.isHidden } });
+    if (res.ok) load();
+    else setError(res.error.message);
+  };
+
+  const rebuild = async () => {
+    setRebuilding(true);
+    setError(null);
+    setMessage(null);
+    const res = await apiFetch<{ verified: number; popular: number; template: number; hidden: number }>(
+      '/api/admin/maintenance/rebuild-suggestions',
+      { method: 'POST' }
+    );
+    setRebuilding(false);
+    if (res.ok) {
+      setMessage(`已重建：已验证 ${res.data.verified} 条、多人问过 ${res.data.popular} 条、模板 ${res.data.template} 条，隐藏 ${res.data.hidden} 条`);
+      setPage(1);
+      load();
+    } else {
+      setError(res.error.message);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+        <div className="text-sm opacity-70 flex-1">
+          推荐给所有用户的问题，每天由定时任务重建。「多人问过」来自其他用户的提问，包含敏感信息的请隐藏。
+        </div>
+        <button className="btn btn-sm btn-outline" disabled={rebuilding} onClick={rebuild}>
+          {rebuilding ? '重建中…' : '立即重建'}
+        </button>
+      </div>
+
+      {message && <div className="alert alert-success text-sm">{message}</div>}
+      {error && <div className="alert alert-error text-sm">{error}</div>}
+      {loading && <div className="text-center py-8"><span className="loading loading-spinner" /></div>}
+      {!loading && !error && items.length === 0 && <div className="text-center py-8 opacity-60">暂无推荐问题</div>}
+
+      {!loading && items.length > 0 && (
+        <div className="overflow-x-auto bg-base-100 rounded-box shadow">
+          <table className="table table-sm">
+            <thead>
+              <tr><th>问题</th><th>来源</th><th>提问人数</th><th>成功率</th><th /></tr>
+            </thead>
+            <tbody>
+              {items.map((item) => (
+                <tr key={item.id} className={item.isHidden ? 'opacity-50' : ''}>
+                  <td className="break-words min-w-[12rem]">{item.question}</td>
+                  <td className="whitespace-nowrap">{SOURCE_LABELS[item.source]}</td>
+                  <td>{item.userCount || '-'}</td>
+                  <td>{item.source === 'template' ? '-' : `${Math.round(item.successRate * 100)}%`}</td>
+                  <td>
+                    <button className="btn btn-xs btn-ghost" onClick={() => toggle(item)}>
+                      {item.isHidden ? '恢复' : '隐藏'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Pagination page={page} total={total} onChange={setPage} />
+    </div>
+  );
+}
+
 /**
- * 查询反馈审核与已验证查询管理
+ * 查询反馈审核、已验证查询与推荐问题管理
  */
 export default function FeedbackAdminPage() {
-  const [tab, setTab] = useState<'feedback' | 'verified'>('feedback');
+  const [tab, setTab] = useState<'feedback' | 'verified' | 'suggestions'>('feedback');
 
   return (
     <div className="space-y-4">
@@ -342,8 +455,13 @@ export default function FeedbackAdminPage() {
         <button role="tab" className={`tab ${tab === 'verified' ? 'tab-active' : ''}`} onClick={() => setTab('verified')}>
           已验证查询
         </button>
+        <button role="tab" className={`tab ${tab === 'suggestions' ? 'tab-active' : ''}`} onClick={() => setTab('suggestions')}>
+          推荐问题
+        </button>
       </div>
-      {tab === 'feedback' ? <FeedbackTab /> : <VerifiedTab />}
+      {tab === 'feedback' && <FeedbackTab />}
+      {tab === 'verified' && <VerifiedTab />}
+      {tab === 'suggestions' && <SuggestionsTab />}
     </div>
   );
 }

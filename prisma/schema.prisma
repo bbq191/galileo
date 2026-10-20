@@ -720,3 +720,25 @@ model SavedQueryRun {
   @@index([startedAt])
   @@map("saved_query_runs")
 }
+
+// ============================================
+// 问题推荐
+// ============================================
+
+/// 推荐给用户的问题，由 POST /api/admin/maintenance/rebuild-suggestions 每天重建（隐藏的保留）
+model QuestionSuggestion {
+  id              Int      @id @default(autoincrement())
+  question        String   @db.Text
+  questionHash    String   @unique @map("question_hash") @db.Char(32)
+  dataSourceIds   String   @map("data_source_ids") @db.VarChar(255)   // JSON 数组，空数组表示不限数据源
+  source          String   @db.VarChar(20)                            // verified | popular | template
+  verifiedQueryId Int?     @map("verified_query_id")
+  userCount       Int      @default(0) @map("user_count")
+  successRate     Float    @default(0) @map("success_rate")
+  score           Float    @default(0)
+  isHidden        Boolean  @default(false) @map("is_hidden")          // 管理员隐藏（如包含敏感信息），重建时保留且不再推荐
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([isHidden, score])
+  @@map("question_suggestions")
+}

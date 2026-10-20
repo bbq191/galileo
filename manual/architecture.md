@@ -376,6 +376,12 @@ Prompt 中只描述代表表一次，并列出分表清单、要求 `UNION ALL` 
 | SavedQuery | 用户保存的查询与刷新计划 | userId, sql, tableSnapshot, schedule, nextRunAt, status |
 | SavedQueryRun | 每次执行的结果预览 | savedQueryId, trigger, status, resultPreview, readAt |
 
+**问题推荐表 (1 个)**
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| QuestionSuggestion | 推荐给用户的问题（每天重建，隐藏的保留） | questionHash, source, dataSourceIds, score, isHidden |
+
 **监控表 (4 个)**
 
 | 表名 | 用途 | 关键字段 |

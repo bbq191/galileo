@@ -57,7 +57,7 @@ const adminModules = [
   },
   {
     title: '查询反馈',
-    description: '审核用户反馈与纠错，管理已验证查询',
+    description: '审核用户反馈与纠错，管理已验证查询与推荐问题',
     href: '/admin/feedback',
     icon: '👍',
     color: 'bg-teal-500',

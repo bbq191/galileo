@@ -2,6 +2,12 @@
 
 import { useState } from 'react';
 
+export interface QuestionOption {
+  question: string;
+  /** 已验证的问题（执行时直接使用管理员确认的 SQL） */
+  verified?: boolean;
+}
+
 interface QueryInputProps {
   value: string;
   onChange: (value: string) => void;
@@ -9,6 +15,23 @@ interface QueryInputProps {
   onPreview?: () => void;
   loading?: boolean;
   disabled?: boolean;
+  /** 输入时的联想（由页面按相似度过滤） */
+  suggestions?: QuestionOption[];
+  /** 选择联想或推荐的问题 */
+  onSelectSuggestion?: (option: QuestionOption) => void;
+  /** 推荐问题；为空时展示通用示例 */
+  examples?: QuestionOption[];
+}
+
+const DEFAULT_EXAMPLES: QuestionOption[] = [
+  { question: '查询最近一个月销售额TOP10的产品' },
+  { question: '统计每个分类的订单数量' },
+  { question: '查询今年注册的用户总数' },
+  { question: '对比本月和上月的销售数据' },
+];
+
+function VerifiedBadge() {
+  return <span className="badge badge-success badge-xs ml-2 align-middle">已验证</span>;
 }
 
 /**
@@ -22,8 +45,13 @@ export default function QueryInput({
   onPreview,
   loading = false,
   disabled = false,
+  suggestions = [],
+  onSelectSuggestion,
+  examples = [],
 }: QueryInputProps) {
   const [isFocused, setIsFocused] = useState(false);
+  const select = (option: QuestionOption) => (onSelectSuggestion ? onSelectSuggestion(option) : onChange(option.question));
+  const shownExamples = examples.length > 0 ? examples : DEFAULT_EXAMPLES;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Ctrl/Cmd + Enter 执行查询
@@ -62,9 +90,31 @@ export default function QueryInput({
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={handleKeyDown}
             onFocus={() => setIsFocused(true)}
-            onBlur={() => setIsFocused(false)}
+            // 延迟收起，保证点击联想项时 onMouseDown 先触发
+            onBlur={() => setTimeout(() => setIsFocused(false), 150)}
             disabled={disabled || loading}
           />
+          {isFocused && suggestions.length > 0 && (
+            <ul className="menu bg-base-100 border border-base-300 rounded-box shadow mt-1 p-1">
+              {suggestions.map((option) => (
+                <li key={option.question}>
+                  <button
+                    type="button"
+                    className="text-sm text-left"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      select(option);
+                    }}
+                  >
+                    <span className="break-words">
+                      {option.question}
+                      {option.verified && <VerifiedBadge />}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           <label className="label">
             <span className="label-text-alt text-xs">
               💡 提示：尽量使用清晰、具体的描述，包含时间范围、筛选条件等信息
@@ -75,38 +125,26 @@ export default function QueryInput({
           </label>
         </div>
 
-        {/* 查询示例 */}
+        {/* 查询示例：有推荐问题时展示推荐（已验证与多人问过的问题） */}
         <div className="collapse collapse-arrow bg-base-200 rounded-lg">
           <input type="checkbox" />
           <div className="collapse-title text-sm font-medium">
-            查看查询示例
+            {examples.length > 0 ? '推荐问题' : '查看查询示例'}
           </div>
           <div className="collapse-content">
             <div className="space-y-2">
-              <div
-                className="p-2 bg-base-100 rounded cursor-pointer hover:bg-base-300 transition-colors"
-                onClick={() => onChange('查询最近一个月销售额TOP10的产品')}
-              >
-                <p className="text-sm">查询最近一个月销售额TOP10的产品</p>
-              </div>
-              <div
-                className="p-2 bg-base-100 rounded cursor-pointer hover:bg-base-300 transition-colors"
-                onClick={() => onChange('统计每个分类的订单数量')}
-              >
-                <p className="text-sm">统计每个分类的订单数量</p>
-              </div>
-              <div
-                className="p-2 bg-base-100 rounded cursor-pointer hover:bg-base-300 transition-colors"
-                onClick={() => onChange('查询今年注册的用户总数')}
-              >
-                <p className="text-sm">查询今年注册的用户总数</p>
-              </div>
-              <div
-                className="p-2 bg-base-100 rounded cursor-pointer hover:bg-base-300 transition-colors"
-                onClick={() => onChange('对比本月和上月的销售数据')}
-              >
-                <p className="text-sm">对比本月和上月的销售数据</p>
-              </div>
+              {shownExamples.map((option) => (
+                <div
+                  key={option.question}
+                  className="p-2 bg-base-100 rounded cursor-pointer hover:bg-base-300 transition-colors"
+                  onClick={() => select(option)}
+                >
+                  <p className="text-sm break-words">
+                    {option.question}
+                    {option.verified && <VerifiedBadge />}
+                  </p>
+                </div>
+              ))}
             </div>
           </div>
         </div>

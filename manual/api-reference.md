@@ -207,6 +207,17 @@
 
 源码: `app/api/saved-queries/`、`lib/saved-queries/`
 
+### 2.8 推荐问题
+
+| 端点 | 说明 |
+|------|------|
+| `GET /api/query/suggestions?dataSourceId=` | 最多 200 条推荐问题（按分数倒序），`source`: `verified` \| `popular` \| `template`；`verifiedEnabled` 表示已验证问题是否会直接使用已验证的 SQL。前端在这份列表内做输入联想，不按输入逐字请求 |
+| `GET /api/admin/suggestions?page=1&limit=20` | 全部推荐问题（含已隐藏，管理员） |
+| `PATCH /api/admin/suggestions/{id}` | `{ "isHidden": boolean }`，隐藏后不再推荐，重建时保留 |
+| `POST /api/admin/maintenance/rebuild-suggestions` | 重建推荐问题（定时任务，见 `manual/operations.md` 第 10 节） |
+
+源码: `app/api/query/suggestions/`、`lib/suggestions/`
+
 ---
 
 ## 3. Datasources - 数据源管理

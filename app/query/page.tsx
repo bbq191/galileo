@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import QueryInput from '@/components/query/QueryInput';
+import { useEffect, useMemo, useState } from 'react';
+import QueryInput, { type QuestionOption } from '@/components/query/QueryInput';
 import SQLPreview from '@/components/query/SQLPreview';
 import ResultTable from '@/components/query/ResultTable';
 import PerformanceMetrics from '@/components/query/PerformanceMetrics';
@@ -9,10 +9,41 @@ import ChartVisualization from '@/components/query/ChartVisualization';
 import ResultFeedback from '@/components/query/ResultFeedback';
 import SaveQueryPanel from '@/components/saved-queries/SaveQueryPanel';
 import { apiFetch } from '@/lib/client/api-fetch';
+import { normalizeQuestion, questionSimilarity } from '@/lib/feedback/similarity';
 
 interface DataSourceOption {
   id: number;
   name: string;
+}
+
+interface Suggestion {
+  id: number;
+  question: string;
+  source: 'verified' | 'popular' | 'template';
+}
+
+/** 联想与相似问题的最低相似度 */
+const SIMILAR_THRESHOLD = 0.3;
+
+/** 按相似度挑选与输入相关的推荐问题（包含输入原文的优先） */
+function similarSuggestions(input: string, suggestions: Suggestion[], limit: number): Suggestion[] {
+  const normalized = normalizeQuestion(input);
+  if (normalized.length < 2) return [];
+  return suggestions
+    .filter((s) => normalizeQuestion(s.question) !== normalized)
+    .map((s) => ({
+      s,
+      score: normalizeQuestion(s.question).includes(normalized) ? 1 : questionSimilarity(input, s.question),
+    }))
+    .filter(({ score }) => score >= SIMILAR_THRESHOLD)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(({ s }) => s);
+}
+
+/** 开启已验证查询时，已验证的问题标记为可直接执行 */
+function toQuestionOption(s: Suggestion, verifiedEnabled: boolean): QuestionOption {
+  return { question: s.question, verified: verifiedEnabled && s.source === 'verified' };
 }
 
 interface QueryResult {
@@ -61,6 +92,11 @@ export default function QueryPage() {
   const [dataSourceId, setDataSourceId] = useState<number | undefined>(undefined);
   // 最近一次自然语言查询的 runId：编辑 SQL 后执行时关联为对它的纠正
   const [sourceRunId, setSourceRunId] = useState<string | undefined>(undefined);
+  // 推荐问题（已验证 / 多人问过 / 模板示例），用于空白页推荐、输入联想与失败时的相似问题
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [verifiedEnabled, setVerifiedEnabled] = useState(false);
+  // 最近一次执行的问题（失败或无数据时据此给出相似问题）
+  const [executedQuery, setExecutedQuery] = useState('');
 
   useEffect(() => {
     apiFetch<DataSourceOption[]>('/api/datasources').then((res) => {
@@ -68,23 +104,44 @@ export default function QueryPage() {
     });
   }, []);
 
+  useEffect(() => {
+    const params = dataSourceId !== undefined ? `?dataSourceId=${dataSourceId}` : '';
+    apiFetch<Suggestion[]>(`/api/query/suggestions${params}`).then((res) => {
+      if (res.ok) {
+        setSuggestions(res.data);
+        setVerifiedEnabled(res.meta.verifiedEnabled === true);
+      }
+    });
+  }, [dataSourceId]);
+
+  const toOption = (s: Suggestion) => toQuestionOption(s, verifiedEnabled);
+  const typingSuggestions = useMemo(
+    () => (loading ? [] : similarSuggestions(query, suggestions, 5).map((s) => toQuestionOption(s, verifiedEnabled))),
+    [query, suggestions, verifiedEnabled, loading]
+  );
+  const recommended = useMemo(
+    () => suggestions.slice(0, 6).map((s) => toQuestionOption(s, verifiedEnabled)),
+    [suggestions, verifiedEnabled]
+  );
+
   const dataSourceNames = (ids?: number[]) =>
     (ids ?? []).map((id) => dataSources.find((d) => d.id === id)?.name ?? `#${id}`).join('、');
 
-  // 执行查询
-  const handleExecute = async () => {
-    if (!query.trim()) {
+  // 执行查询（question 用于选择推荐问题后立即执行，此时 query 状态尚未更新）
+  const handleExecute = async (question: string = query) => {
+    if (!question.trim()) {
       setError('请输入查询内容');
       return;
     }
 
     setLoading(true);
     setError(null);
+    setExecutedQuery(question.trim());
 
     const res = await apiFetch<any[]>('/api/query/execute', {
       method: 'POST',
       json: {
-        query: query.trim(),
+        query: question.trim(),
         options: {
           enableCache: true,
           maxRows: 10000,
@@ -184,6 +241,18 @@ export default function QueryPage() {
     setLoading(false);
   };
 
+  // 选择推荐问题：已验证的直接执行（使用管理员确认的 SQL），其他的填入输入框
+  const handleSelectSuggestion = (option: QuestionOption) => {
+    setQuery(option.question);
+    if (option.verified) {
+      handleExecute(option.question);
+    }
+  };
+
+  // 失败或没有返回数据时，推荐相似的可用问题
+  const showSimilar = !loading && !!executedQuery && (!!error || (result?.success === true && result.metadata?.rowCount === 0));
+  const similarAfterFailure = showSimilar ? similarSuggestions(executedQuery, suggestions, 3) : [];
+
   // 清除结果
   const handleClear = () => {
     setResult(null);
@@ -215,10 +284,33 @@ export default function QueryPage() {
         <QueryInput
           value={query}
           onChange={setQuery}
-          onExecute={handleExecute}
+          onExecute={() => handleExecute()}
           onPreview={handlePreview}
           loading={loading}
+          suggestions={typingSuggestions}
+          onSelectSuggestion={handleSelectSuggestion}
+          examples={recommended}
         />
+
+        {/* 失败或无数据时的相似问题 */}
+        {similarAfterFailure.length > 0 && (
+          <div className="card bg-base-100 shadow">
+            <div className="card-body p-4 space-y-2">
+              <div className="text-sm opacity-70">这些相似的问题之前得到过结果，可以试试：</div>
+              <div className="flex flex-wrap gap-2">
+                {similarAfterFailure.map((s) => {
+                  const option = toOption(s);
+                  return (
+                    <button key={s.id} className="btn btn-sm btn-outline normal-case h-auto py-1" onClick={() => handleSelectSuggestion(option)}>
+                      <span className="break-words text-left">{s.question}</span>
+                      {option.verified && <span className="badge badge-success badge-xs">已验证</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 错误提示 */}
         {error && (
@@ -398,6 +490,21 @@ export default function QueryPage() {
                   使用自然语言描述您的查询需求，我们的 AI
                   将帮助您生成精确的 SQL 查询并执行
                 </p>
+                {recommended.length > 0 ? (
+                  <div className="max-w-2xl mx-auto mt-8 text-left space-y-2">
+                    <div className="text-sm font-medium opacity-70">大家常问的问题</div>
+                    {recommended.map((option) => (
+                      <button
+                        key={option.question}
+                        className="w-full p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-colors text-left text-sm break-words"
+                        onClick={() => handleSelectSuggestion(option)}
+                      >
+                        {option.question}
+                        {option.verified && <span className="badge badge-success badge-xs ml-2 align-middle">已验证</span>}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl mx-auto mt-8">
                   <div className="card bg-base-200">
                     <div className="card-body p-4">
@@ -427,6 +534,7 @@ export default function QueryPage() {
                     </div>
                   </div>
                 </div>
+                )}
               </div>
             </div>
           </div>

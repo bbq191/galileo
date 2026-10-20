@@ -138,9 +138,9 @@ export const FeedbackReviewSchema = z.object({
 
 // 保存的查询
 const ScheduleFields = {
-  schedule: z.enum(['none', 'daily', 'weekly']).optional(),
-  runAtHour: z.number().int().min(0).max(23).optional(),
-  runOnWeekday: z.number().int().min(1).max(7).optional(),
+  schedule: z.enum(['none', 'daily', 'weekly'], { message: '刷新频率只能是 none、daily 或 weekly' }).optional(),
+  runAtHour: z.number().int().min(0, '时间必须在 0-23 点之间').max(23, '时间必须在 0-23 点之间').optional(),
+  runOnWeekday: z.number().int().min(1, '星期必须在 1-7 之间').max(7, '星期必须在 1-7 之间').optional(),
 };
 
 export const SavedQueryCreateSchema = z.object({

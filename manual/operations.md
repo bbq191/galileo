@@ -17,6 +17,7 @@
 7. [定时任务](#7-定时任务)
 8. [查询反馈与已验证查询](#8-查询反馈与已验证查询)
 9. [保存的查询与定时刷新](#9-保存的查询与定时刷新)
+10. [推荐问题](#10-推荐问题)
 
 ---
 
@@ -516,6 +517,7 @@ pm2 start galileo
 |------|------|----------|
 | `POST /api/admin/maintenance/cleanup-history` | 删除超过保留期的查询历史与定时查询执行记录（默认 90 天，`QUERY_HISTORY_RETENTION_DAYS` 或请求体 `{"days": N}`，最少 7 天） | 每天一次 |
 | `POST /api/admin/maintenance/run-saved-queries` | 执行到期的定时刷新查询（见第 9 节） | 每 10 分钟 |
+| `POST /api/admin/maintenance/rebuild-suggestions` | 重建查询页的推荐问题（见第 10 节） | 每天一次 |
 | `POST /api/admin/maintenance/sync-datasources` | 依次增量同步所有 active 数据源的元数据（不做关系推断与 AI 标注） | 按表结构变更频率，如每天凌晨 |
 
 调用需要管理员权限，定时任务使用 `X-API-Key: $ADMIN_API_KEY`：
@@ -530,6 +532,9 @@ KEY=请替换为 ADMIN_API_KEY 的值
 
 # 每 10 分钟执行到期的定时查询
 */10 * * * * curl -fsS -X POST -H "X-API-Key: $KEY" $API/api/admin/maintenance/run-saved-queries >> /var/log/galileo/cron.log 2>&1
+
+# 每天 05:00 重建推荐问题
+0 5 * * * curl -fsS -X POST -H "X-API-Key: $KEY" $API/api/admin/maintenance/rebuild-suggestions >> /var/log/galileo/cron.log 2>&1
 
 # 每天 04:00 同步元数据；有数据源失败时返回 207，用 jq 检查 failed 并告警
 0 4 * * * curl -sS -X POST -H "X-API-Key: $KEY" $API/api/admin/maintenance/sync-datasources | tee -a /var/log/galileo/cron.log | jq -e '.data.failed == 0' > /dev/null || echo "元数据同步存在失败" | mail -s galileo ops@example.com
@@ -584,6 +589,22 @@ KEY=请替换为 ADMIN_API_KEY 的值
 容量估算：单次调度最多执行 `SAVED_QUERY_MAX_PER_TICK`（默认 8）个查询，每个最长 30 秒，最坏 240 秒，低于接口 `maxDuration` 的 300 秒。
 每 10 分钟调度时每小时最多执行约 48 个；到期查询更多时会顺延到下一次调度。需要更大容量时提高调度频率
 （不要单纯调大 `SAVED_QUERY_MAX_PER_TICK`，否则可能超过 `maxDuration`），并关注业务库负载。
+
+---
+
+## 10. 推荐问题
+
+查询页空白时展示「大家常问的问题」，输入时联想相似问题，查询失败或没有数据时推荐相似的、之前得到过结果的问题。
+推荐列表每天重建，来源按优先级：
+
+1. **已验证查询**（第 8 节）：`ENABLE_VERIFIED_QUERIES=true` 时标记「已验证」，点击后直接使用已验证的 SQL 执行
+2. **多人问过**：近 30 天至少 2 个不同用户问过，且 80% 以上执行成功并返回数据（只统计鉴权上线后带用户 ID 的记录）
+3. **查询模板示例**：仅 `ENABLE_BUSINESS_RULES=true` 时使用（认为模板已按实际业务维护），带 `{占位符}` 的示例不推荐
+
+隐私：「多人问过」会把其他用户的提问展示给所有人。重建时排除包含 6 位以上连续数字（手机号、证件号、订单号等）或邮箱的问题；
+其余不宜公开的问题请在 `/admin/feedback` 的「推荐问题」页隐藏，隐藏状态在重建后保留。该页也可以手动「立即重建」。
+
+上线初期审计记录较少，推荐可能为空，此时查询页仍显示原有的通用示例。
 
 ---
 
