@@ -8,6 +8,7 @@ import { PrismaClient } from '@prisma/client';
 import { QueryIntent } from '@/lib/nlp/types';
 import { MetadataContext, SearchOptions } from './types';
 import { extractTableReferences } from './sql-table-references';
+import { expandShardGroups } from '@/lib/metadata/shard/shard-expander';
 import { SemanticSearch } from './semantic-search';
 import { RelevanceRanker } from './relevance-ranker';
 import { ContextBuilder } from './context-builder';
@@ -72,13 +73,19 @@ export class MetadataRetriever {
       }
     );
 
-    console.log('元数据上下文构建完成');
-    console.log(`- 表数量: ${context.tables.length}`);
-    console.log(`- 关系数量: ${context.relationships.length}`);
-    console.log(`- 总字段数: ${context.columns.length}`);
-    console.log(`- 复杂度: ${context.estimatedComplexity}`);
+    // 4. 展开分表组：命中任意分表时加入同组全部分表
+    const expanded = await expandShardGroups(this.prisma, context);
+    if (expanded.tables.length > context.tables.length) {
+      console.log(`- 分表展开: ${context.tables.length} → ${expanded.tables.length} 张表`);
+    }
 
-    return context;
+    console.log('元数据上下文构建完成');
+    console.log(`- 表数量: ${expanded.tables.length}`);
+    console.log(`- 关系数量: ${expanded.relationships.length}`);
+    console.log(`- 总字段数: ${expanded.columns.length}`);
+    console.log(`- 复杂度: ${expanded.estimatedComplexity}`);
+
+    return expanded;
   }
 
   /**

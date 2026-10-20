@@ -21,6 +21,7 @@ import "reflect-metadata";
 import { inject, injectable } from "tsyringe";
 import { CrossDatabaseHandler } from "../../cross-db-handler";
 import { SQL_GENERATION_SYSTEM_PROMPT } from "../../prompts/sql-prompts";
+import { isShardMember, renderShardGroupNote } from "../../prompts/shard-prompt";
 import { SQLGenerationResult } from "../../types";
 import { BasePipelineStage } from "../base-stage";
 import { PipelineContext } from "../types";
@@ -184,7 +185,9 @@ export class AIGenerator extends BasePipelineStage {
     }
   ): string {
     // 构建表结构描述
+    // 分表组成员与代表表结构相同，只描述代表表（见 shard-prompt.ts）
     const tableSchemas = metadata.tables
+      .filter((t) => !isShardMember(t))
       .map((t) => {
         const fullTableName = `\`${t.databaseName}\`.\`${t.tableName}\``;
         return `
@@ -209,7 +212,7 @@ ${t.columns
     }`
   )
   .join("\n")}
-`;
+${renderShardGroupNote(t)}`;
       })
       .join("\n");
 

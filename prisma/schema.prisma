@@ -368,6 +368,7 @@ model BusinessTermMapping {
 
 /// 分表模式定义表
 /// 用于处理分表查询，自动展开分表
+// 已弃用：分表以同步时自动识别的 TableShardGroup 为准，不再读取本表（保留以免破坏已有数据）
 model ShardingPattern {
   id                   Int       @id @default(autoincrement())
   patternName          String    @db.VarChar(100) @unique      // 模式名称

@@ -46,6 +46,14 @@ describe('SQLValidator - 应通过', () => {
       '子查询',
       'SELECT t.name FROM (SELECT u.name FROM `shop`.`users` u) t',
     ],
+    [
+      '分表 UNION ALL 合并（曾被判为 SQL 注入）',
+      'SELECT COUNT(*) AS total FROM (SELECT id FROM `shop`.`orders` UNION ALL SELECT id FROM `shop`.`users`) AS t',
+    ],
+    [
+      '字符串中出现系统库名',
+      "SELECT name FROM `shop`.`users` WHERE name = 'mysql'",
+    ],
   ])('%s', async (_label, sql) => {
     const result = await validate(sql);
     expect(result.errors).toEqual([]);
@@ -60,7 +68,9 @@ describe('SQLValidator - 应拦截', () => {
     ['非 SELECT 语句', 'DELETE FROM `shop`.`users`'],
     ['堆叠语句', 'SELECT 1 FROM `shop`.`users`; DROP TABLE `shop`.`users`'],
     ['时间盲注函数', 'SELECT SLEEP(10) FROM `shop`.`users`'],
-    ['读取系统表', 'SELECT name FROM `shop`.`users` UNION SELECT table_name FROM information_schema.tables'],
+    ['UNION 读取系统表', 'SELECT name FROM `shop`.`users` UNION SELECT table_name FROM information_schema.tables'],
+    ['直接读取系统库', 'SELECT * FROM mysql.user'],
+    ['UNION 读取元数据外的表', 'SELECT name FROM `shop`.`users` UNION ALL SELECT secret FROM `shop`.`secrets`'],
   ])('%s', async (_label, sql) => {
     expect((await validate(sql)).isValid).toBe(false);
   });

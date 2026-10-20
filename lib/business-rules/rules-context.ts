@@ -8,8 +8,8 @@
  * - 聚合规则：来源表必须在元数据中
  * - 查询模板：作为带占位符的结构参考
  *
- * 分表模式（ShardingPattern）暂不注入：生成器要求 SQL 中的表都在元数据上下文里，
- * 需要先加载各分表的真实元数据，并与 lib/metadata/shard 的分表分组统一。
+ * 分表不由业务规则处理：以同步时自动识别的 TableShardGroup 为准，
+ * 在元数据检索阶段展开（lib/metadata/shard/shard-expander.ts）。
  */
 
 import crypto from 'crypto';

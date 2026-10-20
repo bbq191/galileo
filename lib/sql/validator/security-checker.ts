@@ -184,10 +184,12 @@ export class SecurityChecker {
     ];
 
     for (const db of systemDatabases) {
-      const regex = new RegExp(`\\b${db}\\b`, 'i');
+      // 作为库名限定符出现时才算访问（mysql.user、`mysql`.`user`），避免字符串中的同名单词误报
+      const regex = new RegExp(`\`?\\b${db}\\b\`?\\s*\\.`, 'i');
       if (regex.test(sql)) {
         issues.push({
-          severity: 'high',
+          // 系统不需要访问系统库，按 critical 拒绝
+          severity: 'critical',
           type: 'information_disclosure',
           message: `查询涉及系统数据库 ${db}，可能存在信息泄露风险`,
           details: `不建议直接查询 ${db} 等系统数据库，这可能暴露数据库结构和敏感信息`
@@ -256,7 +258,8 @@ export class SecurityChecker {
   private containsSQLInjectionPatterns(sql: string): boolean {
     const patterns = [
       /;\s*(DROP|DELETE|TRUNCATE|ALTER|UPDATE|INSERT|CREATE)/i,  // 多语句注入
-      /UNION\s+(ALL\s+)?SELECT/i,  // 联合查询注入
+      // 不检查 UNION：SQL 由系统整体生成而非拼接用户输入，UNION ALL 是合并分表的正常写法；
+      // 借 UNION 读取其他表的风险由语义检查（表必须在元数据上下文中）与系统库检查覆盖
       /OR\s+['"]?\d+['"]?\s*=\s*['"]?\d+['"]?/i,  // OR 1=1 等恒真条件
       /AND\s+['"]?\d+['"]?\s*=\s*['"]?\d+['"]?/i,  // AND 1=1 等恒真条件
       /OR\s+['"][^'"]*['"]\s*=\s*['"]/i,  // OR 'x'='x'

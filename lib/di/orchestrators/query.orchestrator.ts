@@ -418,7 +418,8 @@ export class QueryOrchestrator {
         };
       }
 
-      const warnings = [...(sqlResult.warnings ?? []), ...validation.warnings];
+      // 上下文提示（如分表数量超过展开上限）+ SQL 生成警告 + 校验警告
+      const warnings = [...(context.warnings ?? []), ...(sqlResult.warnings ?? []), ...validation.warnings];
 
       // 如果只是解释查询，不执行
       if (options.explainOnly) {

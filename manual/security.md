@@ -162,6 +162,10 @@ AI 生成的 SQL 在执行前依次经过两层校验：
 
 校验器自身异常时：`shadow` 放行，`enforce` 拒绝执行。未通过校验的结果不会写入查询缓存。
 
+安全检查不把 `UNION` 视为注入特征：SQL 由系统整体生成而非拼接用户输入，`UNION ALL` 是合并分表的正常写法。
+借 `UNION` 读取其他数据的风险由两项检查覆盖：FROM / JOIN 中的表必须在元数据上下文中；
+以库名限定方式访问系统库（`information_schema`、`mysql`、`sys`、`performance_schema`）按 critical 拒绝。
+
 ### 从 shadow 切换到 enforce
 
 每次校验向标准输出写一行 `[SQLValidator] {...}`（不进入 pino 的 `app.log`），

@@ -12,6 +12,7 @@ import { QueryIntent } from '@/lib/nlp/types';
 import { MetadataContext, TableContext } from '@/lib/metadata/retrieval/types';
 import { SQLGenerationResult, SQLGenerationOptions } from './types';
 import { SQL_GENERATION_SYSTEM_PROMPT } from './prompts/sql-prompts';
+import { isShardMember, renderShardGroupNote } from './prompts/shard-prompt';
 import { CrossDatabaseHandler } from './cross-db-handler';
 import type { QueryCacheManager } from '@/lib/cache/query-cache-manager';
 import { buildSQLCacheVariant } from '@/lib/cache/sql-cache-variant';
@@ -260,7 +261,8 @@ export class SQLGenerator {
     context: MetadataContext
   ): string {
     // 构建表结构描述
-    const tableSchemas = context.tables.map(t => {
+    // 分表组成员与代表表结构相同，只描述代表表（见 shard-prompt.ts）
+    const tableSchemas = context.tables.filter(t => !isShardMember(t)).map(t => {
       const fullTableName = `\`${t.databaseName}\`.\`${t.tableName}\``;
       return `
 ### 表: ${t.tableName}
@@ -282,7 +284,7 @@ ${t.columns.map(c => `  - ${c.columnName} (${c.dataType})${c.isPrimaryKey ? ' [�
 2. **严禁修改表名**：表名是 "${t.tableName}"，不能改成 "db_${t.tableName}" 或其他任何变体
 3. **反引号格式**：\\\`${t.databaseName}\\\`.\\\`${t.tableName}\\\` ✓  |  \\\`${t.databaseName}.${t.tableName}\\\` ✗
 4. **表名前缀**：如果表名是 "tb_xxx"，不能改成 "db_xxx" 或 "t_xxx"
-`;
+${renderShardGroupNote(t)}`;
     }).join('\n');
 
     // 构建关系描述

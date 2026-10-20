@@ -8,7 +8,6 @@ import { Redis } from 'ioredis';
 import prisma from '@/lib/prisma/client';
 import { getRedisClient } from '@/lib/cache/redis-client';
 import { QueryIntent } from '@/lib/nlp/types';
-import { MetadataContext } from '@/lib/metadata/retrieval/types';
 
 /**
  * 业务术语匹配结果
@@ -23,19 +22,6 @@ export interface BusinessTermMatch {
   targetValue?: any;
   confidence: number;
   priority: number;
-  semanticDescription?: string;
-}
-
-/**
- * 分表模式识别结果
- */
-export interface ShardingPatternMatch {
-  patternName: string;
-  baseTableName: string;
-  tableList: string[];
-  mergeStrategy: string;
-  shardKeyColumn?: string;
-  shardAlgorithm?: string;
   semanticDescription?: string;
 }
 
@@ -211,105 +197,6 @@ export class BusinessRulesEngine {
       console.error('[BusinessRulesEngine] 业务术语匹配失败:', error);
       // 降级：返回空数组，不阻塞 SQL 生成流程
       return [];
-    }
-  }
-
-  /**
-   * 识别分表模式
-   * 检测查询是否涉及分表，并返回分表信息
-   *
-   * 实现说明：
-   * 1. 从数据库读取分表模式
-   * 2. 使用 Redis 缓存
-   * 3. 匹配意图和上下文中的表
-   * 4. 更新使用统计
-   */
-  async detectShardingPatterns(
-    intent: QueryIntent,
-    context: MetadataContext
-  ): Promise<ShardingPatternMatch[]> {
-    console.log('[BusinessRulesEngine] 检测分表模式...');
-
-    const matches: ShardingPatternMatch[] = [];
-
-    try {
-      // 从数据库查询所有启用的分表模式
-      const allPatterns = await this.prisma.shardingPattern.findMany({
-        where: {
-          isEnabled: true
-        },
-        orderBy: {
-          usageCount: 'desc'
-        }
-      });
-
-      // 检查意图中的表是否匹配分表模式
-      for (const pattern of allPatterns) {
-        // 检查是否有表名匹配基表名
-        const hasMatch = intent.entities.tables?.some(tableName =>
-          tableName === pattern.baseTableName ||
-          tableName.startsWith(pattern.baseTableName + '_')
-        );
-
-        // 或者检查上下文中的表
-        const hasContextMatch = context.tables.some(table =>
-          table.tableName === pattern.baseTableName ||
-          table.tableName.startsWith(pattern.baseTableName + '_')
-        );
-
-        if (hasMatch || hasContextMatch) {
-          // 解析 tableList（JSON 数组）
-          let tableList: string[] = [];
-          try {
-            tableList = pattern.tableList ? JSON.parse(pattern.tableList) : [];
-          } catch (e) {
-            console.error(`[BusinessRulesEngine] 解析 tableList 失败:`, e);
-          }
-
-          matches.push({
-            patternName: pattern.patternName,
-            baseTableName: pattern.baseTableName,
-            tableList,
-            mergeStrategy: pattern.mergeStrategy,
-            shardKeyColumn: pattern.shardKeyColumn || undefined,
-            shardAlgorithm: pattern.shardAlgorithm || undefined,
-            semanticDescription: pattern.semanticDescription || undefined
-          });
-
-          console.log(`[BusinessRulesEngine] 检测到分表模式: ${pattern.patternName} (${pattern.shardCount} 个分表)`);
-
-          // 更新使用统计（异步，不阻塞主流程）
-          this.updatePatternUsage(pattern.id).catch(err => {
-            console.error('[BusinessRulesEngine] 更新分表模式使用统计失败:', err);
-          });
-        }
-      }
-
-      console.log(`[BusinessRulesEngine] 分表模式检测完成，找到 ${matches.length} 个匹配项`);
-      return matches;
-
-    } catch (error) {
-      console.error('[BusinessRulesEngine] 分表模式检测失败:', error);
-      // 降级：返回空数组，不阻塞 SQL 生成流程
-      return [];
-    }
-  }
-
-  /**
-   * 更新分表模式使用统计
-   * @param patternId 模式 ID
-   */
-  private async updatePatternUsage(patternId: number): Promise<void> {
-    try {
-      await this.prisma.shardingPattern.update({
-        where: { id: patternId },
-        data: {
-          usageCount: { increment: 1 },
-          lastUsedAt: new Date()
-        }
-      });
-    } catch (error) {
-      console.error(`[BusinessRulesEngine] 更新分表模式使用统计失败 (ID: ${patternId}):`, error);
     }
   }
 

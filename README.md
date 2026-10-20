@@ -68,7 +68,7 @@ Template Matcher -> Prompt Cache -> SQL Cache -> AI Generator -> Quality Enhance
 - **增量同步**: 按表计算 DDL 的 SHA-256 哈希（已排除随数据写入变化的 `AUTO_INCREMENT`），结构未变化的表只更新行数与注释，跳过字段采集与写入；`fullSync` 可强制全量
 - **多策略域推断**: 命名规则(40%) + 向量相似度(30%) + AI 推理(30%) 加权融合，自动判定表归属业务域
 - **自动发现**: 基于命名规则和语义分析发现业务域边界（`domain-discoverer`）
-- **分片支持**: 分库分表场景下的元数据统一管理（`shard/`）
+- **分表支持**: 同步时按命名与结构哈希自动识别分表组（`shard/`）；查询命中任意分表时展开同组全部分表，Prompt 中只描述一次结构并要求 `UNION ALL` 合并
 - **全文搜索**: 基于 MySQL FULLTEXT 索引的元数据语义搜索
 
 ### AI 模块 (`lib/ai/`)

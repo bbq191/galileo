@@ -15,6 +15,8 @@ export interface MetadataContext {
   columns: ColumnContext[];
   /** 估算的查询复杂度 */
   estimatedComplexity: 'low' | 'medium' | 'high';
+  /** 构建上下文时产生的提示（如分表数量超过展开上限），会合并到查询结果的 warnings */
+  warnings?: string[];
   /** @deprecated 相关的表(使用 tables 代替) */
   relevantTables?: TableContext[];
 }
@@ -47,6 +49,16 @@ export interface TableContext {
     databaseName: string;
     sourceId: number;
   };
+  /** 分表组信息（仅代表表携带，见 lib/metadata/shard/shard-expander.ts） */
+  shardGroup?: {
+    id: number;
+    groupName: string;
+    baseTablePattern: string;
+    /** 组内全部分表名（含代表表），按名称排序 */
+    tableNames: string[];
+  };
+  /** 分表组成员：代表表名。成员表与代表表结构相同，Prompt 中不单独描述 */
+  shardOf?: string;
 }
 
 /**

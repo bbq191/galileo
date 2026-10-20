@@ -5,6 +5,7 @@
  * 注意：以下为直播 / 寿险业务的示例，表名、字段与过滤条件需按实际业务替换。
  * 可重复执行：有唯一约束的规则按名称跳过，业务术语按术语文本跳过已存在的条目。
  * 规则仅在 ENABLE_BUSINESS_RULES=true 时注入 SQL 生成，见 lib/business-rules/rules-context.ts。
+ * 分表不在此维护：同步时自动识别为 TableShardGroup，见 lib/metadata/shard/shard-expander.ts。
  */
 import { Prisma, PrismaClient } from '@prisma/client';
 
@@ -99,62 +100,6 @@ async function seedBusinessRules() {
         isEnabled: true
       }
     ] as Prisma.BusinessTermMappingCreateManyInput[]).filter((t) => !existingTerms.has(t.term))
-  });
-
-  // 2. 分表模式
-  console.log('📊 添加分表模式...');
-  const patterns = await prisma.shardingPattern.createMany({
-    skipDuplicates: true,
-    data: [
-      {
-        patternName: 'live_watch_detail_sharding',
-        description: '观看时长明细数据分表模式',
-        baseTableName: 'tb_live_watch_detail',
-        suffixPattern: '_{shard:hex:2}',
-        shardCount: 256,
-        tableList: JSON.stringify(
-          Array.from({ length: 256 }, (_, i) =>
-            `tb_live_watch_detail_${i.toString(16).padStart(2, '0')}`
-          )
-        ),
-        mergeStrategy: 'UNION_ALL',
-        shardKeyColumn: 'live_id',
-        shardAlgorithm: 'CRC32',
-        isEnabled: true,
-        semanticDescription: '观看时长明细数据按照live_id进行哈希分表，共256个分表。查询时需要使用UNION ALL合并所有分表。'
-      },
-      {
-        patternName: 'user_behavior_sharding',
-        description: '用户行为数据按月分表',
-        baseTableName: 'tb_user_behavior',
-        suffixPattern: '_YYYYMM',
-        shardCount: 12,
-        tableList: JSON.stringify(
-          Array.from({ length: 12 }, (_, i) =>
-            `tb_user_behavior_${new Date(2025, i).toISOString().slice(0, 7).replace('-', '')}`
-          )
-        ),
-        mergeStrategy: 'UNION_ALL',
-        shardKeyColumn: 'behavior_date',
-        shardAlgorithm: 'RANGE_MONTH',
-        isEnabled: true,
-        semanticDescription: '用户行为数据按月分表，每月一张表。'
-      },
-      {
-        patternName: 'order_sharding',
-        description: '订单数据分表',
-        baseTableName: 'tb_order',
-        suffixPattern: '_{shard:int:3}',
-        shardCount: 10,
-        tableList: JSON.stringify(
-          Array.from({ length: 10 }, (_, i) => `tb_order_${i}`)
-        ),
-        mergeStrategy: 'UNION_ALL',
-        shardKeyColumn: 'order_id',
-        shardAlgorithm: 'MOD10',
-        isEnabled: true
-      }
-    ]
   });
 
   // 3. 查询模板
@@ -319,7 +264,6 @@ async function seedBusinessRules() {
   });
 
   console.log('✅ 业务术语映射:', terms.count);
-  console.log('✅ 分表模式:', patterns.count);
   console.log('✅ 查询模板:', templates.count);
   console.log('✅ 常用过滤规则:', filters.count);
   console.log('✅ 聚合规则:', aggregations.count);
