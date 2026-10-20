@@ -12,10 +12,12 @@ const logDir = process.env.LOG_DIR || join(process.cwd(), 'logs');
 
 /**
  * 确保日志目录存在
+ *
+ * 日志目录在运行时确定（LOG_DIR），turbopackIgnore 避免构建时的文件追踪把整个项目当作依赖打包
  */
 function ensureLogDir(): void {
-  if (!existsSync(logDir)) {
-    mkdirSync(logDir, { recursive: true });
+  if (!existsSync(/*turbopackIgnore: true*/ logDir)) {
+    mkdirSync(/*turbopackIgnore: true*/ logDir, { recursive: true });
   }
 }
 
@@ -48,7 +50,7 @@ function createProductionDestination(filename: string) {
   ensureLogDir();
 
   return pino.destination({
-    dest: join(logDir, filename),
+    dest: join(/*turbopackIgnore: true*/ logDir, filename),
     sync: true, // 使用同步模式，避免 worker 线程问题
     mkdir: true,
   });

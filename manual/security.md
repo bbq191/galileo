@@ -276,14 +276,11 @@ Retry-After: 60
 
   // 启用压缩
   compress: true,
-
-  // Webpack 优化
-  webpack: (config) => {
-    config.optimization.minimize = true;
-    // ...
-  }
 }
 ```
+
+构建使用 Turbopack（Next.js 16 默认），生产构建默认压缩混淆客户端代码。`removeConsole` 只处理项目代码，
+第三方依赖中的 `console.log` 不会被移除。
 
 ### 2. 构建和验证
 
@@ -293,7 +290,7 @@ NODE_ENV=production npm run build
 
 # 验证混淆效果
 ls -lh .next/static/chunks/
-cat .next/static/chunks/main-*.js  # 应该看到压缩后的代码
+ls .next/static/chunks/*.js | head -1 | xargs head -c 300  # 应该看到压缩后的代码
 ```
 
 ### 3. 混淆效果

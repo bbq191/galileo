@@ -97,7 +97,7 @@ Template Matcher -> Prompt Cache -> SQL Cache -> AI Generator -> Quality Enhance
 - **连接加密**: 数据源密码 AES 加密存储，密钥与数据分离（`encryption`）
 - **安全响应头**: X-Frame-Options / X-Content-Type-Options / XSS-Protection / Referrer-Policy 全覆盖
 - **审计日志**: 全链路操作记录 + 审计分析（`audit-logger` + `audit-analyzer`）
-- **文件系统隔离**: 自定义 Webpack 插件阻止构建过程访问 Windows 系统敏感目录
+- **构建范围隔离**: Turbopack 只解析项目根目录内的文件，不会扫描到系统目录
 - **生产构建保护**: 禁用 Source Map，移除 console 输出（保留 error/warn）
 
 ### 向量处理 (`lib/vector/`)

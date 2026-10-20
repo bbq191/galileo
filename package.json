@@ -4,8 +4,8 @@
   "private": true,
   "description": "Natural language to SQL conversion system",
   "scripts": {
-    "dev": "next dev --webpack",
-    "build": "cross-env NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 node --max-old-space-size=4096 ./node_modules/next/dist/bin/next build --webpack",
+    "dev": "next dev",
+    "build": "cross-env NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 node --max-old-space-size=4096 ./node_modules/next/dist/bin/next build",
     "start": "next start",
     "lint": "eslint --ext .js,.jsx,.ts,.tsx app components lib proxy.ts",
     "test": "jest",
