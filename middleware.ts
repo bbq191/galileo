@@ -94,7 +94,8 @@ function apiError(status: number, error: string, code: string): NextResponse {
 }
 
 function selectLimiter(pathname: string) {
-  if (pathname.startsWith('/api/query/execute')) {
+  // 手动执行保存的查询与执行查询共用限额（直接访问业务库）
+  if (pathname.startsWith('/api/query/execute') || /^\/api\/saved-queries\/\d+\/run$/.test(pathname)) {
     return { limiter: distributedRateLimiters.query, name: 'query' };
   }
   if (pathname.startsWith('/api/datasources/') && pathname.endsWith('/sync')) {

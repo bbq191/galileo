@@ -34,6 +34,9 @@ export interface QueryAuditEntry {
   /** 自然语言查询 */
   naturalLanguageQuery: string;
 
+  /** 归一化问题的哈希（仅自然语言查询，用于重复提问统计与问题推荐） */
+  questionHash?: string;
+
   /** 查询意图 */
   intent: QueryIntent;
 
@@ -151,6 +154,7 @@ export class AuditOrchestrator {
           userName: entry.userName,
           sessionId: entry.sessionId,
           naturalLanguageQuery: entry.naturalLanguageQuery,
+          questionHash: entry.questionHash,
           intent: JSON.stringify(entry.intent),
           generatedSql: entry.generatedSQL,
           executionSuccess: entry.executionResult.success,

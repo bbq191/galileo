@@ -4,7 +4,7 @@ export { dynamic } from '@/lib/api/route-config';
 import { NextRequest, NextResponse } from 'next/server';
 import { getMetadataRetriever, getPrismaClient } from '@/lib/di/setup';
 import { setVerifiedQueryActive } from '@/lib/feedback/feedback-service';
-import { feedbackErrorResponse, parseId } from '@/lib/feedback/route-helpers';
+import { serviceErrorResponse, parseId } from '@/lib/api/service-error';
 
 /**
  * PATCH /api/admin/verified-queries/:id  { isActive: boolean }
@@ -26,6 +26,6 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       data: { id: verified.id, isActive: verified.isActive, invalidReason: verified.invalidReason },
     });
   } catch (error) {
-    return feedbackErrorResponse(error, 'admin-verified-update');
+    return serviceErrorResponse(error, 'admin-verified-update');
   }
 }

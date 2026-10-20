@@ -11,16 +11,28 @@ const dataSourceFindMany = jest.fn(async (..._args: any[]) => [
   { id: 2, name: 'crm', targetDatabases: null },
 ]);
 const dataSourceFindUnique = jest.fn(async (..._args: any[]) => ({ targetDatabases: null }));
+const runDeleteMany = jest.fn(async (..._args: any[]) => ({ count: 4 }));
+const runDueSavedQueries = jest.fn(async (..._args: any[]) => ({ due: 2, succeeded: 1, failed: 1, skipped: 0 }));
 
 jest.mock('@/lib/di/setup', () => ({
   getAuditOrchestrator: () => ({ cleanupOldLogs }),
   getMetadataOrchestrator: () => ({ syncDataSource }),
-  getPrismaClient: () => ({ dataSource: { findMany: dataSourceFindMany, findUnique: dataSourceFindUnique } }),
+  getPrismaClient: () => ({
+    dataSource: { findMany: dataSourceFindMany, findUnique: dataSourceFindUnique },
+    savedQueryRun: { deleteMany: runDeleteMany },
+  }),
+  getQueryOrchestrator: () => ({}),
+  getMetadataRetriever: () => ({}),
+}));
+jest.mock('@/lib/saved-queries/saved-query-service', () => ({
+  ...(jest.requireActual('@/lib/saved-queries/saved-query-service') as object),
+  runDueSavedQueries: (...args: any[]) => runDueSavedQueries(...args),
 }));
 
 import { POST as cleanupHistory } from '@/app/api/admin/maintenance/cleanup-history/route';
 import { POST as syncAll } from '@/app/api/admin/maintenance/sync-datasources/route';
 import { POST as syncOne } from '@/app/api/datasources/[id]/sync/route';
+import { POST as runSavedQueries } from '@/app/api/admin/maintenance/run-saved-queries/route';
 import { resolveRouteAccess } from '@/lib/auth/route-policy';
 import { Permission } from '@/lib/auth/permissions';
 
@@ -43,8 +55,11 @@ describe('POST /api/admin/maintenance/cleanup-history', () => {
   it('默认保留 90 天', async () => {
     const res = await cleanupHistory(post('/api/admin/maintenance/cleanup-history'));
 
-    expect(await res.json()).toEqual({ success: true, data: { deleted: 900, retentionDays: 90 } });
+    expect(await res.json()).toEqual({ success: true, data: { deleted: 900, deletedRuns: 4, retentionDays: 90 } });
     expect(cleanupOldLogs).toHaveBeenLastCalledWith(90);
+    // 保存的查询的执行记录按同一保留期清理
+    const cutoff = (runDeleteMany.mock.calls[0][0] as any).where.startedAt.lt as Date;
+    expect(Math.round((Date.now() - cutoff.getTime()) / 86400000)).toBe(90);
   });
 
   it('可通过环境变量或请求体调整，过小的值被拒绝', async () => {
@@ -115,5 +130,17 @@ describe('POST /api/datasources/[id]/sync', () => {
 
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ status: 'error', message: '元数据同步失败', error: 'Access denied' });
+  });
+});
+
+describe('POST /api/admin/maintenance/run-saved-queries', () => {
+  it('执行到期的定时查询并返回统计；需要系统配置权限', async () => {
+    const res = await runSavedQueries();
+
+    expect(await res.json()).toEqual({ success: true, data: { due: 2, succeeded: 1, failed: 1, skipped: 0 } });
+    expect(resolveRouteAccess('/api/admin/maintenance/run-saved-queries', 'POST')).toEqual({
+      kind: 'authenticated',
+      permission: Permission.SYSTEM_CONFIG,
+    });
   });
 });

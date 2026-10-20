@@ -4,7 +4,7 @@ export { dynamic } from '@/lib/api/route-config';
 import { NextRequest, NextResponse } from 'next/server';
 import { getPrismaClient } from '@/lib/di/setup';
 import { listFeedback } from '@/lib/feedback/feedback-service';
-import { feedbackErrorResponse, parsePagination } from '@/lib/feedback/route-helpers';
+import { serviceErrorResponse, parsePagination } from '@/lib/api/service-error';
 
 const STATUSES = ['pending', 'accepted', 'rejected'] as const;
 const RATINGS = ['up', 'down', 'corrected'] as const;
@@ -30,6 +30,6 @@ export async function GET(request: NextRequest) {
     const { items, total } = await listFeedback(getPrismaClient(), { status, rating, page, limit });
     return NextResponse.json({ success: true, data: items, total, page, limit });
   } catch (error) {
-    return feedbackErrorResponse(error, 'admin-feedback-list');
+    return serviceErrorResponse(error, 'admin-feedback-list');
   }
 }

@@ -186,7 +186,7 @@ describe('reviewFeedback', () => {
       dataSourceIds: '[1]',
       sourceFeedbackId: 5,
     });
-    expect(JSON.parse(verifiedQuery.tableSnapshot)).toEqual([
+    expect(JSON.parse(verifiedQuery!.tableSnapshot)).toEqual([
       { tableId: 10, databaseName: 'shop', tableName: 'orders', structureHash: 'h1' },
     ]);
     expect(prisma.verifiedQuery.updateMany).toHaveBeenCalledWith(expect.objectContaining({

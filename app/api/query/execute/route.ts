@@ -13,6 +13,7 @@ import { withQueryRateLimit } from '@/lib/security/api-rate-limit-middleware';
 import { performanceMonitor } from '@/lib/api/performance-monitor';
 import type { ExecuteQueryRequest, ExecuteQueryResponse } from '@/lib/api/types';
 import { getUserFromRequest } from '@/lib/auth/permissions';
+import { questionHash } from '@/lib/feedback/question';
 
 /**
  * 从 SQL 提取使用的列名
@@ -86,6 +87,7 @@ export const POST = withQueryRateLimit(async (request: Request) => {
         userName,
         sessionId,
         naturalLanguageQuery: query,
+        questionHash: questionHash(query),
         intent: result.intent,
         generatedSQL: result.metadata.generatedSQL,
         executionResult: {

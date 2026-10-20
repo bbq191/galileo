@@ -7,6 +7,7 @@ import ResultTable from '@/components/query/ResultTable';
 import PerformanceMetrics from '@/components/query/PerformanceMetrics';
 import ChartVisualization from '@/components/query/ChartVisualization';
 import ResultFeedback from '@/components/query/ResultFeedback';
+import SaveQueryPanel from '@/components/saved-queries/SaveQueryPanel';
 import { apiFetch } from '@/lib/client/api-fetch';
 
 interface DataSourceOption {
@@ -302,6 +303,15 @@ export default function QueryPage() {
               <ResultFeedback
                 runId={result.runId}
                 prompt={!result.success || result.metadata?.rowCount === 0}
+              />
+            )}
+
+            {/* 保存查询（执行成功的结果，含编辑 SQL 后的执行） */}
+            {result.success && result.runId && (
+              <SaveQueryPanel
+                runId={result.runId}
+                defaultTitle={query.trim()}
+                checkRepeat={result.runId === sourceRunId}
               />
             )}
 

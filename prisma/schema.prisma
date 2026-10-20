@@ -263,6 +263,7 @@ model QueryAuditLog {
   userName              String?  @map("user_name") @db.VarChar(100)
   sessionId             String   @map("session_id") @db.VarChar(100)
   naturalLanguageQuery  String   @map("natural_language_query") @db.Text
+  questionHash          String?  @map("question_hash") @db.Char(32)             // 归一化问题的 md5，仅自然语言查询记录（lib/feedback/question.ts）
   intent                String   @db.LongText
   generatedSql          String   @map("generated_sql") @db.Text
   executionSuccess      Boolean  @map("execution_success")
@@ -284,6 +285,8 @@ model QueryAuditLog {
   @@index([timestamp])
   @@index([executionSuccess])
   @@index([sessionId])
+  @@index([userId, questionHash])
+  @@index([questionHash])
   @@map("query_audit_logs")
 }
 
@@ -650,4 +653,70 @@ model VerifiedQuery {
   @@index([questionHash])
   @@index([isActive])
   @@map("verified_queries")
+}
+
+// ============================================
+// 保存的查询与定时刷新
+// ============================================
+
+enum SavedQuerySchedule {
+  none
+  daily
+  weekly
+}
+
+enum SavedQueryStatus {
+  active
+  paused
+  needs_review // 涉及的表结构已变化，需用户确认后再定时执行
+}
+
+/// 用户保存的查询：保存最终 SQL，重新执行不调用 AI
+model SavedQuery {
+  id                  Int                @id @default(autoincrement())
+  userId              String             @map("user_id") @db.VarChar(100)
+  title               String             @db.VarChar(100)
+  question            String             @db.Text
+  questionHash        String             @map("question_hash") @db.Char(32)
+  sql                 String             @db.Text
+  dataSourceIds       String             @map("data_source_ids") @db.VarChar(255)   // JSON 数组
+  tableSnapshot       String             @map("table_snapshot") @db.Text           // JSON：保存时各表的 structureHash
+  sourceRunId         String?            @map("source_run_id") @db.VarChar(36)
+  schedule            SavedQuerySchedule @default(none)
+  runAtHour           Int                @default(9) @map("run_at_hour") @db.TinyInt      // 0-23，服务器时区
+  runOnWeekday        Int                @default(1) @map("run_on_weekday") @db.TinyInt   // 1-7（周一至周日），仅 weekly
+  nextRunAt           DateTime?          @map("next_run_at")
+  status              SavedQueryStatus   @default(active)
+  statusReason        String?            @map("status_reason") @db.VarChar(255)
+  consecutiveFailures Int                @default(0) @map("consecutive_failures")
+  lastRunAt           DateTime?          @map("last_run_at")
+  lastRunStatus       String?            @map("last_run_status") @db.VarChar(20)
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+  runs                SavedQueryRun[]
+
+  @@index([userId])
+  @@index([userId, questionHash])
+  @@index([status, nextRunAt])
+  @@map("saved_queries")
+}
+
+/// 保存的查询的一次执行（手动或定时），保存结果预览
+model SavedQueryRun {
+  id            BigInt     @id @default(autoincrement())
+  savedQueryId  Int        @map("saved_query_id")
+  trigger       String     @db.VarChar(20)                 // manual | schedule
+  status        String     @db.VarChar(20)                 // success | failed | skipped
+  rowCount      Int?       @map("row_count")
+  durationMs    Int?       @map("duration_ms")
+  columns       String?    @db.Text                        // JSON：[{ name, type }]
+  resultPreview String?    @map("result_preview") @db.LongText   // JSON：最多 SAVED_QUERY_PREVIEW_ROWS 行
+  error         String?    @db.Text
+  readAt        DateTime?  @map("read_at")
+  startedAt     DateTime   @default(now()) @map("started_at")
+  savedQuery    SavedQuery @relation(fields: [savedQueryId], references: [id], onDelete: Cascade)
+
+  @@index([savedQueryId, startedAt])
+  @@index([startedAt])
+  @@map("saved_query_runs")
 }

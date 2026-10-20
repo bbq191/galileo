@@ -11,13 +11,11 @@
 import type { FeedbackRating, FeedbackReason, Prisma, PrismaClient, ReviewStatus } from '@prisma/client';
 import type { MetadataContext } from '@/lib/metadata/types';
 import { snapshotTables } from '@/lib/metadata/table-snapshot';
+import { ServiceError } from '@/lib/api/service-error';
 import { parseJsonArray, questionHash } from './question';
 
-export class FeedbackError extends Error {
-  constructor(message: string, readonly status: 400 | 403 | 404 | 409) {
-    super(message);
-    this.name = 'FeedbackError';
-  }
+export class FeedbackError extends ServiceError {
+  name = 'FeedbackError';
 }
 
 type FeedbackPrisma = Pick<PrismaClient, 'queryAuditLog' | 'queryFeedback' | 'verifiedQuery' | 'tableMeta' | '$transaction'>;
@@ -30,7 +28,7 @@ export interface SqlContextResolver {
 /** 编辑 SQL 执行时审计日志中的问题前缀，见 app/api/query/execute-sql/route.ts */
 export const EDITED_SQL_PREFIX = '[用户编辑 SQL]';
 
-function stripEditedPrefix(question: string): string {
+export function stripEditedPrefix(question: string): string {
   return question.startsWith(EDITED_SQL_PREFIX) ? question.slice(EDITED_SQL_PREFIX.length).trim() : question;
 }
 

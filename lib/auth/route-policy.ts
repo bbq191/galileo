@@ -38,6 +38,7 @@ const RULES: Rule[] = [
 
   // 查询
   { prefix: '/api/query', access: requires(Permission.QUERY_EXECUTE) },
+  { prefix: '/api/saved-queries', access: requires(Permission.QUERY_EXECUTE) },
 
   // 审计（包含所有用户的查询记录）
   { prefix: '/api/audit', access: requires(Permission.AUDIT_VIEW) },

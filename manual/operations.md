@@ -16,6 +16,7 @@
 6. [备份恢复](#6-备份恢复)
 7. [定时任务](#7-定时任务)
 8. [查询反馈与已验证查询](#8-查询反馈与已验证查询)
+9. [保存的查询与定时刷新](#9-保存的查询与定时刷新)
 
 ---
 
@@ -513,7 +514,8 @@ pm2 start galileo
 
 | 接口 | 作用 | 建议频率 |
 |------|------|----------|
-| `POST /api/admin/maintenance/cleanup-history` | 删除超过保留期的查询历史（默认 90 天，`QUERY_HISTORY_RETENTION_DAYS` 或请求体 `{"days": N}`，最少 7 天） | 每天一次 |
+| `POST /api/admin/maintenance/cleanup-history` | 删除超过保留期的查询历史与定时查询执行记录（默认 90 天，`QUERY_HISTORY_RETENTION_DAYS` 或请求体 `{"days": N}`，最少 7 天） | 每天一次 |
+| `POST /api/admin/maintenance/run-saved-queries` | 执行到期的定时刷新查询（见第 9 节） | 每 10 分钟 |
 | `POST /api/admin/maintenance/sync-datasources` | 依次增量同步所有 active 数据源的元数据（不做关系推断与 AI 标注） | 按表结构变更频率，如每天凌晨 |
 
 调用需要管理员权限，定时任务使用 `X-API-Key: $ADMIN_API_KEY`：
@@ -525,6 +527,9 @@ KEY=请替换为 ADMIN_API_KEY 的值
 
 # 每天 03:00 清理查询历史
 0 3 * * * curl -fsS -X POST -H "X-API-Key: $KEY" $API/api/admin/maintenance/cleanup-history >> /var/log/galileo/cron.log 2>&1
+
+# 每 10 分钟执行到期的定时查询
+*/10 * * * * curl -fsS -X POST -H "X-API-Key: $KEY" $API/api/admin/maintenance/run-saved-queries >> /var/log/galileo/cron.log 2>&1
 
 # 每天 04:00 同步元数据；有数据源失败时返回 207，用 jq 检查 failed 并告警
 0 4 * * * curl -sS -X POST -H "X-API-Key: $KEY" $API/api/admin/maintenance/sync-datasources | tee -a /var/log/galileo/cron.log | jq -e '.data.failed == 0' > /dev/null || echo "元数据同步存在失败" | mail -s galileo ops@example.com
@@ -558,6 +563,27 @@ KEY=请替换为 ADMIN_API_KEY 的值
 - 采纳时记录涉及表的结构哈希（增量同步写入）；使用前发现表被删除或结构变化会自动停用，停用原因显示在「已验证查询」页，确认 SQL 仍正确后可重新启用
 - 同一问题、同一数据源只保留最新采纳的一条
 - 反馈表冗余保存问题与 SQL，不随查询历史清理；审计日志超过保留期后，对应的查询不能再提交新反馈
+
+---
+
+## 9. 保存的查询与定时刷新
+
+用户在查询结果下方保存查询（同一问题 14 天内问过 3 次时会主动提示），之后在「我的查询」页直接执行保存的 SQL，
+不调用 AI；可选每天或每周某天的整点自动刷新，结果预览保存在执行记录中，导航栏显示未读数。
+
+执行规则：
+
+- 走编辑 SQL 的执行路径（enforce 校验），权限按保存人计算；保存人被禁用后自动暂停
+- 定时执行最多返回 1000 行、超时 30 秒，只保存前 `SAVED_QUERY_PREVIEW_ROWS` 行预览；手动执行返回完整结果
+- 时间按服务器时区（`TZ`）计算，在所选整点后一小时内执行（按查询 ID 错开，避免同时压到业务库）；
+  实际执行时刻还取决于调度频率，每 10 分钟调度时最多延后约 10 分钟
+- 执行前比较保存时记录的表结构哈希：表被删除或结构变化时不执行，状态改为「需要确认」，用户确认 SQL 仍正确后恢复
+- 连续 3 次执行失败后暂停定时刷新，原因显示在「我的查询」页
+- 多个调度同时触发时，每个查询只会被执行一次（按 `nextRunAt` 乐观锁认领）
+
+容量估算：单次调度最多执行 `SAVED_QUERY_MAX_PER_TICK`（默认 8）个查询，每个最长 30 秒，最坏 240 秒，低于接口 `maxDuration` 的 300 秒。
+每 10 分钟调度时每小时最多执行约 48 个；到期查询更多时会顺延到下一次调度。需要更大容量时提高调度频率
+（不要单纯调大 `SAVED_QUERY_MAX_PER_TICK`，否则可能超过 `maxDuration`），并关注业务库负载。
 
 ---
 

@@ -18,6 +18,11 @@ const Icons = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
   ),
+  Saved: () => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+    </svg>
+  ),
   Database: () => (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
@@ -102,6 +107,7 @@ const navGroups: Array<{
     items: [
       { href: '/query', label: '自然语言查询', icon: Icons.Query },
       { href: '/query/history', label: '查询历史', icon: Icons.History },
+      { href: '/saved-queries', label: '我的查询', icon: Icons.Saved },
     ],
   },
   {
@@ -157,6 +163,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
   const [expiresAt, setExpiresAt] = useState<number | null>(null);
   const isBare = BARE_PATHS.includes(pathname);
   const isAdmin = me?.user.role === 'admin';
+  // 定时刷新产生的未读结果数（「我的查询」角标）
+  const [unreadSaved, setUnreadSaved] = useState(0);
 
   // 加载当前用户
   useEffect(() => {
@@ -168,6 +176,14 @@ export default function MainLayout({ children }: MainLayoutProps) {
       }
     });
   }, [isBare]);
+
+  // 切换页面时刷新未读数（查看「我的查询」后会变化）
+  useEffect(() => {
+    if (isBare || !me) return;
+    apiFetch<{ count: number }>('/api/saved-queries/unread-count').then((res) => {
+      if (res.ok) setUnreadSaved(res.data.count);
+    });
+  }, [isBare, me, pathname]);
 
   // 在 Access Token 过期前续期，避免尚未迁移到 apiFetch 的请求因过期失败
   useEffect(() => {
@@ -247,6 +263,9 @@ export default function MainLayout({ children }: MainLayoutProps) {
                     >
                       <Icon />
                       <span className="text-sm">{item.label}</span>
+                      {item.href === '/saved-queries' && unreadSaved > 0 && (
+                        <span className="badge badge-sm badge-secondary ml-auto">{unreadSaved}</span>
+                      )}
                     </Link>
                   </li>
                 );

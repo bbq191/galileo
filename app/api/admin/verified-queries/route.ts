@@ -4,7 +4,7 @@ export { dynamic } from '@/lib/api/route-config';
 import { NextRequest, NextResponse } from 'next/server';
 import { getPrismaClient } from '@/lib/di/setup';
 import { listVerifiedQueries } from '@/lib/feedback/feedback-service';
-import { feedbackErrorResponse, parsePagination } from '@/lib/feedback/route-helpers';
+import { serviceErrorResponse, parsePagination } from '@/lib/api/service-error';
 
 /**
  * GET /api/admin/verified-queries?active=true&page=1&limit=20
@@ -23,6 +23,6 @@ export async function GET(request: NextRequest) {
     });
     return NextResponse.json({ success: true, data: items, total, page, limit });
   } catch (error) {
-    return feedbackErrorResponse(error, 'admin-verified-list');
+    return serviceErrorResponse(error, 'admin-verified-list');
   }
 }

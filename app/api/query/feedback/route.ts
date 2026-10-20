@@ -7,7 +7,7 @@ import { schemas } from '@/lib/validation/schemas';
 import { validateOrRespond } from '@/lib/validation/validator';
 import { getUserFromRequest } from '@/lib/auth/permissions';
 import { submitFeedback } from '@/lib/feedback/feedback-service';
-import { feedbackErrorResponse } from '@/lib/feedback/route-helpers';
+import { serviceErrorResponse } from '@/lib/api/service-error';
 
 /**
  * POST /api/query/feedback
@@ -35,6 +35,6 @@ export async function POST(request: NextRequest) {
       data: { id: feedback.id, rating: feedback.rating, reason: feedback.reason, status: feedback.status },
     });
   } catch (error) {
-    return feedbackErrorResponse(error, 'query-feedback');
+    return serviceErrorResponse(error, 'query-feedback');
   }
 }

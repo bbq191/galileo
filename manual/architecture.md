@@ -369,11 +369,18 @@ Prompt 中只描述代表表一次，并列出分表清单、要求 `UNION ALL` 
 | QueryFeedback | 用户对查询结果的反馈与纠错（通过 runId 关联审计日志） | runId, rating, reason, correctedSql, status |
 | VerifiedQuery | 管理员采纳的「问题 → SQL」 | questionHash, sql, tableSnapshot, isActive, hitCount |
 
+**保存的查询表 (2 个)**
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| SavedQuery | 用户保存的查询与刷新计划 | userId, sql, tableSnapshot, schedule, nextRunAt, status |
+| SavedQueryRun | 每次执行的结果预览 | savedQueryId, trigger, status, resultPreview, readAt |
+
 **监控表 (4 个)**
 
 | 表名 | 用途 | 关键字段 |
 |------|------|---------|
-| QueryAuditLog | 查询审计日志 | runId, userId, naturalLanguageQuery, generatedSQL, dataSourceIds, executionTime |
+| QueryAuditLog | 查询审计日志 | runId, userId, naturalLanguageQuery, questionHash, generatedSQL, dataSourceIds, executionTime |
 | ErrorLog | 错误日志 | errorCategory, errorLevel, errorMessage |
 | PerformanceMetric | 性能指标 | metricName, metricValue, timestamp |
 | SystemAlert | 系统告警 | alertType, severity, message |

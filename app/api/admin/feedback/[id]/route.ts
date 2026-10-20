@@ -7,7 +7,7 @@ import { schemas } from '@/lib/validation/schemas';
 import { validateOrRespond } from '@/lib/validation/validator';
 import { getUserFromRequest } from '@/lib/auth/permissions';
 import { reviewFeedback } from '@/lib/feedback/feedback-service';
-import { feedbackErrorResponse, parseId } from '@/lib/feedback/route-helpers';
+import { serviceErrorResponse, parseId } from '@/lib/api/service-error';
 
 /**
  * POST /api/admin/feedback/:id
@@ -37,6 +37,6 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     });
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
-    return feedbackErrorResponse(error, 'admin-feedback-review');
+    return serviceErrorResponse(error, 'admin-feedback-review');
   }
 }

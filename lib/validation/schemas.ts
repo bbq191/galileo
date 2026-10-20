@@ -136,12 +136,34 @@ export const FeedbackReviewSchema = z.object({
   sql: z.string().trim().max(20000).optional(),
 });
 
+// 保存的查询
+const ScheduleFields = {
+  schedule: z.enum(['none', 'daily', 'weekly']).optional(),
+  runAtHour: z.number().int().min(0).max(23).optional(),
+  runOnWeekday: z.number().int().min(1).max(7).optional(),
+};
+
+export const SavedQueryCreateSchema = z.object({
+  /** 要保存的查询（/api/query/execute 或 /api/query/execute-sql 响应中的 runId） */
+  runId: z.string().uuid('runId 格式不正确'),
+  title: z.string().max(100, '标题不能超过 100 字符').optional(),
+  ...ScheduleFields,
+});
+
+export const SavedQueryUpdateSchema = z.object({
+  title: z.string().max(100, '标题不能超过 100 字符').optional(),
+  ...ScheduleFields,
+  status: z.enum(['active', 'paused']).optional(),
+});
+
 // 导出所有 schemas
 export const schemas = {
   login: LoginSchema,
   sqlExecute: SqlExecuteSchema,
   queryFeedback: QueryFeedbackSchema,
   feedbackReview: FeedbackReviewSchema,
+  savedQueryCreate: SavedQueryCreateSchema,
+  savedQueryUpdate: SavedQueryUpdateSchema,
   queryExecute: QueryExecuteSchema,
   metadataSync: MetadataSyncSchema,
   datasourceCreate: DatasourceCreateSchema,

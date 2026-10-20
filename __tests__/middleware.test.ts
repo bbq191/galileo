@@ -93,6 +93,15 @@ describe('middleware - 已登录', () => {
     expect(checkDistributedRateLimit).toHaveBeenCalledWith('query', 'user:7');
   });
 
+  it('手动执行保存的查询与执行查询共用限额，其他保存的查询接口走通用限额', async () => {
+    const cookie = await cookieFor(UserRole.USER);
+    await middleware(request('/api/saved-queries/4/run', { method: 'POST', headers: { cookie } }));
+    expect(checkDistributedRateLimit).toHaveBeenLastCalledWith('query', 'user:7');
+
+    await middleware(request('/api/saved-queries/4', { headers: { cookie } }));
+    expect(checkDistributedRateLimit).toHaveBeenLastCalledWith('general', 'user:7');
+  });
+
   it('客户端伪造的身份请求头被覆盖', async () => {
     const res = await middleware(
       request('/api/query/execute', {

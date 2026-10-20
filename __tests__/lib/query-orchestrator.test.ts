@@ -405,8 +405,8 @@ describe('QueryOrchestrator - 已验证查询', () => {
         findMany: jest.fn(async (args: any) =>
           args.where.questionHash ? verifiedRows.filter((r) => r.questionHash === args.where.questionHash) : verifiedRows
         ),
-        update: jest.fn(async () => ({})),
-        updateMany: jest.fn(async () => ({ count: 1 })),
+        update: jest.fn(async (..._args: any[]) => ({})),
+        updateMany: jest.fn(async (..._args: any[]) => ({ count: 1 })),
       },
       tableMeta: { findMany: jest.fn(async () => [{ id: 1, structureHash: 'h' }]) },
     };

@@ -189,6 +189,24 @@
 
 源码: `app/api/admin/feedback/`、`app/api/admin/verified-queries/`
 
+### 2.7 保存的查询
+
+只能访问自己保存的查询（其他用户的返回 404）。
+
+| 端点 | 说明 |
+|------|------|
+| `POST /api/saved-queries` | `{ "runId", "title"?, "schedule"?: "none" \| "daily" \| "weekly", "runAtHour"?: 0-23, "runOnWeekday"?: 1-7 }`；保存该次执行成功的查询最终执行的 SQL，返回 201 |
+| `GET /api/saved-queries` | 列表，每项含 `unreadRuns`（未查看的定时执行结果数） |
+| `GET /api/saved-queries/suggestion?runId=` | `{ suggest, count }`：14 天内问过至少 3 次相同问题且未保存时 `suggest=true` |
+| `GET /api/saved-queries/unread-count` | `{ count }`，导航栏角标 |
+| `GET /api/saved-queries/{id}` | 详情与最近 20 次执行记录；查看后标记为已读 |
+| `PATCH /api/saved-queries/{id}` | `{ title?, schedule?, runAtHour?, runOnWeekday?, status?: "active" \| "paused" }`；对「需要确认」的查询设置 `active` 会刷新表结构快照 |
+| `DELETE /api/saved-queries/{id}` | 删除（执行记录一并删除） |
+| `POST /api/saved-queries/{id}/run` | 立即执行，响应结构同 `/api/query/execute`，另含 `savedQueryRunId`；与执行查询共用 10 次/分钟限额 |
+| `GET /api/saved-queries/{id}/runs/{runId}` | 一次执行的结果预览 |
+
+源码: `app/api/saved-queries/`、`lib/saved-queries/`
+
 ---
 
 ## 3. Datasources - 数据源管理
