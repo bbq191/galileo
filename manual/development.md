@@ -101,7 +101,7 @@ npm start
 **必须遵守**
 - 单一职责原则：每个方法只做一件事
 - TypeScript 严格模式：`npx tsc --noEmit` 必须通过
-- ESLint 检查：`npm run lint` 必须没有 error（`npm run lint:fix` 自动修复）。使用 ESLint 9 flat config（`eslint.config.mjs`，规则集 `eslint-config-next/core-web-vitals`）；Next.js 16 已移除 `next lint`，脚本直接调用 ESLint
+- ESLint 检查：`npm run lint` 必须没有 error（`npm run lint:fix` 自动修复）。使用 ESLint 10 flat config（`eslint.config.mjs`，规则集 `eslint-config-next/core-web-vitals`）；Next.js 16 已移除 `next lint`，脚本直接调用 ESLint。eslint-plugin-react / import / jsx-a11y（eslint-config-next 内置）的 peer 范围尚未声明支持 ESLint 10，安装时会出现 `ERESOLVE overriding peer dependency` 警告，实测规则运行正常；不要为消除警告加 `--legacy-peer-deps`
 - 页面数据加载使用 `lib/client/use-async-data.ts` 的 `useAsyncData`，不要在 effect 中先 `setLoading(true)` 再请求（违反 `react-hooks/set-state-in-effect`）；
   属性变化时需要重置的组件，由父组件设置 `key` 重新挂载，而不是在 effect 中重置状态；读取 URL 参数用 `lib/client/use-url-search-param.ts`
 
