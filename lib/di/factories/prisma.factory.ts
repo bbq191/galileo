@@ -16,28 +16,27 @@ declare global {
 
 /**
  * 创建 PrismaClient 单例
- * 避免开发环境热重载时创建多个实例
+ *
+ * 所有环境都复用同一个实例：DI 容器每次解析都会调用本函数，若生产环境每次新建，
+ * 每个实例都会创建自己的连接池（驱动适配器的连接池会预先建满 connectionLimit 个连接），
+ * 很快超过 MySQL 的 max_connections。开发环境热重载时模块会重新执行，同样依赖 globalThis 复用。
  */
 export function createPrismaClient(): PrismaClient {
-  const prismaClientSingleton = () => {
-    return new PrismaClient({
-      // Prisma 7 起必须通过驱动适配器连接数据库，见 lib/prisma/mariadb-config.ts
-      adapter: createLazyMariaDbAdapter(),
-      log:
-        process.env.NODE_ENV === 'development'
-          ? ['query', 'error', 'warn']
-          : ['error'],
-    });
-  };
-
-  const prisma = globalThis.prismaGlobal ?? prismaClientSingleton();
-
-  // 在开发环境中保存到 global，避免热重载时重复创建
-  if (process.env.NODE_ENV !== 'production') {
-    globalThis.prismaGlobal = prisma;
+  if (globalThis.prismaGlobal) {
+    return globalThis.prismaGlobal;
   }
 
-  // 注册清理钩子
+  const prisma = new PrismaClient({
+    // Prisma 7 起必须通过驱动适配器连接数据库，见 lib/prisma/mariadb-config.ts
+    adapter: createLazyMariaDbAdapter(),
+    log:
+      process.env.NODE_ENV === 'development'
+        ? ['query', 'error', 'warn']
+        : ['error'],
+  });
+  globalThis.prismaGlobal = prisma;
+
+  // 注册清理钩子（仅首次创建时注册一次）
   const cleanup = async () => {
     await prisma.$disconnect();
   };

@@ -27,7 +27,7 @@
 
 | 检查项 | 说明 |
 |--------|------|
-| Node.js 版本 | >= 18.x |
+| Node.js 版本 | >= 20.19（Prisma 7 的最低要求，同时满足 Next.js 16 的 20.9） |
 | MySQL 连接 | 确认 DATABASE_URL 可达 |
 | Redis 连接 | 确认 REDIS_HOST:PORT 可达 |
 | AI 服务 | Ollama 运行或 API Key 有效 |
@@ -35,14 +35,14 @@
 ### 1.2 部署步骤
 
 ```bash
-# 1. 安装依赖
-npm ci --production
+# 1. 安装依赖（构建与 prisma CLI 需要开发依赖，不要加 --production）
+npm ci
 
-# 2. 生成 Prisma Client
-npx prisma generate
+# 2. 同步表结构并生成 Prisma Client（项目使用 db push，没有 migrations 目录）
+npm run db:push
 
-# 3. 数据库迁移
-npx prisma migrate deploy
+# 3. 首次部署：创建初始管理员
+npm run db:seed
 
 # 4. 构建
 npm run build

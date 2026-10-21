@@ -22,7 +22,7 @@
 
 | 依赖 | 版本要求 | 用途 |
 |------|----------|------|
-| Node.js | >= 20.9 | 运行时（Next.js 16 的最低要求） |
+| Node.js | >= 20.19 | 运行时（Prisma 7 的最低要求，同时满足 Next.js 16） |
 | pnpm/npm | 最新 | 包管理 |
 | MySQL | 8.0+ | 元数据存储 |
 | Redis | 6.0+ | 缓存 |
@@ -58,11 +58,14 @@ DEEPSEEK_API_URL=https://api.deepseek.com
 ### 1.3 数据库初始化
 
 ```bash
-npx prisma generate
-npx prisma db push
+npm run db:push   # prisma db push && prisma generate（Prisma 7 起 db push 不再自动生成 Client）
+npm run db:seed
 ```
 
-数据模型定义见 `prisma/schema.prisma`。
+数据模型定义见 `prisma/schema.prisma`；连接 URL 不写在 schema 中：CLI 读取 `prisma.config.ts`，
+应用运行时通过驱动适配器连接（`lib/prisma/mariadb-config.ts`）。
+
+Prisma 7 不再自动加载 `.env`。直接用 tsx 运行、需要访问数据库的脚本，必须在导入数据库客户端之前 `import 'dotenv/config'`。
 
 ---
 
