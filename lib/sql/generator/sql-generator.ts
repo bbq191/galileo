@@ -551,7 +551,7 @@ ${this.describeConditions(intent.conditions)}
     const parts: string[] = [];
 
     if (conditions.timeRange) {
-      const timeRangeDesc = conditions.timeRange.relative || '自定义';
+      const timeRangeDesc = String(conditions.timeRange.relative || '自定义');
       parts.push(`时间范围: ${timeRangeDesc}`);
 
       // 如果是年份查询，添加特殊说明
@@ -568,8 +568,8 @@ ${this.describeConditions(intent.conditions)}
       });
     }
 
-    if (conditions.orderBy) {
-      const orderByCol = conditions.orderBy.column;
+    if (conditions.orderBy?.column) {
+      const orderByCol = String(conditions.orderBy.column);
       parts.push(`排序: ${orderByCol} ${conditions.orderBy.direction}`);
 
       // 如果是时间派生字段，添加说明

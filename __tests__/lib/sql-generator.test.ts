@@ -58,6 +58,16 @@ describe('SQLGenerator', () => {
     expect(messages[1].content.endsWith('## 业务规则和约定\n- 测试规则')).toBe(true);
   });
 
+  it('AI 意图中的 orderBy 缺少 column、timeRange.relative 不是字符串时仍能生成 Prompt', async () => {
+    const { generator, aiClient } = createGenerator();
+    const malformed: any = { ...intent, conditions: { orderBy: { direction: 'DESC' }, timeRange: { relative: 2025 } } };
+
+    await expect(generator.generate(malformed, contextFor(1))).resolves.toMatchObject({ sql: SQL });
+
+    const [messages] = aiClient.chat.mock.calls[0] as any[];
+    expect(messages[1].content).not.toContain('排序:');
+  });
+
   it('SQL 缓存读写使用包含上下文表与规则摘要的变体', async () => {
     const { generator, queryCacheManager } = createGenerator();
     const context = contextFor(1);

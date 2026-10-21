@@ -31,6 +31,7 @@ export class DeepseekClient {
   private maxRetries: number;
   private retryDelay: number;
   private isOllama: boolean;
+  private numCtx?: number;
 
   constructor(config: DeepseekConfig) {
     this.apiKey = config.apiKey || 'ollama'; // Ollama 不需要真实的 API Key
@@ -39,6 +40,7 @@ export class DeepseekClient {
     this.timeout = config.timeout ?? 300000; // Ollama 推理较慢，默认设为 300 秒（5 分钟）
     this.maxRetries = config.maxRetries ?? 3;
     this.retryDelay = config.retryDelay ?? 1000; // 1 秒
+    this.numCtx = config.numCtx;
 
     // 检测是否为 Ollama
     this.isOllama = this.apiUrl.includes('localhost') || this.apiUrl.includes('127.0.0.1');
@@ -78,7 +80,18 @@ export class DeepseekClient {
     for (let attempt = 0; attempt < this.maxRetries; attempt++) {
       try {
         const response = await this.makeRequest(request);
-        return response.choices[0]?.message?.content || '';
+        const choice = response.choices[0];
+        const content = choice?.message?.content || '';
+        // 空内容不是有效结果，按失败重试（推理模型可能在思考阶段陷入重复，耗尽 max_tokens 而没有输出答案）
+        if (!content.trim()) {
+          const reason = choice?.finish_reason ?? 'unknown';
+          throw new APIError(
+            reason === 'length'
+              ? `AI 返回内容为空：输出达到 max_tokens 上限 (${request.max_tokens})`
+              : `AI 返回内容为空 (finish_reason: ${reason})`
+          );
+        }
+        return content;
       } catch (error) {
         lastError = error as Error;
 
@@ -90,8 +103,8 @@ export class DeepseekClient {
           continue;
         }
 
-        // 其他错误，如果还有重试次数则继续
-        if (attempt < this.maxRetries - 1) {
+        // 其他错误，如果还有重试次数则继续（请求本身有误的 4xx 重试也不会成功）
+        if (attempt < this.maxRetries - 1 && !isClientError(error)) {
           const delay = this.retryDelay * Math.pow(2, attempt);
           console.error(`请求失败: ${lastError.message}，等待 ${delay}ms 后重试 (${attempt + 1}/${this.maxRetries})...`);
           await this.sleep(delay);
@@ -174,6 +187,8 @@ export class DeepseekClient {
               temperature: request.temperature,
               num_predict: request.max_tokens,
               top_p: request.top_p,
+              // Prompt 与输出合计超过上下文长度时 Ollama 返回 400
+              ...(this.numCtx ? { num_ctx: this.numCtx } : {}),
             },
           }
         : {
@@ -263,7 +278,7 @@ export class DeepseekClient {
             role: 'assistant',
             content: ollamaResponse.message?.content || '',
           },
-          finish_reason: ollamaResponse.done ? 'stop' : 'length',
+          finish_reason: ollamaResponse.done_reason || (ollamaResponse.done ? 'stop' : 'length'),
         },
       ],
       usage: {
@@ -316,8 +331,8 @@ export class DeepseekClient {
           continue;
         }
 
-        // 其他错误，如果还有重试次数则继续
-        if (attempt < this.maxRetries - 1) {
+        // 其他错误，如果还有重试次数则继续（请求本身有误的 4xx 重试也不会成功）
+        if (attempt < this.maxRetries - 1 && !isClientError(error)) {
           const delay = this.retryDelay * Math.pow(2, attempt);
           console.error(`请求失败: ${lastError.message}，等待 ${delay}ms 后重试 (${attempt + 1}/${this.maxRetries})...`);
           await this.sleep(delay);
@@ -498,6 +513,9 @@ export function createDeepseekClient(config?: Partial<DeepseekConfig>): Deepseek
   const retryDelay = config?.retryDelay ??
     (process.env.DEEPSEEK_RETRY_DELAY ? parseInt(process.env.DEEPSEEK_RETRY_DELAY, 10) : undefined);
 
+  const numCtx = config?.numCtx ??
+    (process.env.DEEPSEEK_NUM_CTX ? parseInt(process.env.DEEPSEEK_NUM_CTX, 10) : undefined);
+
   console.log('[createDeepseekClient] 环境变量配置:', {
     DEEPSEEK_TIMEOUT: process.env.DEEPSEEK_TIMEOUT,
     DEEPSEEK_MAX_RETRIES: process.env.DEEPSEEK_MAX_RETRIES,
@@ -514,7 +532,15 @@ export function createDeepseekClient(config?: Partial<DeepseekConfig>): Deepseek
     timeout,
     maxRetries,
     retryDelay,
+    numCtx,
   });
+}
+
+/**
+ * 请求本身有误的错误（4xx，速率限制除外）
+ */
+function isClientError(error: unknown): boolean {
+  return error instanceof APIError && error.statusCode !== undefined && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 429;
 }
 
 /**

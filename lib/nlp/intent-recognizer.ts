@@ -377,7 +377,8 @@ export class IntentRecognizer {
       conditions: {
         timeRange: intent.conditions?.timeRange,
         filters: intent.conditions?.filters || [],
-        orderBy: validatedColumns.validOrderBy ? intent.conditions?.orderBy : undefined,
+        // AI 可能返回没有 column 的 orderBy（如只有 direction），视为无排序
+        orderBy: validatedColumns.validOrderBy && intent.conditions?.orderBy?.column ? intent.conditions.orderBy : undefined,
         limit: intent.conditions?.limit,
       },
       aggregations: validatedColumns.validAggregation ? intent.aggregations : undefined,

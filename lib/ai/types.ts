@@ -74,6 +74,8 @@ export interface DeepseekConfig {
   timeout?: number;
   maxRetries?: number;
   retryDelay?: number;
+  /** Ollama 上下文长度（num_ctx），不设置时使用 Ollama 的默认值（通常为 4096） */
+  numCtx?: number;
 }
 
 /**

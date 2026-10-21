@@ -32,6 +32,9 @@ export function createDeepseekClient(config?: Partial<DeepseekConfig>): Deepseek
   const retryDelay = config?.retryDelay ??
     (process.env.DEEPSEEK_RETRY_DELAY ? parseInt(process.env.DEEPSEEK_RETRY_DELAY, 10) : 1000);
 
+  const numCtx = config?.numCtx ??
+    (process.env.DEEPSEEK_NUM_CTX ? parseInt(process.env.DEEPSEEK_NUM_CTX, 10) : undefined);
+
   console.log('[createDeepseekClient] 配置信息:', {
     apiUrl,
     model: config?.model || process.env.DEEPSEEK_MODEL || 'deepseek-r1:1.5b',
@@ -49,6 +52,7 @@ export function createDeepseekClient(config?: Partial<DeepseekConfig>): Deepseek
     timeout,
     maxRetries,
     retryDelay,
+    numCtx,
   };
 
   return new DeepseekClient(finalConfig);
