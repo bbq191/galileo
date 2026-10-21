@@ -10,7 +10,6 @@ import { createLazyMariaDbAdapter } from '@/lib/prisma/mariadb-config';
  * 全局类型扩展
  */
 declare global {
-  // eslint-disable-next-line no-var
   var prismaGlobal: PrismaClient | undefined;
 }
 

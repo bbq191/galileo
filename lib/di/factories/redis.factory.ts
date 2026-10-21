@@ -19,7 +19,6 @@ export interface RedisFactoryConfig {
  * 全局类型扩展
  */
 declare global {
-  // eslint-disable-next-line no-var
   var redisGlobal: Redis | undefined;
 }
 

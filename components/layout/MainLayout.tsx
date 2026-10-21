@@ -202,6 +202,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
 
   const handleLogout = async () => {
     await apiFetch('/api/auth/logout', { method: 'POST' });
+    // 登出后整页跳转，清掉页面中已加载的数据与客户端状态
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
     window.location.href = '/login';
   };
 
@@ -224,7 +226,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
 
   const isActive = (href: string) => activeItem?.href === href;
 
-  const SidebarContent = () => (
+  // 侧边栏内容（JSX 变量而不是内部组件：内部组件每次渲染都是新类型，会导致整棵子树重新挂载）
+  const sidebarContent = (
     <div className="flex flex-col h-full">
       {/* Logo */}
       <div className="p-4 border-b border-base-300">
@@ -304,7 +307,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <SidebarContent />
+        {sidebarContent}
       </aside>
 
       {/* 主内容区 */}

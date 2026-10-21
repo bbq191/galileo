@@ -183,6 +183,8 @@ export function refreshSession(): Promise<boolean> {
 export function redirectToLogin(): void {
   if (typeof window === 'undefined' || window.location.pathname === '/login') return;
   const next = window.location.pathname + window.location.search;
+  // 登录失效时整页跳转，清掉页面中已加载的数据与客户端状态（客户端路由跳转会保留它们）
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination
   window.location.href = `/login?next=${encodeURIComponent(next)}`;
 }
 

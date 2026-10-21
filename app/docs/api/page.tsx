@@ -10,6 +10,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import 'swagger-ui-react/swagger-ui.css';
 
@@ -107,12 +108,12 @@ export default function ApiDocsPage() {
             <span className="px-3 py-1 bg-green-600 rounded-full text-sm font-medium">
               v1.0.0
             </span>
-            <a
+            <Link
               href="/"
               className="text-gray-300 hover:text-white transition-colors"
             >
               返回首页
-            </a>
+            </Link>
           </div>
         </div>
       </header>

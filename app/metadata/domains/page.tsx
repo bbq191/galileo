@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { apiFetch } from '@/lib/client/api-fetch';
 
@@ -297,9 +298,9 @@ export default function DatabaseDomainsPage() {
       {/* 导航栏 */}
       <div className="navbar bg-base-100 shadow-lg">
         <div className="flex-1">
-          <a href="/" className="btn btn-ghost normal-case text-xl">
+          <Link href="/" className="btn btn-ghost normal-case text-xl">
             Galileo
-          </a>
+          </Link>
           <div className="breadcrumbs text-sm ml-4">
             <ul>
               <li><a href="/metadata">元数据</a></li>

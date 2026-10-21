@@ -58,36 +58,20 @@ export default function ChartVisualization({
     return { numericColumns: numeric, categoricalColumns: categorical };
   }, [columns]);
 
-  // 自动选择默认轴（当数据变化时重新选择）
-  useMemo(() => {
-    // 检查当前选择的轴是否仍然有效
-    const isXAxisValid = xAxis && categoricalColumns.includes(xAxis);
-    const isYAxisValid = yAxis && numericColumns.includes(yAxis);
-
-    // X 轴：如果当前选择无效或为空，自动选择第一个分类列
-    if (!isXAxisValid && categoricalColumns.length > 0) {
-      setXAxis(categoricalColumns[0]);
-    } else if (!isXAxisValid) {
-      setXAxis(''); // 清空无效选择
-    }
-
-    // Y 轴：如果当前选择无效或为空，自动选择第一个数值列
-    if (!isYAxisValid && numericColumns.length > 0) {
-      setYAxis(numericColumns[0]);
-    } else if (!isYAxisValid) {
-      setYAxis(''); // 清空无效选择
-    }
-  }, [categoricalColumns, numericColumns, xAxis, yAxis]);
+  // 生效的坐标轴：用户选择的列在当前结果中不存在（如换了一次查询）时，自动使用第一个分类列 / 数值列。
+  // 在渲染时推导而不是同步到 state，避免渲染期间 setState
+  const selectedXAxis = xAxis && categoricalColumns.includes(xAxis) ? xAxis : categoricalColumns[0] ?? '';
+  const selectedYAxis = yAxis && numericColumns.includes(yAxis) ? yAxis : numericColumns[0] ?? '';
 
   // 准备图表数据
   const chartData = useMemo(() => {
-    if (!xAxis || !yAxis || data.length === 0) return [];
+    if (!selectedXAxis || !selectedYAxis || data.length === 0) return [];
 
     // 聚合数据
     const aggregated = new Map<string, number>();
     data.forEach((row) => {
-      const key = String(row[xAxis] || '未知');
-      const value = Number(row[yAxis]) || 0;
+      const key = String(row[selectedXAxis] || '未知');
+      const value = Number(row[selectedYAxis]) || 0;
       aggregated.set(key, (aggregated.get(key) || 0) + value);
     });
 
@@ -95,7 +79,7 @@ export default function ChartVisualization({
       .map(([label, value]) => ({ label, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 10); // 限制最多10个数据点
-  }, [data, xAxis, yAxis]);
+  }, [data, selectedXAxis, selectedYAxis]);
 
   // 计算统计数据
   const stats = useMemo(() => {
@@ -227,7 +211,7 @@ export default function ChartVisualization({
             </label>
             <select
               className="select select-bordered select-sm w-full"
-              value={xAxis}
+              value={selectedXAxis}
               onChange={(e) => setXAxis(e.target.value)}
             >
               {categoricalColumns.map((col) => (
@@ -245,7 +229,7 @@ export default function ChartVisualization({
             </label>
             <select
               className="select select-bordered select-sm w-full"
-              value={yAxis}
+              value={selectedYAxis}
               onChange={(e) => setYAxis(e.target.value)}
             >
               {numericColumns.map((col) => (
