@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { apiFetch } from '@/lib/client/api-fetch';
+import { useAsyncData } from '@/lib/client/use-async-data';
 import ScheduleFields, { type ScheduleValue } from './ScheduleFields';
 
 interface SaveQueryPanelProps {
@@ -19,24 +20,21 @@ interface SaveQueryPanelProps {
  */
 export default function SaveQueryPanel({ runId, defaultTitle, checkRepeat }: SaveQueryPanelProps) {
   const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState(defaultTitle);
+  const [title, setTitle] = useState(defaultTitle.slice(0, 100));
   const [schedule, setSchedule] = useState<ScheduleValue>({ schedule: 'none', runAtHour: 9, runOnWeekday: 1 });
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [repeatCount, setRepeatCount] = useState(0);
 
-  useEffect(() => {
-    setOpen(false);
-    setTitle(defaultTitle.slice(0, 100));
-    setSavedId(null);
-    setError(null);
-    setRepeatCount(0);
-    if (!checkRepeat) return;
-    apiFetch<{ suggest: boolean; count: number }>(`/api/saved-queries/suggestion?runId=${encodeURIComponent(runId)}`).then((res) => {
-      if (res.ok && res.data.suggest) setRepeatCount(res.data.count);
-    });
-  }, [runId, defaultTitle, checkRepeat]);
+  // 是否经常问这个问题（失败时不提示，不影响保存）
+  const suggestion = useAsyncData(async (signal) => {
+    const res = await apiFetch<{ suggest: boolean; count: number }>(
+      `/api/saved-queries/suggestion?runId=${encodeURIComponent(runId)}`,
+      { signal }
+    );
+    return res.ok && res.data.suggest ? res.data.count : 0;
+  }, [runId], { enabled: !!checkRepeat });
+  const repeatCount = suggestion.data ?? 0;
 
   const save = async () => {
     setSaving(true);

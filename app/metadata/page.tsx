@@ -1,80 +1,52 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
+import { useAsyncData } from '@/lib/client/use-async-data';
 import MetadataTree from './components/MetadataTree';
 import TableDetail from './components/TableDetail';
 import ColumnList from './components/ColumnList';
 
 export default function MetadataPage() {
-  const [dataSources, setDataSources] = useState<any[]>([]);
-  const [selectedSource, setSelectedSource] = useState<number | null>(null);
+  // 用户选择的数据源；未选择时默认第一个数据源
+  const [chosenSource, setSelectedSource] = useState<number | null>(null);
   const [selectedDatabase, setSelectedDatabase] = useState<number | null>(null);
   const [selectedTable, setSelectedTable] = useState<any | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   // 加载数据源列表
-  const loadDataSources = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetch('/api/datasources');
-      const result = await response.json();
-
-      if (result.status === 'success') {
-        setDataSources(result.data || []);
-        // 自动选择第一个数据源
-        if (result.data && result.data.length > 0) {
-          setSelectedSource(result.data[0].id);
-        }
-      } else {
-        throw new Error(result.message || 'Failed to load data sources');
-      }
-    } catch (err) {
-      console.error('Error loading data sources:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load data sources');
-    } finally {
-      setLoading(false);
+  const dataSourcesData = useAsyncData(async (signal) => {
+    const response = await fetch('/api/datasources', { signal });
+    const result = await response.json();
+    if (result.status !== 'success') {
+      throw new Error(result.message || 'Failed to load data sources');
     }
+    return (result.data || []) as any[];
   }, []);
+  const dataSources = dataSourcesData.data ?? [];
+  const { loading, error } = dataSourcesData;
+  const selectedSource = chosenSource ?? dataSources[0]?.id ?? null;
 
-  // 根据表ID加载表信息
-  const loadTableById = useCallback(async (tableId: number) => {
-    try {
-      const response = await fetch(`/api/metadata/tables?tableId=${tableId}`);
-      const result = await response.json();
-
-      if (result.status === 'success' && result.data && result.data.length > 0) {
-        const table = result.data[0];
-        setSelectedTable(table);
-        setSelectedDatabase(table.databaseId);
-        // 加载数据源信息以便正确显示
-        loadDataSources();
-      }
-    } catch (err) {
-      console.error('Error loading table by ID:', err);
-    }
-  }, [loadDataSources]);
-
-  // 从URL参数加载表ID
+  // 从URL参数加载表（如从关系图谱跳转过来）
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const tableId = params.get('tableId');
+    const tableId = new URLSearchParams(window.location.search).get('tableId');
+    if (!tableId) return;
 
-    if (tableId) {
-      loadTableById(parseInt(tableId));
-    }
-  }, [loadTableById]);
-
-  // 加载数据源列表
-  useEffect(() => {
-    if (!selectedTable) {
-      loadDataSources();
-    }
-  }, [selectedTable, loadDataSources]);
+    const controller = new AbortController();
+    fetch(`/api/metadata/tables?tableId=${parseInt(tableId)}`, { signal: controller.signal })
+      .then((response) => response.json())
+      .then((result) => {
+        if (result.status === 'success' && result.data && result.data.length > 0) {
+          const table = result.data[0];
+          setSelectedTable(table);
+          setSelectedDatabase(table.databaseId);
+        }
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) console.error('Error loading table by ID:', err);
+      });
+    return () => controller.abort();
+  }, []);
 
   // 搜索元数据
   const handleSearch = async (query: string) => {
@@ -129,10 +101,12 @@ export default function MetadataPage() {
     setSearchResults(null); // 清除搜索结果
   };
 
-  // 清除选择
+  // 清除选择：回到第一个数据源，并刷新数据源列表
   const handleClearSelection = () => {
     setSelectedTable(null);
     setSelectedDatabase(null);
+    setSelectedSource(null);
+    dataSourcesData.reload();
   };
 
   return (
@@ -358,7 +332,11 @@ export default function MetadataPage() {
                           清除选择
                         </button>
                       </div>
-                      <TableDetail table={selectedTable} />
+                      <TableDetail
+                        // 切换表或描述在其他地方被修改时重新挂载，重置编辑状态
+                        key={`${selectedTable.id}:${selectedTable.semanticDescription ?? ''}`}
+                        table={selectedTable}
+                      />
                     </div>
                   </div>
 

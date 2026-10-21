@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 interface SQLPreviewProps {
   sql: string;
@@ -22,12 +22,6 @@ export default function SQLPreview({
   const [isEditing, setIsEditing] = useState(false);
   const [editedSQL, setEditedSQL] = useState(sql);
   const [copied, setCopied] = useState(false);
-
-  // 生成了新的 SQL 时重置编辑内容
-  useEffect(() => {
-    setEditedSQL(sql);
-    setIsEditing(false);
-  }, [sql]);
 
   // 复制 SQL
   const handleCopy = async () => {

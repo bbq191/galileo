@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { apiFetch } from '@/lib/client/api-fetch';
+import { useAsyncData } from '@/lib/client/use-async-data';
 
 /**
  * 审计日志数据类型
@@ -54,17 +55,11 @@ interface AuditStats {
  * 提供审计日志查看和统计分析功能
  */
 export default function AuditPage() {
-  const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [stats, setStats] = useState<AuditStats | null>(null);
-  const [statsError, setStatsError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
 
   // 分页参数
   const [page, setPage] = useState(1);
   const [limit] = useState(20);
-  const [totalPages, setTotalPages] = useState(1);
 
   // 筛选参数
   const [filterSuccess, setFilterSuccess] = useState<string>('all');
@@ -73,68 +68,47 @@ export default function AuditPage() {
   /**
    * 获取审计日志
    */
-  const fetchLogs = async () => {
-    setLoading(true);
-    setError(null);
+  const logsData = useAsyncData(async (signal) => {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+    });
 
-    try {
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: limit.toString(),
-      });
-
-      if (filterSuccess !== 'all') {
-        params.append('success', filterSuccess);
-      }
-
-      const response = await fetch(`/api/audit/logs?${params}`);
-      const data = await response.json();
-
-      if (data.success) {
-        setLogs(data.data || []);
-        if (data.pagination) {
-          setTotalPages(data.pagination.totalPages);
-        }
-      } else {
-        setError(data.error || '获取审计日志失败');
-      }
-    } catch (err) {
-      console.error('获取审计日志失败:', err);
-      setError(err instanceof Error ? err.message : '获取审计日志失败');
-    } finally {
-      setLoading(false);
+    if (filterSuccess !== 'all') {
+      params.append('success', filterSuccess);
     }
-  };
+
+    const response = await fetch(`/api/audit/logs?${params}`, { signal });
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || '获取审计日志失败');
+    }
+    return { logs: (data.data || []) as AuditLog[], totalPages: data.pagination?.totalPages as number | undefined };
+  }, [page, limit, filterSuccess]);
+  const { loading, error } = logsData;
+  const logs = logsData.data?.logs ?? [];
+  const totalPages = logsData.data?.totalPages ?? 1;
 
   /**
-   * 获取审计统计
+   * 获取审计统计（失败时只在统计区域提示，不影响日志列表）
    */
-  const fetchStats = async () => {
+  const statsData = useAsyncData(async (signal) => {
     const params = new URLSearchParams();
     if (detectAnomalies) {
       params.append('detectAnomalies', 'true');
     }
 
-    const res = await apiFetch<AuditStats>(`/api/audit/stats?${params}`);
+    const res = await apiFetch<AuditStats>(`/api/audit/stats?${params}`, { signal });
     if (res.ok) {
-      setStats(res.data);
-      setStatsError(null);
-    } else {
-      setStats(null);
-      setStatsError(
-        res.error.kind === 'forbidden'
-          ? '审计统计需要管理员权限'
-          : res.error.message
-      );
+      return { stats: res.data, error: null };
     }
-  };
-
-  // 初始化加载
-  useEffect(() => {
-    fetchLogs();
-    fetchStats();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, filterSuccess, detectAnomalies]);
+    return {
+      stats: null,
+      error: res.error.kind === 'forbidden' ? '审计统计需要管理员权限' : res.error.message,
+    };
+  }, [detectAnomalies]);
+  const stats = statsData.data?.stats ?? null;
+  const statsError = statsData.data?.error ?? statsData.error;
 
   /**
    * 格式化时间
@@ -242,8 +216,8 @@ export default function AuditPage() {
               <button
                 className="btn btn-primary btn-sm mt-8"
                 onClick={() => {
-                  fetchLogs();
-                  fetchStats();
+                  logsData.reload();
+                  statsData.reload();
                 }}
                 disabled={loading}
               >

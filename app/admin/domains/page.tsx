@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useAsyncData } from '@/lib/client/use-async-data';
 
 /**
  * 业务域关键词
@@ -40,9 +41,6 @@ interface BusinessDomain {
  * @author xusy
  */
 export default function DomainsPage() {
-  const [domains, setDomains] = useState<BusinessDomain[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editingDomain, setEditingDomain] = useState<BusinessDomain | null>(null);
   const [formData, setFormData] = useState({
@@ -60,53 +58,37 @@ export default function DomainsPage() {
   // 🆕 自动发现状态
   const [discovering, setDiscovering] = useState(false);
   const [showDiscoverModal, setShowDiscoverModal] = useState(false);
-  const [dataSources, setDataSources] = useState<Array<{ id: number; name: string }>>([]);
   const [selectedDataSourceId, setSelectedDataSourceId] = useState<number | null>(null);
 
   /**
    * 加载业务域列表
    */
-  const loadDomains = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetch('/api/domains');
-      const result = await response.json();
-
-      if (result.success) {
-        setDomains(result.data.domains || []);
-      } else {
-        throw new Error(result.error || '获取业务域列表失败');
-      }
-    } catch (err) {
-      console.error('获取业务域列表失败:', err);
-      setError(err instanceof Error ? err.message : '获取业务域列表失败');
-    } finally {
-      setLoading(false);
+  const domainsData = useAsyncData(async (signal) => {
+    const response = await fetch('/api/domains', { signal });
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.error || '获取业务域列表失败');
     }
-  };
-
-  useEffect(() => {
-    loadDomains();
-    loadDataSources();
+    return (result.data.domains || []) as BusinessDomain[];
   }, []);
+  const domains = domainsData.data ?? [];
+  const { loading, error } = domainsData;
+  const loadDomains = domainsData.reload;
 
   /**
-   * 🆕 加载数据源列表
+   * 🆕 加载数据源列表（失败时自动发现中不显示数据源选项）
    */
-  const loadDataSources = async () => {
+  const dataSourcesData = useAsyncData(async (signal) => {
     try {
-      const response = await fetch('/api/datasources');
+      const response = await fetch('/api/datasources', { signal });
       const result = await response.json();
-
-      if (result.status === 'success') {
-        setDataSources(result.data || []);
-      }
+      return result.status === 'success' ? ((result.data || []) as Array<{ id: number; name: string }>) : [];
     } catch (err) {
       console.error('加载数据源列表失败:', err);
+      return [];
     }
-  };
+  }, []);
+  const dataSources = dataSourcesData.data ?? [];
 
   /**
    * 🆕 加载业务域关键词
@@ -195,7 +177,7 @@ export default function DomainsPage() {
         }
 
         setShowModal(false);
-        await loadDomains();
+        loadDomains();
       } else {
         throw new Error(result.error || '保存失败');
       }
@@ -229,7 +211,7 @@ export default function DomainsPage() {
       const result = await response.json();
 
       if (result.success) {
-        await loadDomains();
+        loadDomains();
       } else {
         throw new Error(result.error || '删除失败');
       }
@@ -305,7 +287,7 @@ export default function DomainsPage() {
       if (result.success) {
         alert(result.message || '自动发现完成');
         setShowDiscoverModal(false);
-        await loadDomains();
+        loadDomains();
       } else {
         throw new Error(result.error || '自动发现失败');
       }

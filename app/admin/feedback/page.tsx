@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { apiFetch } from '@/lib/client/api-fetch';
+import { useAsyncData } from '@/lib/client/use-async-data';
 
 interface FeedbackItem {
   id: number;
@@ -55,6 +56,13 @@ const STATUS_LABELS: Record<FeedbackItem['status'], string> = {
 };
 
 const PAGE_SIZE = 20;
+
+/** 读取分页列表（响应中的 total 为总条数） */
+async function fetchPage<T>(url: string, signal: AbortSignal): Promise<{ items: T[]; total: number }> {
+  const res = await apiFetch<T[]>(url, { signal });
+  if (!res.ok) throw res.error;
+  return { items: res.data, total: Number(res.meta.total ?? 0) };
+}
 
 function formatTime(value: string | null) {
   return value ? new Date(value).toLocaleString('zh-CN') : '-';
@@ -182,29 +190,15 @@ function FeedbackTab() {
   const [status, setStatus] = useState<'pending' | 'accepted' | 'rejected' | 'all'>('pending');
   const [rating, setRating] = useState<'' | FeedbackItem['rating']>('');
   const [page, setPage] = useState(1);
-  const [items, setItems] = useState<FeedbackItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const list = useAsyncData((signal) => {
     const params = new URLSearchParams({ status, page: String(page), limit: String(PAGE_SIZE) });
     if (rating) params.set('rating', rating);
-    const res = await apiFetch<FeedbackItem[]>(`/api/admin/feedback?${params}`);
-    if (res.ok) {
-      setItems(res.data);
-      setTotal(Number(res.meta.total ?? 0));
-    } else {
-      setError(res.error.message);
-    }
-    setLoading(false);
+    return fetchPage<FeedbackItem>(`/api/admin/feedback?${params}`, signal);
   }, [status, rating, page]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const { loading, error } = list;
+  const items = list.data?.items ?? [];
+  const total = list.data?.total ?? 0;
 
   return (
     <div className="space-y-4">
@@ -242,7 +236,7 @@ function FeedbackTab() {
       {loading && <div className="text-center py-8"><span className="loading loading-spinner" /></div>}
       {!loading && !error && items.length === 0 && <div className="text-center py-8 opacity-60">暂无反馈</div>}
 
-      {!loading && items.map((item) => <FeedbackCard key={item.id} item={item} onReviewed={load} />)}
+      {!loading && items.map((item) => <FeedbackCard key={item.id} item={item} onReviewed={list.reload} />)}
 
       <Pagination page={page} total={total} onChange={setPage} />
     </div>
@@ -251,38 +245,27 @@ function FeedbackTab() {
 
 function VerifiedTab() {
   const [page, setPage] = useState(1);
-  const [items, setItems] = useState<VerifiedItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const res = await apiFetch<VerifiedItem[]>(`/api/admin/verified-queries?page=${page}&limit=${PAGE_SIZE}`);
-    if (res.ok) {
-      setItems(res.data);
-      setTotal(Number(res.meta.total ?? 0));
-    } else {
-      setError(res.error.message);
-    }
-    setLoading(false);
-  }, [page]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const list = useAsyncData(
+    (signal) => fetchPage<VerifiedItem>(`/api/admin/verified-queries?page=${page}&limit=${PAGE_SIZE}`, signal),
+    [page]
+  );
+  const { loading } = list;
+  const error = list.error ?? actionError;
+  const items = list.data?.items ?? [];
+  const total = list.data?.total ?? 0;
 
   const toggle = async (item: VerifiedItem) => {
-    setError(null);
+    setActionError(null);
     const res = await apiFetch(`/api/admin/verified-queries/${item.id}`, {
       method: 'PATCH',
       json: { isActive: !item.isActive },
     });
     if (res.ok) {
-      load();
+      list.reload();
     } else {
-      setError(res.error.message);
+      setActionError(res.error.message);
     }
   };
 
@@ -345,40 +328,29 @@ const SOURCE_LABELS: Record<SuggestionItem['source'], string> = {
 
 function SuggestionsTab() {
   const [page, setPage] = useState(1);
-  const [items, setItems] = useState<SuggestionItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const res = await apiFetch<SuggestionItem[]>(`/api/admin/suggestions?page=${page}&limit=${PAGE_SIZE}`);
-    if (res.ok) {
-      setItems(res.data);
-      setTotal(Number(res.meta.total ?? 0));
-    } else {
-      setError(res.error.message);
-    }
-    setLoading(false);
-  }, [page]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const list = useAsyncData(
+    (signal) => fetchPage<SuggestionItem>(`/api/admin/suggestions?page=${page}&limit=${PAGE_SIZE}`, signal),
+    [page]
+  );
+  const { loading } = list;
+  const error = list.error ?? actionError;
+  const items = list.data?.items ?? [];
+  const total = list.data?.total ?? 0;
 
   const toggle = async (item: SuggestionItem) => {
-    setError(null);
+    setActionError(null);
     const res = await apiFetch(`/api/admin/suggestions/${item.id}`, { method: 'PATCH', json: { isHidden: !item.isHidden } });
-    if (res.ok) load();
-    else setError(res.error.message);
+    if (res.ok) list.reload();
+    else setActionError(res.error.message);
   };
 
   const rebuild = async () => {
     setRebuilding(true);
-    setError(null);
+    setActionError(null);
     setMessage(null);
     const res = await apiFetch<{ verified: number; popular: number; template: number; hidden: number }>(
       '/api/admin/maintenance/rebuild-suggestions',
@@ -388,9 +360,9 @@ function SuggestionsTab() {
     if (res.ok) {
       setMessage(`已重建：已验证 ${res.data.verified} 条、多人问过 ${res.data.popular} 条、模板 ${res.data.template} 条，隐藏 ${res.data.hidden} 条`);
       setPage(1);
-      load();
+      list.reload();
     } else {
-      setError(res.error.message);
+      setActionError(res.error.message);
     }
   };
 

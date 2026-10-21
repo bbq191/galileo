@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useAsyncData } from '@/lib/client/use-async-data';
 
 interface MetadataTreeProps {
   dataSources: any[];
@@ -12,6 +13,24 @@ interface MetadataTreeProps {
   onTableSelect: (table: any) => void;
 }
 
+interface ExpandState {
+  /** 记录展开状态时的选中项；选中项变化后记录失效 */
+  anchor?: number | null;
+  ids: Set<number>;
+}
+
+function resolveExpanded(state: ExpandState, selected: number | null): Set<number> {
+  if (state.anchor === selected && selected !== null) return state.ids;
+  return new Set(selected ? [selected] : []);
+}
+
+function toggled(ids: Set<number>, id: number): Set<number> {
+  const next = new Set(ids);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return next;
+}
+
 export default function MetadataTree({
   dataSources,
   selectedSource,
@@ -21,82 +40,48 @@ export default function MetadataTree({
   onDatabaseSelect,
   onTableSelect,
 }: MetadataTreeProps) {
-  const [databases, setDatabases] = useState<any[]>([]);
-  const [tables, setTables] = useState<any[]>([]);
-  const [expandedSources, setExpandedSources] = useState<Set<number>>(new Set());
-  const [expandedDatabases, setExpandedDatabases] = useState<Set<number>>(new Set());
-  const [loadingDatabases, setLoadingDatabases] = useState(false);
-  const [loadingTables, setLoadingTables] = useState(false);
+  // 展开状态：选中项变化时只展开选中的节点；用户在当前选中项下的展开 / 折叠记录在 anchor 对应的集合中
+  const [sourceToggles, setSourceToggles] = useState<ExpandState>({ ids: new Set() });
+  const [databaseToggles, setDatabaseToggles] = useState<ExpandState>({ ids: new Set() });
+  const expandedSources = resolveExpanded(sourceToggles, selectedSource);
+  const expandedDatabases = resolveExpanded(databaseToggles, selectedDatabase);
 
-  // 加载数据库列表
-  useEffect(() => {
-    if (selectedSource) {
-      loadDatabases(selectedSource);
-      setExpandedSources(new Set([selectedSource]));
-    }
-  }, [selectedSource]);
-
-  // 加载表列表
-  useEffect(() => {
-    if (selectedDatabase) {
-      loadTables(selectedDatabase);
-      setExpandedDatabases(new Set([selectedDatabase]));
-    }
-  }, [selectedDatabase]);
-
-  const loadDatabases = async (sourceId: number) => {
+  // 加载数据库列表（失败时显示为空）
+  const databasesData = useAsyncData(async (signal) => {
     try {
-      setLoadingDatabases(true);
-      const response = await fetch(`/api/metadata/databases?sourceId=${sourceId}`);
+      const response = await fetch(`/api/metadata/databases?sourceId=${selectedSource}`, { signal });
       const result = await response.json();
-
-      if (result.status === 'success') {
-        setDatabases(result.data || []);
-      }
+      return result.status === 'success' ? ((result.data || []) as any[]) : [];
     } catch (err) {
       console.error('Error loading databases:', err);
-    } finally {
-      setLoadingDatabases(false);
+      return [];
     }
-  };
+  }, [selectedSource], { enabled: !!selectedSource });
 
-  const loadTables = async (databaseId: number) => {
+  // 加载表列表（设置 limit=1000 以获取所有表，树形显示不需要分页）
+  const tablesData = useAsyncData(async (signal) => {
     try {
-      setLoadingTables(true);
-      // 设置 limit=1000 以获取所有表（树形显示不需要分页）
-      const response = await fetch(`/api/metadata/tables?databaseId=${databaseId}&limit=1000`);
+      const response = await fetch(`/api/metadata/tables?databaseId=${selectedDatabase}&limit=1000`, { signal });
       const result = await response.json();
-
-      if (result.status === 'success') {
-        setTables(result.data || []);
-        console.log(`[MetadataTree] Loaded ${result.data?.length || 0} tables for database ${databaseId}`);
-      }
+      return result.status === 'success' ? ((result.data || []) as any[]) : [];
     } catch (err) {
       console.error('Error loading tables:', err);
-    } finally {
-      setLoadingTables(false);
+      return [];
     }
-  };
+  }, [selectedDatabase], { enabled: !!selectedDatabase });
+
+  const databases = databasesData.data ?? [];
+  const tables = tablesData.data ?? [];
+  const loadingDatabases = databasesData.loading;
+  const loadingTables = tablesData.loading;
 
   const toggleSource = (sourceId: number) => {
-    const newExpanded = new Set(expandedSources);
-    if (newExpanded.has(sourceId)) {
-      newExpanded.delete(sourceId);
-    } else {
-      newExpanded.add(sourceId);
-    }
-    setExpandedSources(newExpanded);
+    setSourceToggles({ anchor: selectedSource, ids: toggled(expandedSources, sourceId) });
     onSourceSelect(sourceId);
   };
 
   const toggleDatabase = (databaseId: number) => {
-    const newExpanded = new Set(expandedDatabases);
-    if (newExpanded.has(databaseId)) {
-      newExpanded.delete(databaseId);
-    } else {
-      newExpanded.add(databaseId);
-    }
-    setExpandedDatabases(newExpanded);
+    setDatabaseToggles({ anchor: selectedDatabase, ids: toggled(expandedDatabases, databaseId) });
     onDatabaseSelect(databaseId);
   };
 

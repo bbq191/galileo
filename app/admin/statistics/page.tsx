@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useAsyncData } from '@/lib/client/use-async-data';
 
 /**
  * 系统概览数据类型
@@ -57,67 +57,47 @@ interface HotspotAnalysis {
  * 系统统计概览和热点数据分析
  */
 export default function StatisticsPage() {
-  const [overview, setOverview] = useState<SystemOverview | null>(null);
-  const [hotspots, setHotspots] = useState<HotspotAnalysis | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   /**
    * 获取系统概览
    */
-  const fetchOverview = async () => {
-    try {
-      const response = await fetch('/api/statistics/overview');
-      const data = await response.json();
-
-      if (data.success) {
-        setOverview(data.data);
-      } else {
-        throw new Error(data.error || '获取系统概览失败');
-      }
-    } catch (err) {
-      console.error('获取系统概览失败:', err);
-      setError(err instanceof Error ? err.message : '获取系统概览失败');
+  const overviewData = useAsyncData(async (signal) => {
+    const response = await fetch('/api/statistics/overview', { signal });
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || '获取系统概览失败');
     }
-  };
+    return data.data as SystemOverview;
+  }, []);
 
   /**
-   * 获取热点分析
+   * 获取热点分析（失败时不提示，热点区域不显示）
    */
-  const fetchHotspots = async () => {
+  const hotspotsData = useAsyncData(async (signal) => {
     try {
-      const response = await fetch('/api/statistics/hotspots');
+      const response = await fetch('/api/statistics/hotspots', { signal });
       const data = await response.json();
-
-      if (data.success) {
-        setHotspots(data.data);
-      } else {
+      if (!data.success) {
         throw new Error(data.error || '获取热点分析失败');
       }
+      return data.data as HotspotAnalysis;
     } catch (err) {
       console.error('获取热点分析失败:', err);
+      return null;
     }
-  };
+  }, []);
+
+  const overview = overviewData.data ?? null;
+  const hotspots = hotspotsData.data ?? null;
+  const loading = overviewData.loading || hotspotsData.loading;
+  const { error } = overviewData;
 
   /**
    * 刷新所有数据
    */
-  const refreshData = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      await Promise.all([fetchOverview(), fetchHotspots()]);
-    } finally {
-      setLoading(false);
-    }
+  const refreshData = () => {
+    overviewData.reload();
+    hotspotsData.reload();
   };
-
-  // 初始化加载
-  useEffect(() => {
-    refreshData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   /**
    * 获取健康度颜色

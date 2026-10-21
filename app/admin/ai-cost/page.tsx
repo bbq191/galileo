@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useAsyncData } from '@/lib/client/use-async-data';
 
 /**
  * AI成本统计数据类型（匹配后端返回结构）
@@ -54,70 +55,58 @@ interface PromptCacheStats {
  * 提供AI调用成本追踪和Prompt缓存管理功能
  */
 export default function AICostPage() {
-  const [costStats, setCostStats] = useState<AICostStatistics | null>(null);
-  const [promptCacheStats, setPromptCacheStats] = useState<PromptCacheStats | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   // 时间周期选择
   const [period, setPeriod] = useState<'day' | 'week' | 'month'>('day');
+  // 生成报告、清理缓存等操作进行中
+  const [busy, setBusy] = useState(false);
 
   /**
    * 获取AI成本统计
    */
-  const fetchCostStats = async () => {
-    try {
-      const response = await fetch(`/api/ai/cost?period=${period}`);
-      const data = await response.json();
-
-      if (data.success) {
-        setCostStats(data.statistics);
-      } else {
-        throw new Error(data.error || '获取成本统计失败');
-      }
-    } catch (err) {
-      console.error('获取成本统计失败:', err);
-      setError(err instanceof Error ? err.message : '获取成本统计失败');
+  const costData = useAsyncData(async (signal) => {
+    const response = await fetch(`/api/ai/cost?period=${period}`, { signal });
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || '获取成本统计失败');
     }
-  };
+    return data.statistics as AICostStatistics;
+  }, [period]);
 
   /**
-   * 获取Prompt缓存统计
+   * 获取Prompt缓存统计（失败时不提示，缓存统计区域不显示）
    */
-  const fetchPromptCacheStats = async () => {
+  const promptCacheData = useAsyncData(async (signal) => {
     try {
-      const response = await fetch('/api/ai/prompt-cache');
+      const response = await fetch('/api/ai/prompt-cache', { signal });
       const data = await response.json();
-
-      if (data.success) {
-        setPromptCacheStats(data.stats);
-      } else {
+      if (!data.success) {
         throw new Error(data.error || '获取缓存统计失败');
       }
+      return data.stats as PromptCacheStats;
     } catch (err) {
       console.error('获取缓存统计失败:', err);
+      return null;
     }
-  };
+  }, []);
+
+  const costStats = costData.data ?? null;
+  const promptCacheStats = promptCacheData.data ?? null;
+  const error = costData.error;
+  const loading = costData.loading || promptCacheData.loading || busy;
 
   /**
    * 刷新所有数据
    */
-  const refreshData = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      await Promise.all([fetchCostStats(), fetchPromptCacheStats()]);
-    } finally {
-      setLoading(false);
-    }
+  const refreshData = () => {
+    costData.reload();
+    promptCacheData.reload();
   };
 
   /**
    * 生成成本报告
    */
   const generateReport = async () => {
-    setLoading(true);
+    setBusy(true);
 
     try {
       const response = await fetch(`/api/ai/cost?period=${period}`, {
@@ -141,7 +130,7 @@ export default function AICostPage() {
       console.error('生成报告失败:', err);
       alert(err instanceof Error ? err.message : '生成报告失败');
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
 
@@ -153,7 +142,7 @@ export default function AICostPage() {
       return;
     }
 
-    setLoading(true);
+    setBusy(true);
 
     try {
       const response = await fetch('/api/ai/prompt-cache', {
@@ -171,7 +160,7 @@ export default function AICostPage() {
 
       if (data.success) {
         alert(`成功清理 ${data.removedCount} 条低质量缓存`);
-        await fetchPromptCacheStats();
+        promptCacheData.reload();
       } else {
         throw new Error(data.error || '清理失败');
       }
@@ -179,7 +168,7 @@ export default function AICostPage() {
       console.error('清理缓存失败:', err);
       alert(err instanceof Error ? err.message : '清理缓存失败');
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
 
@@ -191,7 +180,7 @@ export default function AICostPage() {
       return;
     }
 
-    setLoading(true);
+    setBusy(true);
 
     try {
       const response = await fetch('/api/ai/prompt-cache', {
@@ -201,7 +190,7 @@ export default function AICostPage() {
 
       if (data.success) {
         alert('Prompt缓存已清空');
-        await fetchPromptCacheStats();
+        promptCacheData.reload();
       } else {
         throw new Error(data.error || '清空失败');
       }
@@ -209,15 +198,9 @@ export default function AICostPage() {
       console.error('清空缓存失败:', err);
       alert(err instanceof Error ? err.message : '清空缓存失败');
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
-
-  // 初始化加载
-  useEffect(() => {
-    refreshData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period]);
 
   /**
    * 格式化货币

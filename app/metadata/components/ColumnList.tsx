@@ -11,16 +11,18 @@
 
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState } from 'react';
+import { useAsyncData } from '@/lib/client/use-async-data';
 
 interface ColumnListProps {
   tableId: number;
 }
 
 export default function ColumnList({ tableId }: ColumnListProps) {
-  const [columns, setColumns] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // 保存后的语义描述（覆盖加载结果，避免重新请求整张表的字段）
+  const [savedDescriptions, setSavedDescriptions] = useState<
+    Record<number, { semanticDescription: string | null; semanticSource: string | null }>
+  >({});
   const [expandedColumn, setExpandedColumn] = useState<number | null>(null);
 
   // 编辑语义描述的状态
@@ -28,30 +30,18 @@ export default function ColumnList({ tableId }: ColumnListProps) {
   const [editingDescription, setEditingDescription] = useState('');
   const [savingDescription, setSavingDescription] = useState(false);
 
-  const loadColumns = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetch(`/api/metadata/columns?tableId=${tableId}`);
-      const result = await response.json();
-
-      if (result.status === 'success') {
-        setColumns(result.data || []);
-      } else {
-        throw new Error(result.message || 'Failed to load columns');
-      }
-    } catch (err) {
-      console.error('Error loading columns:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load columns');
-    } finally {
-      setLoading(false);
+  const columnsData = useAsyncData(async (signal) => {
+    const response = await fetch(`/api/metadata/columns?tableId=${tableId}`, { signal });
+    const result = await response.json();
+    if (result.status !== 'success') {
+      throw new Error(result.message || 'Failed to load columns');
     }
+    return (result.data || []) as any[];
   }, [tableId]);
-
-  useEffect(() => {
-    loadColumns();
-  }, [loadColumns]);
+  const { loading, error } = columnsData;
+  const columns = (columnsData.data ?? []).map((col) =>
+    savedDescriptions[col.id] ? { ...col, ...savedDescriptions[col.id] } : col
+  );
 
   const toggleColumn = (columnId: number) => {
     setExpandedColumn(expandedColumn === columnId ? null : columnId);
@@ -92,17 +82,13 @@ export default function ColumnList({ tableId }: ColumnListProps) {
 
       if (result.status === 'success') {
         // 更新本地数据
-        setColumns((prev) =>
-          prev.map((col) =>
-            col.id === columnId
-              ? {
-                  ...col,
-                  semanticDescription: result.data.semanticDescription,
-                  semanticSource: result.data.semanticSource,
-                }
-              : col
-          )
-        );
+        setSavedDescriptions((prev) => ({
+          ...prev,
+          [columnId]: {
+            semanticDescription: result.data.semanticDescription,
+            semanticSource: result.data.semanticSource,
+          },
+        }));
 
         setEditingColumnId(null);
         setEditingDescription('');

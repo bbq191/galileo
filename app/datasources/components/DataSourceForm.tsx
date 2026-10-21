@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { apiFetch, formatApiError } from '@/lib/client/api-fetch';
 
 interface DataSource {
@@ -25,29 +25,23 @@ export default function DataSourceForm({
   onClose,
   onSuccess,
 }: DataSourceFormProps) {
-  const [formData, setFormData] = useState<DataSource>({
-    name: '',
-    type: 'mysql',
-    host: 'localhost',
-    port: 3306,
-    username: 'root',
-    password: '',
-    databases: [],
-  });
+  // 编辑模式用已有配置初始化表单（父组件按数据源设置 key，切换编辑对象时重新挂载）
+  const [formData, setFormData] = useState<DataSource>(() =>
+    dataSource
+      ? { ...dataSource, password: '' } // 不显示已保存的密码
+      : {
+          name: '',
+          type: 'mysql',
+          host: 'localhost',
+          port: 3306,
+          username: 'root',
+          password: '',
+          databases: [],
+        }
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [databasesInput, setDatabasesInput] = useState('');
-
-  // 编辑模式时初始化表单
-  useEffect(() => {
-    if (dataSource) {
-      setFormData({
-        ...dataSource,
-        password: '', // 不显示已保存的密码
-      });
-      setDatabasesInput(dataSource.databases?.join(', ') || '');
-    }
-  }, [dataSource]);
+  const [databasesInput, setDatabasesInput] = useState(() => dataSource?.databases?.join(', ') || '');
 
   // 处理表单输入
   const handleChange = (

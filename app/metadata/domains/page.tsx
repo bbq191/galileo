@@ -1,8 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { apiFetch } from '@/lib/client/api-fetch';
+import { useAsyncData } from '@/lib/client/use-async-data';
+import { useUrlSearchParam } from '@/lib/client/use-url-search-param';
 
 /**
  * 数据库元数据（含业务域）
@@ -69,10 +71,6 @@ interface InferenceResult {
  * - 查看推断结果详情
  */
 export default function DatabaseDomainsPage() {
-  const [databases, setDatabases] = useState<DatabaseWithDomain[]>([]);
-  const [domains, setDomains] = useState<BusinessDomain[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [inferring, setInferring] = useState(false);
   const [selectedDatabases, setSelectedDatabases] = useState<Set<number>>(new Set());
   const [showInferenceModal, setShowInferenceModal] = useState(false);
@@ -82,60 +80,38 @@ export default function DatabaseDomainsPage() {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [assigningDatabase, setAssigningDatabase] = useState<DatabaseWithDomain | null>(null);
   const [selectedDomainId, setSelectedDomainId] = useState<number | null>(null);
-  const [filterDomainId, setFilterDomainId] = useState<number | null>(null);
-
-  /**
-   * 从 URL 获取过滤参数
-   */
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const domainIdParam = params.get('domainId');
-      if (domainIdParam) {
-        setFilterDomainId(Number(domainIdParam));
-      }
-    }
-  }, []);
+  // 业务域过滤：用户未修改时使用 URL 中的 domainId（从业务域管理页跳转过来）
+  const urlDomainId = Number(useUrlSearchParam('domainId')) || null;
+  const [filterOverride, setFilterDomainId] = useState<number | null | undefined>(undefined);
+  const filterDomainId = filterOverride === undefined ? urlDomainId : filterOverride;
 
   /**
    * 加载数据库列表
    */
-  const loadDatabases = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetch('/api/metadata/databases?includeDomain=true');
-      const result = await response.json();
-
-      if (result.success) {
-        setDatabases(result.data || []);
-      } else {
-        throw new Error(result.error || '获取数据库列表失败');
-      }
-    } catch (err) {
-      console.error('获取数据库列表失败:', err);
-      setError(err instanceof Error ? err.message : '获取数据库列表失败');
-    } finally {
-      setLoading(false);
+  const databasesData = useAsyncData(async (signal) => {
+    const response = await fetch('/api/metadata/databases?includeDomain=true', { signal });
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.error || '获取数据库列表失败');
     }
-  };
+    return (result.data || []) as DatabaseWithDomain[];
+  }, []);
+  const databases = databasesData.data ?? [];
+  const { loading, error } = databasesData;
+  const loadDatabases = databasesData.reload;
 
   /**
-   * 加载业务域列表
+   * 加载业务域列表（失败时只记录日志，分配下拉框为空）
    */
-  const loadDomains = async () => {
-    const res = await apiFetch<{ domains: BusinessDomain[] }>('/api/domains');
-    if (res.ok) {
-      setDomains(res.data.domains || []);
-    } else {
+  const domainsData = useAsyncData(async (signal) => {
+    const res = await apiFetch<{ domains: BusinessDomain[] }>('/api/domains', { signal });
+    if (!res.ok) {
       console.error('获取业务域列表失败:', res.error.message);
+      return [];
     }
-  };
-
-  useEffect(() => {
-    Promise.all([loadDatabases(), loadDomains()]);
+    return res.data.domains || [];
   }, []);
+  const domains = domainsData.data ?? [];
 
   /**
    * 切换数据库选择
@@ -227,7 +203,7 @@ export default function DatabaseDomainsPage() {
         setInferenceResults(newResults);
 
         // 刷新数据库列表
-        await loadDatabases();
+        loadDatabases();
 
         // 如果所有推断都已处理，关闭模态框
         if (newResults.size === 0) {
@@ -274,7 +250,7 @@ export default function DatabaseDomainsPage() {
 
       if (result.success) {
         setShowAssignModal(false);
-        await loadDatabases();
+        loadDatabases();
       } else {
         throw new Error(result.error || '分配失败');
       }

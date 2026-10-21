@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useAsyncData } from '@/lib/client/use-async-data';
 
 /**
  * 健康检查结果接口
@@ -36,38 +37,22 @@ interface HealthResponse {
  * 实时展示各服务的健康状态
  */
 export default function HealthPage() {
-  const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
 
   /**
-   * 获取健康状态
+   * 获取健康状态（降级时接口返回 503，响应体仍然有效）
    */
-  const fetchHealth = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetch('/api/health');
-      const data = await response.json();
-
-      setHealth(data);
-    } catch (err) {
-      console.error('获取健康状态失败:', err);
-      setError(err instanceof Error ? err.message : '获取健康状态失败');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const healthData = useAsyncData(async (signal) => {
+    const response = await fetch('/api/health', { signal });
+    return (await response.json()) as HealthResponse;
+  }, []);
+  const health = healthData.data ?? null;
+  const { loading, error } = healthData;
+  const fetchHealth = healthData.reload;
 
   /**
    * 自动刷新
    */
-  useEffect(() => {
-    fetchHealth();
-  }, []);
-
   useEffect(() => {
     if (!autoRefresh) return;
 
@@ -76,7 +61,7 @@ export default function HealthPage() {
     }, 5000); // 每5秒刷新一次
 
     return () => clearInterval(interval);
-  }, [autoRefresh]);
+  }, [autoRefresh, fetchHealth]);
 
   /**
    * 获取状态徽章样式

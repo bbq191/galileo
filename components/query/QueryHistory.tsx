@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
+import { useAsyncData } from '@/lib/client/use-async-data';
 
 interface QueryHistoryItem {
   id: number;
@@ -40,58 +41,38 @@ export default function QueryHistory({
   limit = 20,
   showPagination = true,
 }: QueryHistoryProps) {
-  const [data, setData] = useState<QueryHistoryItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
   const [filterSuccess, setFilterSuccess] = useState<boolean | null>(null);
 
   // 加载查询历史
-  const loadHistory = useCallback(async (page: number = 1) => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: limit.toString(),
-      });
-
-      if (userId) {
-        params.append('userId', userId);
-      }
-
-      if (filterSuccess !== null) {
-        params.append('success', filterSuccess.toString());
-      }
-
-      const response = await fetch(`/api/query/history?${params.toString()}`);
-      const result: QueryHistoryResponse = await response.json();
-
-      if (result.success && result.data) {
-        setData(result.data);
-        if (result.pagination) {
-          setCurrentPage(result.pagination.page);
-          setTotalPages(result.pagination.totalPages);
-          setTotalCount(result.pagination.totalCount);
-        }
-      } else {
-        setError(result.error || '加载查询历史失败');
-      }
-    } catch (err) {
-      console.error('Failed to load query history:', err);
-      setError(err instanceof Error ? err.message : '加载失败，请稍后重试');
-    } finally {
-      setLoading(false);
+  const history = useAsyncData(async (signal) => {
+    const params = new URLSearchParams({
+      page: currentPage.toString(),
+      limit: limit.toString(),
+    });
+    if (userId) {
+      params.append('userId', userId);
     }
-  }, [limit, userId, filterSuccess]);
+    if (filterSuccess !== null) {
+      params.append('success', filterSuccess.toString());
+    }
 
-  // 初始加载
-  useEffect(() => {
-    loadHistory(1);
-  }, [loadHistory]);
+    const response = await fetch(`/api/query/history?${params.toString()}`, { signal });
+    const result: QueryHistoryResponse = await response.json();
+    if (!result.success || !result.data) {
+      throw new Error(result.error || '加载查询历史失败');
+    }
+    return { items: result.data, pagination: result.pagination };
+  }, [currentPage, limit, userId, filterSuccess]);
+
+  const { loading, error } = history;
+  const data = history.data?.items ?? [];
+  const totalPages = history.data?.pagination?.totalPages ?? 1;
+  const totalCount = history.data?.pagination?.totalCount ?? 0;
+  const loadHistory = (page: number) => {
+    if (page === currentPage) history.reload();
+    else setCurrentPage(page);
+  };
 
   // 格式化时间
   const formatTime = (timestamp: string): string => {

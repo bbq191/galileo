@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { apiFetch, formatApiError } from '@/lib/client/api-fetch';
 
 interface TableDetailProps {
@@ -13,13 +13,6 @@ export default function TableDetail({ table }: TableDetailProps) {
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-
-  // 切换表时重置
-  useEffect(() => {
-    setDescription(table.semanticDescription ?? null);
-    setEditing(false);
-    setSaveError(null);
-  }, [table.id, table.semanticDescription]);
 
   const startEditing = () => {
     setDraft(description ?? '');

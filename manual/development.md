@@ -102,7 +102,8 @@ npm start
 - 单一职责原则：每个方法只做一件事
 - TypeScript 严格模式：`npx tsc --noEmit` 必须通过
 - ESLint 检查：`npm run lint` 必须没有 error（`npm run lint:fix` 自动修复）。使用 ESLint 9 flat config（`eslint.config.mjs`，规则集 `eslint-config-next/core-web-vitals`）；Next.js 16 已移除 `next lint`，脚本直接调用 ESLint
-- `react-hooks/set-state-in-effect` 与 `react-hooks/immutability` 暂为警告（存量页面的写法），新代码不要再引入：数据请求放在事件或数据请求库中而不是 effect 里同步 setState，effect 中调用的函数在 effect 之前声明
+- 页面数据加载使用 `lib/client/use-async-data.ts` 的 `useAsyncData`，不要在 effect 中先 `setLoading(true)` 再请求（违反 `react-hooks/set-state-in-effect`）；
+  属性变化时需要重置的组件，由父组件设置 `key` 重新挂载，而不是在 effect 中重置状态；读取 URL 参数用 `lib/client/use-url-search-param.ts`
 
 **文件组织**
 - API 路由：`app/api/<功能>/route.ts`

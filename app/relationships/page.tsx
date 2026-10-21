@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useAsyncData } from '@/lib/client/use-async-data';
 import RelationshipGraph from './components/RelationshipGraph';
 import RelationshipDetail from './components/RelationshipDetail';
 import VerificationPanel from './components/VerificationPanel';
@@ -24,10 +25,57 @@ interface GraphEdge {
   relationshipType: 'one-to-one' | 'one-to-many' | 'many-to-many';
 }
 
+/**
+ * 读取列表接口（{ status: 'success', data: [] }），失败时记录日志并返回空列表
+ */
+async function fetchList(url: string, signal: AbortSignal, errorLabel: string): Promise<any[]> {
+  try {
+    const response = await fetch(url, { signal });
+    const result = await response.json();
+    return result.status === 'success' ? result.data || [] : [];
+  } catch (err) {
+    if (!signal.aborted) console.error(errorLabel, err);
+    return [];
+  }
+}
+
+async function fetchFirst(url: string, errorLabel: string): Promise<any | null> {
+  try {
+    const response = await fetch(url);
+    const result = await response.json();
+    return result.status === 'success' && result.data && result.data.length > 0 ? result.data[0] : null;
+  } catch (err) {
+    console.error(errorLabel, err);
+    return null;
+  }
+}
+
+/**
+ * 根据 URL 中的 databaseId / tableId 查出对应的数据源、数据库与中心表
+ */
+async function resolveUrlSelection(
+  databaseId: number | null,
+  tableId: number | null
+): Promise<{ sourceId: number | null; databaseId: number | null; tableId: number | null }> {
+  let resolvedDatabaseId = databaseId;
+  if (!resolvedDatabaseId && tableId) {
+    const table = await fetchFirst(`/api/metadata/tables?tableId=${tableId}`, 'Error loading source by table ID:');
+    resolvedDatabaseId = table?.databaseId ?? null;
+  }
+
+  let sourceId: number | null = null;
+  if (resolvedDatabaseId) {
+    const database = await fetchFirst(
+      `/api/metadata/databases?databaseId=${resolvedDatabaseId}`,
+      'Error loading source by database ID:'
+    );
+    sourceId = database?.sourceId ?? null;
+  }
+
+  return { sourceId, databaseId: resolvedDatabaseId, tableId };
+}
+
 export default function RelationshipsPage() {
-  const [dataSources, setDataSources] = useState<any[]>([]);
-  const [databases, setDatabases] = useState<any[]>([]);
-  const [tables, setTables] = useState<any[]>([]);
 
   const [selectedSourceId, setSelectedSourceId] = useState<number | null>(null);
   const [selectedDatabaseId, setSelectedDatabaseId] = useState<number | null>(null);
@@ -41,131 +89,64 @@ export default function RelationshipsPage() {
   const [minConfidence, setMinConfidence] = useState(0.7);
 
   const [graphKey, setGraphKey] = useState(0); // 用于强制刷新图谱
-  const [isInitializing, setIsInitializing] = useState(true); // 标记是否正在初始化
 
-  // 从URL参数初始化选择
+  // 从URL参数初始化选择（从元数据浏览等页面跳转过来）
   useEffect(() => {
-    const initializeFromUrl = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const urlTableId = params.get('tableId');
-      const urlDatabaseId = params.get('databaseId');
+    const params = new URLSearchParams(window.location.search);
+    const urlTableId = params.get('tableId');
+    const urlDatabaseId = params.get('databaseId');
+    if (!urlTableId && !urlDatabaseId) return;
 
-      if (urlDatabaseId) {
-        const dbId = parseInt(urlDatabaseId);
-        // 先加载数据库信息获取sourceId
-        await loadSourceByDatabaseId(dbId);
-        setSelectedDatabaseId(dbId);
-      } else if (urlTableId) {
-        // 如果只有 tableId，根据 tableId 查询对应的数据库和数据源
-        await loadSourceByTableId(parseInt(urlTableId));
-      }
-
-      if (urlTableId) {
-        setSelectedTableId(parseInt(urlTableId));
-      }
-
-      setIsInitializing(false);
+    let cancelled = false;
+    resolveUrlSelection(urlDatabaseId ? parseInt(urlDatabaseId) : null, urlTableId ? parseInt(urlTableId) : null)
+      .then((selection) => {
+        if (cancelled) return;
+        if (selection.sourceId) setSelectedSourceId(selection.sourceId);
+        if (selection.databaseId) setSelectedDatabaseId(selection.databaseId);
+        if (selection.tableId) setSelectedTableId(selection.tableId);
+      });
+    return () => {
+      cancelled = true;
     };
-
-    initializeFromUrl();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // 根据数据库ID加载对应的数据源
-  const loadSourceByDatabaseId = async (databaseId: number) => {
-    try {
-      const response = await fetch(`/api/metadata/databases?databaseId=${databaseId}`);
-      const result = await response.json();
-
-      if (result.status === 'success' && result.data && result.data.length > 0) {
-        const database = result.data[0];
-        setSelectedSourceId(database.sourceId);
-      }
-    } catch (err) {
-      console.error('Error loading source by database ID:', err);
-    }
-  };
-
-  // 根据表ID加载对应的数据库和数据源
-  const loadSourceByTableId = async (tableId: number) => {
-    try {
-      const response = await fetch(`/api/metadata/tables?tableId=${tableId}`);
-      const result = await response.json();
-
-      if (result.status === 'success' && result.data && result.data.length > 0) {
-        const table = result.data[0];
-        setSelectedDatabaseId(table.databaseId);
-        // 根据数据库ID加载数据源
-        await loadSourceByDatabaseId(table.databaseId);
-      }
-    } catch (err) {
-      console.error('Error loading source by table ID:', err);
-    }
-  };
 
   // 加载数据源列表
-  useEffect(() => {
-    loadDataSources();
-  }, []);
+  const dataSourcesData = useAsyncData(
+    (signal) => fetchList('/api/datasources', signal, 'Error loading data sources:'),
+    []
+  );
 
-  const loadDataSources = async () => {
-    try {
-      const response = await fetch('/api/datasources');
-      const result = await response.json();
+  // 加载数据库列表（未选择数据源时为空）
+  const databasesData = useAsyncData(
+    (signal) => fetchList(`/api/metadata/databases?sourceId=${selectedSourceId}`, signal, 'Error loading databases:'),
+    [selectedSourceId],
+    { enabled: !!selectedSourceId }
+  );
 
-      if (result.status === 'success') {
-        setDataSources(result.data || []);
-      }
-    } catch (err) {
-      console.error('Error loading data sources:', err);
-    }
-  };
+  // 加载表列表（未选择数据库时为空）
+  const tablesData = useAsyncData(
+    (signal) => fetchList(`/api/metadata/tables?databaseId=${selectedDatabaseId}&limit=10000`, signal, 'Error loading tables:'),
+    [selectedDatabaseId],
+    { enabled: !!selectedDatabaseId }
+  );
 
-  // 加载数据库列表
-  useEffect(() => {
-    if (selectedSourceId) {
-      loadDatabases(selectedSourceId);
-    } else if (!isInitializing) {
-      // 只在非初始化状态下清空
-      setDatabases([]);
+  const dataSources = dataSourcesData.data ?? [];
+  const databases = databasesData.data ?? [];
+  const tables = tablesData.data ?? [];
+
+  // 清空数据源时同时清空数据库与中心表；清空数据库时清空中心表
+  const handleSourceChange = (sourceId: number | null) => {
+    setSelectedSourceId(sourceId);
+    if (!sourceId) {
       setSelectedDatabaseId(null);
-    }
-  }, [selectedSourceId, isInitializing]);
-
-  const loadDatabases = async (sourceId: number) => {
-    try {
-      const response = await fetch(`/api/metadata/databases?sourceId=${sourceId}`);
-      const result = await response.json();
-
-      if (result.status === 'success') {
-        setDatabases(result.data || []);
-      }
-    } catch (err) {
-      console.error('Error loading databases:', err);
-    }
-  };
-
-  // 加载表列表
-  useEffect(() => {
-    if (selectedDatabaseId) {
-      loadTables(selectedDatabaseId);
-    } else if (!isInitializing) {
-      // 只在非初始化状态下清空
-      setTables([]);
       setSelectedTableId(null);
     }
-  }, [selectedDatabaseId, isInitializing]);
+  };
 
-  const loadTables = async (databaseId: number) => {
-    try {
-      const response = await fetch(`/api/metadata/tables?databaseId=${databaseId}&limit=10000`);
-      const result = await response.json();
-
-      if (result.status === 'success') {
-        setTables(result.data || []);
-      }
-    } catch (err) {
-      console.error('Error loading tables:', err);
+  const handleDatabaseChange = (databaseId: number | null) => {
+    setSelectedDatabaseId(databaseId);
+    if (!databaseId) {
+      setSelectedTableId(null);
     }
   };
 
@@ -226,7 +207,7 @@ export default function RelationshipsPage() {
                   className="select select-bordered select-sm md:select-md"
                   value={selectedSourceId || ''}
                   onChange={(e) =>
-                    setSelectedSourceId(e.target.value ? parseInt(e.target.value) : null)
+                    handleSourceChange(e.target.value ? parseInt(e.target.value) : null)
                   }
                 >
                   <option value="">选择数据源</option>
@@ -247,7 +228,7 @@ export default function RelationshipsPage() {
                   className="select select-bordered select-sm md:select-md"
                   value={selectedDatabaseId || ''}
                   onChange={(e) =>
-                    setSelectedDatabaseId(e.target.value ? parseInt(e.target.value) : null)
+                    handleDatabaseChange(e.target.value ? parseInt(e.target.value) : null)
                   }
                   disabled={!selectedSourceId}
                 >

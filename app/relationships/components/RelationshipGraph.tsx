@@ -45,6 +45,317 @@ interface RelationshipGraphProps {
   onEdgeClick?: (edge: GraphEdge) => void;
 }
 
+/**
+ * 转换为 ReactFlow 数据格式（tableId 为中心表，布局时放在中间并高亮）
+ */
+function buildFlowData(
+  graphNodes: GraphNode[],
+  graphEdges: GraphEdge[],
+  tableId: number | undefined
+): { nodes: Node[]; edges: Edge[] } {
+  // 计算布局（简单的力导向布局）
+  const layoutNodes = calculateLayout(graphNodes, graphEdges, tableId);
+
+  // 按数据库分组节点（用于跨库关系识别和颜色分配）
+  const databaseGroups = new Map<string, number>();
+  const databaseColors = [
+    '#3b82f6', // blue
+    '#8b5cf6', // violet
+    '#ec4899', // pink
+    '#f59e0b', // amber
+    '#10b981', // emerald
+    '#06b6d4', // cyan
+  ];
+
+  // 按数据库分组节点位置（用于绘制分组背景）
+  const nodesByDatabase = new Map<string, typeof layoutNodes>();
+  layoutNodes.forEach((node) => {
+    if (!nodesByDatabase.has(node.databaseName)) {
+      nodesByDatabase.set(node.databaseName, []);
+    }
+    nodesByDatabase.get(node.databaseName)!.push(node);
+  });
+
+  graphNodes.forEach((node) => {
+    if (!databaseGroups.has(node.databaseName)) {
+      databaseGroups.set(node.databaseName, databaseGroups.size);
+    }
+  });
+
+  // 计算每个数据库组的边界框（用于绘制分组背景）
+  const databaseBounds = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>();
+  nodesByDatabase.forEach((nodes, dbName) => {
+    const positions = nodes.map(n => n.position);
+    const minX = Math.min(...positions.map(p => p.x)) - 100;
+    const minY = Math.min(...positions.map(p => p.y)) - 80;
+    const maxX = Math.max(...positions.map(p => p.x)) + 280;
+    const maxY = Math.max(...positions.map(p => p.y)) + 80;
+    databaseBounds.set(dbName, { minX, minY, maxX, maxY });
+  });
+
+  // 添加数据库分组背景节点（仅在多数据库时显示）
+  const groupBackgroundNodes: Node[] = [];
+  if (databaseGroups.size > 1) {
+    databaseBounds.forEach((bounds, dbName) => {
+      const dbIndex = databaseGroups.get(dbName) || 0;
+      const dbColor = databaseColors[dbIndex % databaseColors.length];
+
+      groupBackgroundNodes.push({
+        id: `db-group-${dbName}`,
+        type: 'default',
+        data: {
+          label: `📁 ${dbName}`,
+          databaseName: dbName,
+        },
+        position: { x: bounds.minX, y: bounds.minY },
+        draggable: false,
+        selectable: false,
+        style: {
+          width: bounds.maxX - bounds.minX,
+          height: bounds.maxY - bounds.minY,
+          background: `${dbColor}08`, // 极淡的背景色
+          border: `2px dashed ${dbColor}40`,
+          borderRadius: '12px',
+          padding: '20px',
+          fontSize: '14px',
+          fontWeight: 'bold',
+          color: dbColor,
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'flex-start',
+          zIndex: -1,
+          pointerEvents: 'none',
+        },
+        zIndex: -1,
+      });
+    });
+  }
+
+  // 转换表节点
+  const flowNodes: Node[] = layoutNodes.map((node) => {
+    const dbIndex = databaseGroups.get(node.databaseName) || 0;
+    const dbColor = databaseColors[dbIndex % databaseColors.length];
+    const isCenterNode = node.tableId === tableId;
+
+    return {
+      id: node.tableId.toString(),
+      type: 'default',
+      data: {
+        label: `${node.tableName}${databaseGroups.size === 1 ? `\n${node.databaseName}` : ''}`,
+        tableId: node.tableId,
+        databaseName: node.databaseName,
+        tableName: node.tableName,
+      },
+      position: node.position,
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+      style: {
+        background: isCenterNode ? dbColor : '#ffffff',
+        color: isCenterNode ? '#ffffff' : '#000000',
+        border: `2px solid ${dbColor}`,
+        borderRadius: '8px',
+        padding: '10px 12px',
+        width: 180,
+        fontSize: '12px',
+        fontWeight: isCenterNode ? 'bold' : 'normal',
+        textAlign: 'center' as const,
+        whiteSpace: 'pre-line' as const,
+        boxShadow: isCenterNode ? '0 4px 6px rgba(0, 0, 0, 0.1)' : 'none',
+        zIndex: 10,
+      },
+    };
+  });
+
+  // 合并背景节点和表节点
+  const allNodes = [...groupBackgroundNodes, ...flowNodes];
+
+  // 转换边
+  const flowEdges: Edge[] = graphEdges.map((edge, index) => {
+    const isExplicit = edge.type === 'explicit';
+    const isVerified = edge.type === 'verified';
+
+    // 判断是否为跨库关系
+    const sourceNode = graphNodes.find((n) => n.tableId === edge.sourceTableId);
+    const targetNode = graphNodes.find((n) => n.tableId === edge.targetTableId);
+    const isCrossDatabase = sourceNode && targetNode &&
+      sourceNode.databaseName !== targetNode.databaseName;
+
+    // 跨库关系使用更粗的线条和特殊颜色
+    const strokeWidth = isCrossDatabase ? 3 : 2;
+    const strokeColor = isCrossDatabase
+      ? '#dc2626' // 跨库关系用红色
+      : isExplicit
+      ? '#10b981' // 显式关系用绿色
+      : isVerified
+      ? '#f59e0b' // 已验证推断关系用橙色
+      : '#94a3b8'; // 未验证推断关系用灰色
+
+    return {
+      id: `edge-${edge.sourceTableId}-${edge.targetTableId}-${index}`,
+      source: edge.sourceTableId.toString(),
+      target: edge.targetTableId.toString(),
+      type: 'smoothstep',
+      animated: isCrossDatabase || (!isExplicit && !isVerified),
+      style: {
+        stroke: strokeColor,
+        strokeWidth,
+        strokeDasharray: isExplicit ? '0' : '5,5',
+      },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: strokeColor,
+      },
+      label: edge.confidence
+        ? `${edge.sourceColumn} → ${edge.targetColumn}\n${isCrossDatabase ? '🔗 跨库 ' : ''}(${(edge.confidence * 100).toFixed(0)}%)`
+        : `${edge.sourceColumn} → ${edge.targetColumn}${isCrossDatabase ? '\n🔗 跨库关系' : ''}`,
+      labelStyle: {
+        fontSize: 10,
+        fill: isCrossDatabase ? '#dc2626' : '#000',
+        fontWeight: isCrossDatabase ? 600 : 500,
+      },
+      labelBgStyle: {
+        fill: '#fff',
+        fillOpacity: 0.95,
+      },
+      labelBgPadding: [8, 4] as [number, number],
+      labelBgBorderRadius: 4,
+      data: {
+        type: edge.type,
+        relationshipType: edge.relationshipType,
+        confidence: edge.confidence,
+        sourceColumn: edge.sourceColumn,
+        targetColumn: edge.targetColumn,
+        isVerified: edge.type === 'verified',
+        isCrossDatabase,
+      },
+    };
+  });
+
+  return { nodes: allNodes, edges: flowEdges };
+}
+
+/**
+ * 按数据库分组的布局算法
+ */
+function calculateLayout(
+  graphNodes: GraphNode[],
+  graphEdges: GraphEdge[],
+  tableId: number | undefined
+): Array<GraphNode & { position: { x: number; y: number } }> {
+  const nodeCount = graphNodes.length;
+  if (nodeCount === 0) return [];
+
+  // 按数据库分组节点
+  const nodesByDatabase = new Map<string, GraphNode[]>();
+  graphNodes.forEach((node) => {
+    const dbName = node.databaseName;
+    if (!nodesByDatabase.has(dbName)) {
+      nodesByDatabase.set(dbName, []);
+    }
+    nodesByDatabase.get(dbName)!.push(node);
+  });
+
+  const databases = Array.from(nodesByDatabase.keys());
+  const databaseCount = databases.length;
+
+  // 布局参数
+  const groupSpacing = 400; // 数据库组之间的间距
+  const nodeSpacing = 220; // 节点之间的间距
+  const groupPadding = 50; // 分组内边距
+
+  const layoutNodes: Array<GraphNode & { position: { x: number; y: number } }> = [];
+
+  // 如果只有一个数据库，使用传统布局
+  if (databaseCount === 1) {
+    if (tableId) {
+      // 中心节点径向布局
+      const centerNodeIndex = graphNodes.findIndex((n) => n.tableId === tableId);
+      const centerNode = graphNodes[centerNodeIndex];
+      const otherNodes = graphNodes.filter((n) => n.tableId !== tableId);
+
+      const radius = 250;
+      const angleStep = (2 * Math.PI) / Math.max(otherNodes.length, 1);
+
+      if (centerNode) {
+        layoutNodes.push({
+          ...centerNode,
+          position: { x: 400, y: 300 },
+        });
+      }
+
+      otherNodes.forEach((node, index) => {
+        const angle = index * angleStep;
+        layoutNodes.push({
+          ...node,
+          position: {
+            x: 400 + radius * Math.cos(angle),
+            y: 300 + radius * Math.sin(angle),
+          },
+        });
+      });
+
+      return layoutNodes;
+    } else {
+      // 网格布局
+      const cols = Math.ceil(Math.sqrt(nodeCount));
+      return graphNodes.map((node, index) => ({
+        ...node,
+        position: {
+          x: (index % cols) * nodeSpacing + 100,
+          y: Math.floor(index / cols) * nodeSpacing + 100,
+        },
+      }));
+    }
+  }
+
+  // 多数据库分组布局
+  // 计算每列的布局（每列代表一个数据库）
+  if (databaseCount <= 4) {
+    // 水平排列（适合 2-4 个数据库）
+    databases.forEach((dbName, dbIndex) => {
+      const nodesInDb = nodesByDatabase.get(dbName)!;
+      const x = dbIndex * groupSpacing + 150;
+
+      nodesInDb.forEach((node, nodeIndex) => {
+        const y = nodeIndex * nodeSpacing + 100;
+        layoutNodes.push({
+          ...node,
+          position: { x, y },
+        });
+      });
+    });
+  } else {
+    // 网格排列（适合 5+ 个数据库）
+    const dbCols = Math.ceil(Math.sqrt(databaseCount));
+
+    databases.forEach((dbName, dbIndex) => {
+      const nodesInDb = nodesByDatabase.get(dbName)!;
+
+      // 计算数据库组的基础位置
+      const dbCol = dbIndex % dbCols;
+      const dbRow = Math.floor(dbIndex / dbCols);
+      const baseX = dbCol * groupSpacing + 150;
+      const baseY = dbRow * groupSpacing + 100;
+
+      nodesInDb.forEach((node, nodeIndex) => {
+        const nodeCols = Math.ceil(Math.sqrt(nodesInDb.length));
+        const nodeCol = nodeIndex % nodeCols;
+        const nodeRow = Math.floor(nodeIndex / nodeCols);
+
+        layoutNodes.push({
+          ...node,
+          position: {
+            x: baseX + nodeCol * nodeSpacing,
+            y: baseY + nodeRow * nodeSpacing,
+          },
+        });
+      });
+    });
+  }
+
+  return layoutNodes;
+}
+
 export default function RelationshipGraph({
   tableId,
   dataSourceId,
@@ -57,366 +368,20 @@ export default function RelationshipGraph({
 }: RelationshipGraphProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [graphData, setGraphData] = useState<{
     nodes: GraphNode[];
     edges: GraphEdge[];
   } | null>(null);
 
-  // 加载关系图谱数据
-  const loadGraph = useCallback(async () => {
-    if (!dataSourceId) {
-      setError('请指定数据源 (dataSourceId 是必需的)');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setError(null);
-
-      const params = new URLSearchParams({
-        depth: depth.toString(),
-        includeInferred: includeInferred.toString(),
-        minConfidence: minConfidence.toString(),
-      });
-
-      // dataSourceId 是必需的
-      params.append('dataSourceId', dataSourceId.toString());
-
-      // databaseId 是可选的，用于过滤数据库
-      if (databaseId) {
-        params.append('databaseId', databaseId.toString());
-      }
-
-      // tableId 是可选的，用于指定中心节点
-      if (tableId) {
-        params.append('tableId', tableId.toString());
-      }
-
-      const response = await fetch(`/api/relationships/graph?${params}`);
-      const result = await response.json();
-
-      if (result.status === 'success') {
-        setGraphData(result.data);
-        convertToReactFlowData(result.data.nodes, result.data.edges);
-      } else {
-        throw new Error(result.message || '加载关系图谱失败');
-      }
-    } catch (err) {
-      console.error('Error loading graph:', err);
-      setError(err instanceof Error ? err.message : '加载关系图谱失败');
-    } finally {
-      setLoading(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tableId, dataSourceId, databaseId, depth, includeInferred, minConfidence]);
-
-  // 转换为 ReactFlow 数据格式
-  const convertToReactFlowData = (
-    graphNodes: GraphNode[],
-    graphEdges: GraphEdge[]
-  ) => {
-    // 计算布局（简单的力导向布局）
-    const layoutNodes = calculateLayout(graphNodes, graphEdges);
-
-    // 按数据库分组节点（用于跨库关系识别和颜色分配）
-    const databaseGroups = new Map<string, number>();
-    const databaseColors = [
-      '#3b82f6', // blue
-      '#8b5cf6', // violet
-      '#ec4899', // pink
-      '#f59e0b', // amber
-      '#10b981', // emerald
-      '#06b6d4', // cyan
-    ];
-
-    // 按数据库分组节点位置（用于绘制分组背景）
-    const nodesByDatabase = new Map<string, typeof layoutNodes>();
-    layoutNodes.forEach((node) => {
-      if (!nodesByDatabase.has(node.databaseName)) {
-        nodesByDatabase.set(node.databaseName, []);
-      }
-      nodesByDatabase.get(node.databaseName)!.push(node);
-    });
-
-    graphNodes.forEach((node) => {
-      if (!databaseGroups.has(node.databaseName)) {
-        databaseGroups.set(node.databaseName, databaseGroups.size);
-      }
-    });
-
-    // 计算每个数据库组的边界框（用于绘制分组背景）
-    const databaseBounds = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>();
-    nodesByDatabase.forEach((nodes, dbName) => {
-      const positions = nodes.map(n => n.position);
-      const minX = Math.min(...positions.map(p => p.x)) - 100;
-      const minY = Math.min(...positions.map(p => p.y)) - 80;
-      const maxX = Math.max(...positions.map(p => p.x)) + 280;
-      const maxY = Math.max(...positions.map(p => p.y)) + 80;
-      databaseBounds.set(dbName, { minX, minY, maxX, maxY });
-    });
-
-    // 添加数据库分组背景节点（仅在多数据库时显示）
-    const groupBackgroundNodes: Node[] = [];
-    if (databaseGroups.size > 1) {
-      databaseBounds.forEach((bounds, dbName) => {
-        const dbIndex = databaseGroups.get(dbName) || 0;
-        const dbColor = databaseColors[dbIndex % databaseColors.length];
-
-        groupBackgroundNodes.push({
-          id: `db-group-${dbName}`,
-          type: 'default',
-          data: {
-            label: `📁 ${dbName}`,
-            databaseName: dbName,
-          },
-          position: { x: bounds.minX, y: bounds.minY },
-          draggable: false,
-          selectable: false,
-          style: {
-            width: bounds.maxX - bounds.minX,
-            height: bounds.maxY - bounds.minY,
-            background: `${dbColor}08`, // 极淡的背景色
-            border: `2px dashed ${dbColor}40`,
-            borderRadius: '12px',
-            padding: '20px',
-            fontSize: '14px',
-            fontWeight: 'bold',
-            color: dbColor,
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'flex-start',
-            zIndex: -1,
-            pointerEvents: 'none',
-          },
-          zIndex: -1,
-        });
-      });
-    }
-
-    // 转换表节点
-    const flowNodes: Node[] = layoutNodes.map((node) => {
-      const dbIndex = databaseGroups.get(node.databaseName) || 0;
-      const dbColor = databaseColors[dbIndex % databaseColors.length];
-      const isCenterNode = node.tableId === tableId;
-
-      return {
-        id: node.tableId.toString(),
-        type: 'default',
-        data: {
-          label: `${node.tableName}${databaseGroups.size === 1 ? `\n${node.databaseName}` : ''}`,
-          tableId: node.tableId,
-          databaseName: node.databaseName,
-          tableName: node.tableName,
-        },
-        position: node.position,
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-        style: {
-          background: isCenterNode ? dbColor : '#ffffff',
-          color: isCenterNode ? '#ffffff' : '#000000',
-          border: `2px solid ${dbColor}`,
-          borderRadius: '8px',
-          padding: '10px 12px',
-          width: 180,
-          fontSize: '12px',
-          fontWeight: isCenterNode ? 'bold' : 'normal',
-          textAlign: 'center' as const,
-          whiteSpace: 'pre-line' as const,
-          boxShadow: isCenterNode ? '0 4px 6px rgba(0, 0, 0, 0.1)' : 'none',
-          zIndex: 10,
-        },
-      };
-    });
-
-    // 合并背景节点和表节点
-    const allNodes = [...groupBackgroundNodes, ...flowNodes];
-
-    // 转换边
-    const flowEdges: Edge[] = graphEdges.map((edge, index) => {
-      const isExplicit = edge.type === 'explicit';
-      const isVerified = edge.type === 'verified';
-
-      // 判断是否为跨库关系
-      const sourceNode = graphNodes.find((n) => n.tableId === edge.sourceTableId);
-      const targetNode = graphNodes.find((n) => n.tableId === edge.targetTableId);
-      const isCrossDatabase = sourceNode && targetNode &&
-        sourceNode.databaseName !== targetNode.databaseName;
-
-      // 跨库关系使用更粗的线条和特殊颜色
-      const strokeWidth = isCrossDatabase ? 3 : 2;
-      const strokeColor = isCrossDatabase
-        ? '#dc2626' // 跨库关系用红色
-        : isExplicit
-        ? '#10b981' // 显式关系用绿色
-        : isVerified
-        ? '#f59e0b' // 已验证推断关系用橙色
-        : '#94a3b8'; // 未验证推断关系用灰色
-
-      return {
-        id: `edge-${edge.sourceTableId}-${edge.targetTableId}-${index}`,
-        source: edge.sourceTableId.toString(),
-        target: edge.targetTableId.toString(),
-        type: 'smoothstep',
-        animated: isCrossDatabase || (!isExplicit && !isVerified),
-        style: {
-          stroke: strokeColor,
-          strokeWidth,
-          strokeDasharray: isExplicit ? '0' : '5,5',
-        },
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: strokeColor,
-        },
-        label: edge.confidence
-          ? `${edge.sourceColumn} → ${edge.targetColumn}\n${isCrossDatabase ? '🔗 跨库 ' : ''}(${(edge.confidence * 100).toFixed(0)}%)`
-          : `${edge.sourceColumn} → ${edge.targetColumn}${isCrossDatabase ? '\n🔗 跨库关系' : ''}`,
-        labelStyle: {
-          fontSize: 10,
-          fill: isCrossDatabase ? '#dc2626' : '#000',
-          fontWeight: isCrossDatabase ? 600 : 500,
-        },
-        labelBgStyle: {
-          fill: '#fff',
-          fillOpacity: 0.95,
-        },
-        labelBgPadding: [8, 4] as [number, number],
-        labelBgBorderRadius: 4,
-        data: {
-          type: edge.type,
-          relationshipType: edge.relationshipType,
-          confidence: edge.confidence,
-          sourceColumn: edge.sourceColumn,
-          targetColumn: edge.targetColumn,
-          isVerified: edge.type === 'verified',
-          isCrossDatabase,
-        },
-      };
-    });
-
-    setNodes(allNodes);
-    setEdges(flowEdges);
-  };
-
-  // 按数据库分组的布局算法
-  const calculateLayout = (
-    graphNodes: GraphNode[],
-    graphEdges: GraphEdge[]
-  ): Array<GraphNode & { position: { x: number; y: number } }> => {
-    const nodeCount = graphNodes.length;
-    if (nodeCount === 0) return [];
-
-    // 按数据库分组节点
-    const nodesByDatabase = new Map<string, GraphNode[]>();
-    graphNodes.forEach((node) => {
-      const dbName = node.databaseName;
-      if (!nodesByDatabase.has(dbName)) {
-        nodesByDatabase.set(dbName, []);
-      }
-      nodesByDatabase.get(dbName)!.push(node);
-    });
-
-    const databases = Array.from(nodesByDatabase.keys());
-    const databaseCount = databases.length;
-
-    // 布局参数
-    const groupSpacing = 400; // 数据库组之间的间距
-    const nodeSpacing = 220; // 节点之间的间距
-    const groupPadding = 50; // 分组内边距
-
-    const layoutNodes: Array<GraphNode & { position: { x: number; y: number } }> = [];
-
-    // 如果只有一个数据库，使用传统布局
-    if (databaseCount === 1) {
-      if (tableId) {
-        // 中心节点径向布局
-        const centerNodeIndex = graphNodes.findIndex((n) => n.tableId === tableId);
-        const centerNode = graphNodes[centerNodeIndex];
-        const otherNodes = graphNodes.filter((n) => n.tableId !== tableId);
-
-        const radius = 250;
-        const angleStep = (2 * Math.PI) / Math.max(otherNodes.length, 1);
-
-        if (centerNode) {
-          layoutNodes.push({
-            ...centerNode,
-            position: { x: 400, y: 300 },
-          });
-        }
-
-        otherNodes.forEach((node, index) => {
-          const angle = index * angleStep;
-          layoutNodes.push({
-            ...node,
-            position: {
-              x: 400 + radius * Math.cos(angle),
-              y: 300 + radius * Math.sin(angle),
-            },
-          });
-        });
-
-        return layoutNodes;
-      } else {
-        // 网格布局
-        const cols = Math.ceil(Math.sqrt(nodeCount));
-        return graphNodes.map((node, index) => ({
-          ...node,
-          position: {
-            x: (index % cols) * nodeSpacing + 100,
-            y: Math.floor(index / cols) * nodeSpacing + 100,
-          },
-        }));
-      }
-    }
-
-    // 多数据库分组布局
-    // 计算每列的布局（每列代表一个数据库）
-    if (databaseCount <= 4) {
-      // 水平排列（适合 2-4 个数据库）
-      databases.forEach((dbName, dbIndex) => {
-        const nodesInDb = nodesByDatabase.get(dbName)!;
-        const x = dbIndex * groupSpacing + 150;
-
-        nodesInDb.forEach((node, nodeIndex) => {
-          const y = nodeIndex * nodeSpacing + 100;
-          layoutNodes.push({
-            ...node,
-            position: { x, y },
-          });
-        });
-      });
-    } else {
-      // 网格排列（适合 5+ 个数据库）
-      const dbCols = Math.ceil(Math.sqrt(databaseCount));
-
-      databases.forEach((dbName, dbIndex) => {
-        const nodesInDb = nodesByDatabase.get(dbName)!;
-
-        // 计算数据库组的基础位置
-        const dbCol = dbIndex % dbCols;
-        const dbRow = Math.floor(dbIndex / dbCols);
-        const baseX = dbCol * groupSpacing + 150;
-        const baseY = dbRow * groupSpacing + 100;
-
-        nodesInDb.forEach((node, nodeIndex) => {
-          const nodeCols = Math.ceil(Math.sqrt(nodesInDb.length));
-          const nodeCol = nodeIndex % nodeCols;
-          const nodeRow = Math.floor(nodeIndex / nodeCols);
-
-          layoutNodes.push({
-            ...node,
-            position: {
-              x: baseX + nodeCol * nodeSpacing,
-              y: baseY + nodeRow * nodeSpacing,
-            },
-          });
-        });
-      });
-    }
-
-    return layoutNodes;
-  };
+  // 加载状态：最近一次返回的请求参数与当前参数一致时加载完成
+  const requestKey = JSON.stringify([tableId, dataSourceId, databaseId, depth, includeInferred, minConfidence]);
+  const [settled, setSettled] = useState<{ key: string; error: string | null } | null>(null);
+  const loading = !!dataSourceId && settled?.key !== requestKey;
+  const error = !dataSourceId
+    ? '请指定数据源 (dataSourceId 是必需的)'
+    : settled?.key === requestKey
+      ? settled.error
+      : null;
 
   // 处理节点点击
   const handleNodeClick = useCallback(
@@ -445,10 +410,51 @@ export default function RelationshipGraph({
     [graphData, onEdgeClick]
   );
 
-  // 初始加载
+  // 加载关系图谱数据
   useEffect(() => {
-    loadGraph();
-  }, [loadGraph]);
+    if (!dataSourceId) return;
+
+    const params = new URLSearchParams({
+      depth: depth.toString(),
+      includeInferred: includeInferred.toString(),
+      minConfidence: minConfidence.toString(),
+    });
+
+    // dataSourceId 是必需的
+    params.append('dataSourceId', dataSourceId.toString());
+
+    // databaseId 是可选的，用于过滤数据库
+    if (databaseId) {
+      params.append('databaseId', databaseId.toString());
+    }
+
+    // tableId 是可选的，用于指定中心节点
+    if (tableId) {
+      params.append('tableId', tableId.toString());
+    }
+
+    const key = JSON.stringify([tableId, dataSourceId, databaseId, depth, includeInferred, minConfidence]);
+    const controller = new AbortController();
+    fetch(`/api/relationships/graph?${params}`, { signal: controller.signal })
+      .then((response) => response.json())
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        if (result.status !== 'success') {
+          throw new Error(result.message || '加载关系图谱失败');
+        }
+        const flow = buildFlowData(result.data.nodes, result.data.edges, tableId);
+        setGraphData(result.data);
+        setNodes(flow.nodes);
+        setEdges(flow.edges);
+        setSettled({ key, error: null });
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        console.error('Error loading graph:', err);
+        setSettled({ key, error: err instanceof Error ? err.message : '加载关系图谱失败' });
+      });
+    return () => controller.abort();
+  }, [tableId, dataSourceId, databaseId, depth, includeInferred, minConfidence, setNodes, setEdges]);
 
   if (loading) {
     return (

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useAsyncData } from '@/lib/client/use-async-data';
 import { apiFetch, formatApiError } from '@/lib/client/api-fetch';
 
 /**
@@ -125,86 +126,60 @@ interface HealthData {
  * 提供系统性能监控和缓存统计功能
  */
 export default function PerformancePage() {
-  const [performanceData, setPerformanceData] = useState<PerformanceData | null>(null);
-  const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
-  const [healthData, setHealthData] = useState<HealthData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
 
   /**
    * 获取性能数据
    */
-  const fetchPerformanceData = async () => {
-    try {
-      const response = await fetch('/api/performance');
-      const data = await response.json();
-
-      if (data.status === 'success') {
-        setPerformanceData(data.data);
-      } else {
-        throw new Error(data.message || '获取性能数据失败');
-      }
-    } catch (err) {
-      console.error('获取性能数据失败:', err);
-      setError(err instanceof Error ? err.message : '获取性能数据失败');
+  const performance = useAsyncData(async (signal) => {
+    const response = await fetch('/api/performance', { signal });
+    const data = await response.json();
+    if (data.status !== 'success') {
+      throw new Error(data.message || '获取性能数据失败');
     }
-  };
+    return data.data as PerformanceData;
+  }, []);
 
   /**
    * 获取缓存统计
    */
-  const fetchCacheStats = async () => {
-    try {
-      const response = await fetch('/api/cache/stats');
-      const data = await response.json();
-
-      if (data.cacheStats) {
-        setCacheStats(data);
-      } else {
-        throw new Error(data.error || '获取缓存统计失败');
-      }
-    } catch (err) {
-      console.error('获取缓存统计失败:', err);
-      setError(err instanceof Error ? err.message : '获取缓存统计失败');
+  const cache = useAsyncData(async (signal) => {
+    const response = await fetch('/api/cache/stats', { signal });
+    const data = await response.json();
+    if (!data.cacheStats) {
+      throw new Error(data.error || '获取缓存统计失败');
     }
-  };
+    return data as CacheStats;
+  }, []);
 
   /**
    * 获取系统健康检查数据
    */
-  const fetchHealthData = async () => {
-    try {
-      const response = await fetch('/api/health');
-      const data = await response.json();
-
-      if (data.status) {
-        setHealthData(data);
-      } else {
-        throw new Error('获取健康检查数据失败');
-      }
-    } catch (err) {
-      console.error('获取健康检查数据失败:', err);
-      setError(err instanceof Error ? err.message : '获取健康检查数据失败');
+  const health = useAsyncData(async (signal) => {
+    const response = await fetch('/api/health', { signal });
+    const data = await response.json();
+    if (!data.status) {
+      throw new Error('获取健康检查数据失败');
     }
-  };
+    return data as HealthData;
+  }, []);
+
+  const performanceData = performance.data ?? null;
+  const cacheStats = cache.data ?? null;
+  const healthData = health.data ?? null;
+  const loading = performance.loading || cache.loading || health.loading;
+  const error = performance.error ?? cache.error ?? health.error;
+  const { reload: reloadPerformance } = performance;
+  const { reload: reloadCache } = cache;
+  const { reload: reloadHealth } = health;
 
   /**
    * 刷新所有数据
    */
-  const refreshData = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      await Promise.all([
-        fetchPerformanceData(),
-        fetchCacheStats(),
-        fetchHealthData()
-      ]);
-    } finally {
-      setLoading(false);
-    }
+  const refreshData = () => {
+    reloadPerformance();
+    reloadCache();
+    reloadHealth();
   };
 
   /**
@@ -218,30 +193,25 @@ export default function PerformancePage() {
     const res = await apiFetch('/api/performance?action=reset', { method: 'POST' });
     if (res.ok) {
       alert('性能指标已重置');
-      await refreshData();
+      refreshData();
     } else {
       console.error('重置性能指标失败:', res.error);
       alert(formatApiError(res.error));
     }
   };
 
-  // 初始化加载
-  useEffect(() => {
-    refreshData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // 自动刷新
   useEffect(() => {
     if (!autoRefresh) return;
 
     const interval = setInterval(() => {
-      refreshData();
+      reloadPerformance();
+      reloadCache();
+      reloadHealth();
     }, 5000); // 每5秒刷新一次
 
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRefresh]);
+  }, [autoRefresh, reloadPerformance, reloadCache, reloadHealth]);
 
   /**
    * 获取性能等级样式

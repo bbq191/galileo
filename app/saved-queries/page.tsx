@@ -1,10 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import ResultTable from '@/components/query/ResultTable';
 import ScheduleFields, { type ScheduleValue } from '@/components/saved-queries/ScheduleFields';
 import { apiFetch } from '@/lib/client/api-fetch';
+import { useAsyncData } from '@/lib/client/use-async-data';
 import { describeSchedule } from '@/lib/saved-queries/schedule';
 
 interface SavedQueryItem {
@@ -255,22 +256,17 @@ function SavedQueryCard({
  * 我的查询：保存的查询与定时刷新结果
  */
 export default function SavedQueriesPage() {
-  const [items, setItems] = useState<SavedQueryItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [shown, setShown] = useState<ShownResult | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    const res = await apiFetch<SavedQueryItem[]>('/api/saved-queries');
-    if (res.ok) setItems(res.data);
-    else setError(res.error.message);
-    setLoading(false);
+  const list = useAsyncData(async (signal) => {
+    const res = await apiFetch<SavedQueryItem[]>('/api/saved-queries', { signal });
+    if (!res.ok) throw res.error;
+    return res.data;
   }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const items = list.data ?? [];
+  const { error } = list;
+  // 操作后刷新列表时保留现有内容，只在首次加载时显示加载状态
+  const loading = list.loading && !list.data;
 
   return (
     <div className="space-y-4">
@@ -312,7 +308,7 @@ export default function SavedQueriesPage() {
       )}
 
       {items.map((item) => (
-        <SavedQueryCard key={item.id} item={item} onChanged={load} onShow={setShown} />
+        <SavedQueryCard key={item.id} item={item} onChanged={list.reload} onShow={setShown} />
       ))}
     </div>
   );

@@ -1,14 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import DataSourceList from './components/DataSourceList';
 import DataSourceForm from './components/DataSourceForm';
 import { apiFetch, formatApiError } from '@/lib/client/api-fetch';
+import { useAsyncData } from '@/lib/client/use-async-data';
 
 export default function DataSourcesPage() {
-  const [dataSources, setDataSources] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editingDataSource, setEditingDataSource] = useState<any | null>(null);
   const [testingConnections, setTestingConnections] = useState<Set<number>>(new Set());
@@ -32,29 +30,16 @@ export default function DataSourcesPage() {
   };
 
   // 加载数据源列表
-  const loadDataSources = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const res = await apiFetch<any[]>('/api/datasources');
-
-      if (res.ok) {
-        setDataSources(res.data || []);
-      } else {
-        throw new Error(formatApiError(res.error));
-      }
-    } catch (err) {
-      console.error('Error loading data sources:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load data sources');
-    } finally {
-      setLoading(false);
+  const dataSourcesData = useAsyncData(async (signal) => {
+    const res = await apiFetch<any[]>('/api/datasources', { signal });
+    if (!res.ok) {
+      throw new Error(formatApiError(res.error));
     }
-  };
-
-  useEffect(() => {
-    loadDataSources();
+    return res.data || [];
   }, []);
+  const dataSources = dataSourcesData.data ?? [];
+  const { loading, error } = dataSourcesData;
+  const loadDataSources = dataSourcesData.reload;
 
   // 打开添加数据源模态框
   const handleAdd = () => {
@@ -81,7 +66,7 @@ export default function DataSourcesPage() {
 
       if (res.ok) {
         // 刷新列表
-        await loadDataSources();
+        loadDataSources();
       } else {
         throw new Error(formatApiError(res.error));
       }
@@ -109,7 +94,7 @@ export default function DataSourcesPage() {
       if (res.ok) {
         alert('连接测试成功！');
         // 刷新列表以查看更新的连接状态
-        await loadDataSources();
+        loadDataSources();
       } else {
         alert(`连接测试失败：${formatApiError(res.error)}`);
       }
@@ -163,7 +148,7 @@ export default function DataSourcesPage() {
         }
         alert(message);
         // 刷新列表以查看更新的同步状态
-        await loadDataSources();
+        loadDataSources();
       } else {
         alert(`同步失败：${formatApiError(res.error)}`);
       }
@@ -288,7 +273,7 @@ export default function DataSourcesPage() {
           `耗时: ${formatDuration(res.data.duration || 0)}`;
         alert(message);
         // 刷新列表
-        await loadDataSources();
+        loadDataSources();
       } else {
         alert(`语义标注失败：${formatApiError(res.error)}`);
       }
@@ -309,7 +294,7 @@ export default function DataSourcesPage() {
   const handleFormSuccess = async () => {
     setShowModal(false);
     setEditingDataSource(null);
-    await loadDataSources();
+    loadDataSources();
   };
 
   return (
@@ -383,6 +368,7 @@ export default function DataSourcesPage() {
       {/* 数据源表单模态框 */}
       {showModal && (
         <DataSourceForm
+          key={editingDataSource?.id ?? 'new'}
           dataSource={editingDataSource}
           onClose={() => {
             setShowModal(false);

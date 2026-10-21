@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { apiFetch } from '@/lib/client/api-fetch';
 
 type Reason = 'wrong_table' | 'wrong_filter' | 'wrong_metric' | 'other';
@@ -30,14 +30,6 @@ export default function ResultFeedback({ runId, prompt }: ResultFeedbackProps) {
   const [comment, setComment] = useState('');
   const [state, setState] = useState<'idle' | 'editing' | 'sending' | 'sent'>('idle');
   const [error, setError] = useState<string | null>(null);
-
-  // 新的查询结果重置反馈状态
-  useEffect(() => {
-    setRating(null);
-    setComment('');
-    setState('idle');
-    setError(null);
-  }, [runId]);
 
   const submit = async (value: 'up' | 'down') => {
     setState('sending');

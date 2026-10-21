@@ -383,6 +383,8 @@ export default function QueryPage() {
             {/* SQL 预览 */}
             {result.metadata?.generatedSQL && (
               <SQLPreview
+                // 生成了新的 SQL 时重新挂载，重置编辑内容（同一层的兄弟节点 key 不能重复，加前缀区分）
+                key={`sql:${result.metadata.generatedSQL}`}
                 sql={result.metadata.generatedSQL}
                 explanation={result.metadata.explanation}
                 editable={!loading}
@@ -393,6 +395,8 @@ export default function QueryPage() {
             {/* 结果反馈（编辑 SQL 的执行结果不再单独反馈，修改本身已记为纠正） */}
             {result.runId && result.runId === sourceRunId && (
               <ResultFeedback
+                // 每次执行重新挂载，重置反馈状态
+                key={`feedback:${result.runId}`}
                 runId={result.runId}
                 prompt={!result.success || result.metadata?.rowCount === 0}
               />
@@ -401,6 +405,8 @@ export default function QueryPage() {
             {/* 保存查询（执行成功的结果，含编辑 SQL 后的执行） */}
             {result.success && result.runId && (
               <SaveQueryPanel
+                // 每次执行重新挂载，重置保存表单
+                key={`save:${result.runId}`}
                 runId={result.runId}
                 defaultTitle={query.trim()}
                 checkRepeat={result.runId === sourceRunId}

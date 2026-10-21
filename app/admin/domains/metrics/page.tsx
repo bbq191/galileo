@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useAsyncData } from '@/lib/client/use-async-data';
 
 /**
  * 推断指标数据类型
@@ -56,33 +57,24 @@ interface InferenceMetrics {
  * - 缓存性能监控
  */
 export default function DomainMetricsPage() {
-  const [metrics, setMetrics] = useState<InferenceMetrics | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
   /**
    * 加载指标数据
    */
-  const loadMetrics = async () => {
-    try {
-      setError(null);
-
-      const response = await fetch('/api/metadata/domains/metrics');
-      const result = await response.json();
-
-      if (result.success) {
-        setMetrics(result.data.metrics);
-      } else {
-        throw new Error(result.error || '获取指标失败');
-      }
-    } catch (err) {
-      console.error('获取指标失败:', err);
-      setError(err instanceof Error ? err.message : '获取指标失败');
-    } finally {
-      setLoading(false);
+  const metricsData = useAsyncData(async (signal) => {
+    const response = await fetch('/api/metadata/domains/metrics', { signal });
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.error || '获取指标失败');
     }
-  };
+    return result.data.metrics as InferenceMetrics;
+  }, []);
+  const metrics = metricsData.data ?? null;
+  const { error } = metricsData;
+  // 定时刷新时保留现有内容，只在首次加载时显示加载状态
+  const loading = metricsData.loading && !metricsData.data;
+  const loadMetrics = metricsData.reload;
 
   /**
    * 重置指标
@@ -100,7 +92,7 @@ export default function DomainMetricsPage() {
       const result = await response.json();
 
       if (result.success) {
-        await loadMetrics();
+        loadMetrics();
       } else {
         throw new Error(result.error || '重置失败');
       }
@@ -110,19 +102,12 @@ export default function DomainMetricsPage() {
     }
   };
 
+  // 自动刷新（每 10 秒；首次加载由 useAsyncData 完成）
   useEffect(() => {
-    loadMetrics();
-
-    // 自动刷新（每 10 秒）
-    let intervalId: NodeJS.Timeout;
-    if (autoRefresh) {
-      intervalId = setInterval(loadMetrics, 10000);
-    }
-
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [autoRefresh]);
+    if (!autoRefresh) return;
+    const intervalId = setInterval(loadMetrics, 10000);
+    return () => clearInterval(intervalId);
+  }, [autoRefresh, loadMetrics]);
 
   /**
    * 格式化百分比
