@@ -322,7 +322,7 @@ export class MetadataSyncService {
   }
 
   /**
-   * 计算表结构哈希；采集器不支持 DDL（如 PostgreSQL）或获取失败时返回 null，按全量处理
+   * 计算表结构哈希；采集器不支持 DDL 或获取失败时返回 null，按全量处理
    */
   private async getStructureHash(
     collector: any,

@@ -6,7 +6,7 @@ import { apiFetch, formatApiError } from '@/lib/client/api-fetch';
 interface DataSource {
   id?: number;
   name: string;
-  type: 'mysql' | 'mariadb' | 'postgresql';
+  type: 'mysql' | 'mariadb';
   host: string;
   port: number;
   username: string;
@@ -127,11 +127,10 @@ export default function DataSourceForm({
 
   // 更新端口号根据数据库类型
   const handleTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const type = e.target.value as 'mysql' | 'mariadb' | 'postgresql';
+    const type = e.target.value as 'mysql' | 'mariadb';
     const defaultPorts = {
       mysql: 3306,
       mariadb: 3306,
-      postgresql: 5432,
     };
 
     setFormData((prev) => ({
@@ -199,7 +198,6 @@ export default function DataSourceForm({
               >
                 <option value="mysql">MySQL</option>
                 <option value="mariadb">MariaDB</option>
-                <option value="postgresql">PostgreSQL</option>
               </select>
             </div>
 

@@ -4,7 +4,7 @@
  * 保存 SQL 时记录所涉及表的结构哈希（增量同步写入的 TableMeta.structureHash），
  * 之后复用该 SQL 前比较快照，表被删除或结构变化时不再直接使用。
  *
- * 结构哈希为空（如 PostgreSQL 采集器不支持 DDL）时无法判断，只检查表是否仍存在。
+ * 结构哈希为空（采集器不支持 DDL 或获取失败）时无法判断，只检查表是否仍存在。
  */
 
 import type { PrismaClient } from '@prisma/client';

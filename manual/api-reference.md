@@ -247,7 +247,7 @@
 }
 ```
 
-支持类型: `mysql`, `postgresql`, `sqlserver`
+支持类型: `mysql`、`mariadb`。其他类型（如 `postgresql`）返回 400「暂不支持该数据库类型，目前仅支持 MySQL / MariaDB」；`PUT /api/datasources/{id}` 修改为其他类型时同样返回 400
 
 源码: `app/api/datasources/route.ts`
 

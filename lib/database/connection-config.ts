@@ -1,9 +1,22 @@
 /**
  * 数据库连接配置接口定义
- * 支持 MySQL/MariaDB/PostgreSQL 等多种数据库类型
  */
 
-export type DatabaseType = 'mysql' | 'mariadb' | 'postgresql';
+/**
+ * 支持的数据源类型
+ *
+ * 连接池、执行器、SQL 生成与校验目前都只实现了 MySQL 协议与方言，
+ * PostgreSQL 等其他类型暂不支持（创建、更新、建立连接时均会拒绝）。
+ */
+export const SUPPORTED_DATABASE_TYPES = ['mysql', 'mariadb'] as const;
+
+export type DatabaseType = (typeof SUPPORTED_DATABASE_TYPES)[number];
+
+export const UNSUPPORTED_DATABASE_TYPE_MESSAGE = '暂不支持该数据库类型，目前仅支持 MySQL / MariaDB';
+
+export function isSupportedDatabaseType(type: unknown): type is DatabaseType {
+  return typeof type === 'string' && (SUPPORTED_DATABASE_TYPES as readonly string[]).includes(type);
+}
 
 export type ConnectionStatus = 'active' | 'inactive' | 'error' | 'testing';
 

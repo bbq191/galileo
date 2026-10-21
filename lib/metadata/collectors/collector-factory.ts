@@ -4,9 +4,8 @@
  */
 
 import type { ConnectionPool } from '@/lib/database/connection-pool';
-import type { DatabaseType } from '@/lib/database/connection-config';
+import { SUPPORTED_DATABASE_TYPES, type DatabaseType } from '@/lib/database/connection-config';
 import { MySQLSchemaCollector } from './mysql-schema-collector';
-import { PostgreSQLSchemaCollector } from './postgresql-schema-collector';
 import type { SchemaCollector } from './base-collector';
 
 /**
@@ -27,9 +26,6 @@ export class CollectorFactory {
       case 'mariadb':
         return new MySQLSchemaCollector(pool);
 
-      case 'postgresql':
-        return new PostgreSQLSchemaCollector(pool);
-
       default:
         throw new Error(`Unsupported database type: ${type}`);
     }
@@ -39,7 +35,7 @@ export class CollectorFactory {
    * 获取支持的数据库类型列表
    */
   static getSupportedTypes(): DatabaseType[] {
-    return ['mysql', 'mariadb', 'postgresql'];
+    return [...SUPPORTED_DATABASE_TYPES];
   }
 
   /**

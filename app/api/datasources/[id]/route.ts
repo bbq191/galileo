@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { safeServerErrorResponse, safeErrorResponse } from '@/lib/api/response';
 import { ErrorCategory } from '@/lib/security/error-sanitizer';
 import { getDataSourceOrchestrator } from '@/lib/di/setup';
+import { isSupportedDatabaseType, UNSUPPORTED_DATABASE_TYPE_MESSAGE } from '@/lib/database/connection-config';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -63,6 +64,13 @@ export async function PUT(
     const { id } = await context.params;
     const dataSourceId = parseInt(id);
     const body = await request.json();
+
+    if (body.type !== undefined && !isSupportedDatabaseType(body.type)) {
+      return NextResponse.json(
+        { status: 'error', message: UNSUPPORTED_DATABASE_TYPE_MESSAGE },
+        { status: 400 }
+      );
+    }
 
     console.log(`[PUT /api/datasources/${id}] Updating data source...`);
 

@@ -155,7 +155,7 @@ describe('MetadataSyncService 增量同步', () => {
     expect(repo.upsertTable).toHaveBeenCalledWith(expect.objectContaining({ structureHash: undefined }));
   });
 
-  it('采集器不支持 DDL（如 PostgreSQL）：按全量处理', async () => {
+  it('采集器不支持 DDL：按全量处理', async () => {
     const { getTableDDL } = collector;
     delete (collector as any).getTableDDL;
     try {

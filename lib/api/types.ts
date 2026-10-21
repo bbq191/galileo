@@ -2,6 +2,8 @@
  * API 类型定义
  */
 
+import type { DatabaseType } from '@/lib/database/connection-config';
+
 /**
  * 标准 API 响应格式
  */
@@ -47,7 +49,7 @@ export interface SortParams {
  */
 export interface CreateDataSourceRequest {
   name: string;
-  type: 'mysql' | 'mariadb' | 'postgresql';
+  type: DatabaseType;
   host: string;
   port: number;
   username: string;

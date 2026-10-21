@@ -1,5 +1,6 @@
 // lib/validation/schemas.ts
 import { z } from 'zod';
+import { SUPPORTED_DATABASE_TYPES, UNSUPPORTED_DATABASE_TYPE_MESSAGE } from '@/lib/database/connection-config';
 
 // 查询执行
 export const QueryExecuteSchema = z.object({
@@ -43,8 +44,8 @@ export const DatasourceCreateSchema = z.object({
     .max(100, '名称不能超过 100 字符')
     .regex(/^[a-zA-Z0-9_\-\u4e00-\u9fa5]+$/, '名称只能包含字母、数字、下划线、中划线和中文'),
 
-  type: z.enum(['mysql', 'mariadb', 'postgresql', 'sqlserver'], {
-    message: '不支持的数据库类型',
+  type: z.enum(SUPPORTED_DATABASE_TYPES, {
+    message: UNSUPPORTED_DATABASE_TYPE_MESSAGE,
   }),
 
   host: z.string().min(1, '主机地址不能为空'),

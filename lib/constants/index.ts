@@ -69,7 +69,7 @@ export const SEMANTIC_PRIORITY = {
 /**
  * 支持的数据库类型
  */
-export const SUPPORTED_DATABASE_TYPES = ['mysql', 'mariadb', 'postgresql'] as const;
+export { SUPPORTED_DATABASE_TYPES } from '@/lib/database/connection-config';
 
 /**
  * 关系类型

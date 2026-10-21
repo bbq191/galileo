@@ -34,7 +34,7 @@ export interface SortParams {
 /**
  * 数据库类型
  */
-export type DatabaseType = 'mysql' | 'mariadb' | 'postgresql';
+export type { DatabaseType } from '@/lib/database/connection-config';
 
 /**
  * 数据源状态

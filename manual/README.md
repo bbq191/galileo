@@ -157,9 +157,8 @@
 
 ### 支持的数据库
 
-- ✅ MySQL 5.7+
-- ✅ PostgreSQL 12+
-- ⏳ SQL Server（开发中）
+- ✅ MySQL 5.7+ / MariaDB
+- ❌ PostgreSQL、SQL Server 等：暂不支持（连接池、执行器与 SQL 生成 / 校验只实现了 MySQL 协议与方言，创建时会被拒绝）
 
 ---
 

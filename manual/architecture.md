@@ -150,7 +150,7 @@
 
 | 子模块 | 职责 | 关键文件 |
 |--------|------|----------|
-| `collectors/` | Schema 采集 (MySQL/PostgreSQL) | `mysql-schema-collector.ts`、`postgresql-schema-collector.ts` |
+| `collectors/` | Schema 采集（MySQL / MariaDB） | `mysql-schema-collector.ts` |
 | `sync/` | 增量/全量同步、变更记录 | `metadata-sync-service.ts`、`structure-hash.ts` |
 | `inference/` | 关系/业务域推断（3 种策略） | `relationship-inferencer.ts`、`domain-inferencer.ts` |
 | `retrieval/` | 元数据检索、语义搜索、相关性排序 | `metadata-retriever.ts`、`semantic-search.ts` |

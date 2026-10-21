@@ -17,6 +17,7 @@
 
 import { inject, injectable } from 'tsyringe';
 import { DI_TOKENS } from '../tokens';
+import type { DatabaseType } from '@/lib/database/connection-config';
 import type { DataSourceLifecycleService } from './datasource/datasource-lifecycle.service';
 import type { DataSourceConnectionService } from './datasource/datasource-connection.service';
 import type { DataSourceSyncService } from './datasource/datasource-sync.service';
@@ -30,7 +31,7 @@ export interface DataSourceCreateOptions {
   name: string;
 
   /** 数据源类型 */
-  type: 'mysql' | 'mariadb' | 'postgresql';
+  type: DatabaseType;
 
   /** 主机地址 */
   host: string;
@@ -62,7 +63,7 @@ export interface DataSourceUpdateOptions {
   id: number;
 
   /** 数据源类型 */
-  type?: 'mysql' | 'mariadb' | 'postgresql' | 'oracle' | 'mssql';
+  type?: DatabaseType;
 
   /** 数据源名称 */
   name?: string;

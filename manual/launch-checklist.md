@@ -123,6 +123,7 @@
 
 ## 9. 已知限制（上线时知悉即可）
 
+- 只支持 MySQL / MariaDB 数据源；PostgreSQL 等类型创建时被拒绝，数据库中已有的此类数据源不会建立连接
 - 不支持跨数据库实例的 JOIN（返回 `cross_source_unsupported`）
 - 分表展开不按分表键裁剪；分表数超过 `SHARD_EXPAND_LIMIT`（默认 32）时只查询检索到的分表
 - 没有用户管理界面，账号通过 `npm run user:create` 管理

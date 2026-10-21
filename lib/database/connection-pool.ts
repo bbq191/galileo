@@ -10,6 +10,7 @@ import type {
   ConnectionStats,
   HealthCheckResult,
 } from './connection-config';
+import { isSupportedDatabaseType, UNSUPPORTED_DATABASE_TYPE_MESSAGE } from './connection-config';
 import { decryptPassword } from './encryption';
 
 /**
@@ -33,6 +34,11 @@ export class ConnectionPool {
     if (this.pool) {
       console.warn(`连接池 ${this.config.id} 已存在`);
       return;
+    }
+
+    // 驱动只有 mysql2：数据库中已有的其他类型数据源（如早期创建的 PostgreSQL）不建立连接
+    if (!isSupportedDatabaseType(this.config.type)) {
+      throw new Error(`${UNSUPPORTED_DATABASE_TYPE_MESSAGE}（${this.config.type}）`);
     }
 
     try {

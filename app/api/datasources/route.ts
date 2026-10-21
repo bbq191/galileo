@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     const orchestrator = getDataSourceOrchestrator();
     const result = await orchestrator.createDataSource({
       name,
-      type: type as 'mysql' | 'mariadb' | 'postgresql',
+      type,
       host,
       port,
       username,
