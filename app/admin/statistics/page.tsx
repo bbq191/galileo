@@ -1,5 +1,6 @@
 'use client';
 
+import { apiFetch } from '@/lib/client/api-fetch';
 import { useAsyncData } from '@/lib/client/use-async-data';
 
 /**
@@ -70,20 +71,12 @@ export default function StatisticsPage() {
   }, []);
 
   /**
-   * 获取热点分析（失败时不提示，热点区域不显示）
+   * 获取热点分析（失败时在热点区域提示，不影响系统概览）
    */
   const hotspotsData = useAsyncData(async (signal) => {
-    try {
-      const response = await fetch('/api/statistics/hotspots', { signal });
-      const data = await response.json();
-      if (!data.success) {
-        throw new Error(data.error || '获取热点分析失败');
-      }
-      return data.data as HotspotAnalysis;
-    } catch (err) {
-      console.error('获取热点分析失败:', err);
-      return null;
-    }
+    const res = await apiFetch<HotspotAnalysis>('/api/statistics/hotspots', { signal });
+    if (!res.ok) throw res.error;
+    return res.data;
   }, []);
 
   const overview = overviewData.data ?? null;
@@ -324,6 +317,14 @@ export default function StatisticsPage() {
         )}
 
         {/* 热点分析 */}
+        {hotspotsData.error && (
+          <div className="alert alert-warning">
+            <span>热点分析加载失败：{hotspotsData.error}</span>
+            <button className="btn btn-sm" onClick={hotspotsData.reload}>
+              重试
+            </button>
+          </div>
+        )}
         {hotspots && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* 热门查询 */}

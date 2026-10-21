@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { apiFetch } from '@/lib/client/api-fetch';
 import { useAsyncData } from '@/lib/client/use-async-data';
 import RelationshipGraph from './components/RelationshipGraph';
 import RelationshipDetail from './components/RelationshipDetail';
@@ -26,28 +27,17 @@ interface GraphEdge {
 }
 
 /**
- * 读取列表接口（{ status: 'success', data: [] }），失败时记录日志并返回空列表
+ * 读取列表接口；失败（含限流）时抛出错误，由页面提示并允许重试
  */
-async function fetchList(url: string, signal: AbortSignal, errorLabel: string): Promise<any[]> {
-  try {
-    const response = await fetch(url, { signal });
-    const result = await response.json();
-    return result.status === 'success' ? result.data || [] : [];
-  } catch (err) {
-    if (!signal.aborted) console.error(errorLabel, err);
-    return [];
-  }
+async function fetchList(url: string, signal?: AbortSignal): Promise<any[]> {
+  const res = await apiFetch<any[]>(url, { signal });
+  if (!res.ok) throw res.error;
+  return res.data || [];
 }
 
-async function fetchFirst(url: string, errorLabel: string): Promise<any | null> {
-  try {
-    const response = await fetch(url);
-    const result = await response.json();
-    return result.status === 'success' && result.data && result.data.length > 0 ? result.data[0] : null;
-  } catch (err) {
-    console.error(errorLabel, err);
-    return null;
-  }
+async function fetchFirst(url: string): Promise<any | null> {
+  const list = await fetchList(url);
+  return list[0] ?? null;
 }
 
 /**
@@ -59,16 +49,13 @@ async function resolveUrlSelection(
 ): Promise<{ sourceId: number | null; databaseId: number | null; tableId: number | null }> {
   let resolvedDatabaseId = databaseId;
   if (!resolvedDatabaseId && tableId) {
-    const table = await fetchFirst(`/api/metadata/tables?tableId=${tableId}`, 'Error loading source by table ID:');
+    const table = await fetchFirst(`/api/metadata/tables?tableId=${tableId}`);
     resolvedDatabaseId = table?.databaseId ?? null;
   }
 
   let sourceId: number | null = null;
   if (resolvedDatabaseId) {
-    const database = await fetchFirst(
-      `/api/metadata/databases?databaseId=${resolvedDatabaseId}`,
-      'Error loading source by database ID:'
-    );
+    const database = await fetchFirst(`/api/metadata/databases?databaseId=${resolvedDatabaseId}`);
     sourceId = database?.sourceId ?? null;
   }
 
@@ -89,6 +76,9 @@ export default function RelationshipsPage() {
   const [minConfidence, setMinConfidence] = useState(0.7);
 
   const [graphKey, setGraphKey] = useState(0); // 用于强制刷新图谱
+  const [preselectError, setPreselectError] = useState<string | null>(null);
+  // 预选失败后重试：递增后重新执行预选
+  const [preselectAttempt, setPreselectAttempt] = useState(0);
 
   // 从URL参数初始化选择（从元数据浏览等页面跳转过来）
   useEffect(() => {
@@ -104,31 +94,48 @@ export default function RelationshipsPage() {
         if (selection.sourceId) setSelectedSourceId(selection.sourceId);
         if (selection.databaseId) setSelectedDatabaseId(selection.databaseId);
         if (selection.tableId) setSelectedTableId(selection.tableId);
+      })
+      .catch((err) => {
+        if (!cancelled) setPreselectError(err instanceof Error ? err.message : '加载失败');
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [preselectAttempt]);
 
   // 加载数据源列表
-  const dataSourcesData = useAsyncData(
-    (signal) => fetchList('/api/datasources', signal, 'Error loading data sources:'),
-    []
-  );
+  const dataSourcesData = useAsyncData((signal) => fetchList('/api/datasources', signal), []);
 
   // 加载数据库列表（未选择数据源时为空）
   const databasesData = useAsyncData(
-    (signal) => fetchList(`/api/metadata/databases?sourceId=${selectedSourceId}`, signal, 'Error loading databases:'),
+    (signal) => fetchList(`/api/metadata/databases?sourceId=${selectedSourceId}`, signal),
     [selectedSourceId],
     { enabled: !!selectedSourceId }
   );
 
   // 加载表列表（未选择数据库时为空）
   const tablesData = useAsyncData(
-    (signal) => fetchList(`/api/metadata/tables?databaseId=${selectedDatabaseId}&limit=10000`, signal, 'Error loading tables:'),
+    (signal) => fetchList(`/api/metadata/tables?databaseId=${selectedDatabaseId}&limit=10000`, signal),
     [selectedDatabaseId],
     { enabled: !!selectedDatabaseId }
   );
+
+  // 下拉列表加载失败（如限流）时提示，而不是显示为空列表
+  const listErrors = [
+    dataSourcesData.error && `数据源：${dataSourcesData.error}`,
+    databasesData.error && `数据库：${databasesData.error}`,
+    tablesData.error && `表：${tablesData.error}`,
+    preselectError && `按链接预选：${preselectError}`,
+  ].filter(Boolean);
+  const retryLists = () => {
+    if (dataSourcesData.error) dataSourcesData.reload();
+    if (databasesData.error) databasesData.reload();
+    if (tablesData.error) tablesData.reload();
+    if (preselectError) {
+      setPreselectError(null);
+      setPreselectAttempt((n) => n + 1);
+    }
+  };
 
   const dataSources = dataSourcesData.data ?? [];
   const databases = databasesData.data ?? [];
@@ -196,6 +203,15 @@ export default function RelationshipsPage() {
       {/* 控制面板 */}
       <div className="bg-base-100 border border-base-300 rounded-xl p-4 lg:p-6">
         <h2 className="text-lg font-semibold mb-4">图谱配置</h2>
+
+        {listErrors.length > 0 && (
+          <div className="alert alert-warning mb-4">
+            <span>加载失败，下拉列表可能不完整 —— {listErrors.join('；')}</span>
+            <button className="btn btn-sm" onClick={retryLists}>
+              重试
+            </button>
+          </div>
+        )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
               {/* 数据源选择 */}
