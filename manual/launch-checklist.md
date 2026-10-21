@@ -60,7 +60,7 @@
 
 ## 4. 上线前：构建、部署与网络
 
-- [ ] 安装与构建：`npm ci`（不要加 `--production`，构建和 prisma CLI 需要开发依赖）→ `npm run db:push` → `npm run build`
+- [ ] 安装与构建：`npm ci`（不要加 `--production`，构建和 prisma CLI 需要开发依赖；安装后通过 `postinstall` 自动生成 Prisma Client）→ `npm run db:push` → `npm run build`
 - [ ] 启动：`npm start`（建议 PM2，见运维 §1.3）
 - [ ] **【必须】反向代理透传 `X-Forwarded-Host`**，否则所有写请求被当作跨站请求返回 403（`拒绝跨站请求`）
 - [ ] 使用 HTTPS；只能 HTTP 时设置 `AUTH_COOKIE_SECURE=false`

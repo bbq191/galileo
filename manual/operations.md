@@ -37,7 +37,7 @@
 ### 1.2 部署步骤
 
 ```bash
-# 1. 安装依赖（构建与 prisma CLI 需要开发依赖，不要加 --production）
+# 1. 安装依赖（构建与 prisma CLI 需要开发依赖，不要加 --production；安装后自动执行 prisma generate）
 npm ci
 
 # 2. 同步表结构并生成 Prisma Client（项目使用 db push，没有 migrations 目录）
