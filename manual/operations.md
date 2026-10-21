@@ -404,6 +404,16 @@ ALERT_PHONE=+86-xxx-xxxx-xxxx
 
 相关代码：`lib/cache/multi-level-cache.ts`
 
+**Redis 不可用时的行为**
+
+Redis 未连接（未启动或正在重连）时，查询缓存、防击穿锁与缓存失效都直接跳过 Redis（只用进程内 L1 缓存），
+不会等待重连，查询功能不受影响，但多实例之间不再共享缓存。日志会出现：
+
+- `[Cache] Redis 不可用，跳过 L2 缓存失效（...）`：这段时间内的元数据同步等操作没有清理 Redis 中的旧缓存，
+  Redis 恢复后这些旧缓存会保留到 TTL 过期。如需立即清理，Redis 恢复后调用 `POST /api/cache/clear`
+
+相关代码：`lib/cache/redis-availability.ts`
+
 **问题: AI 推断失败**
 
 检查点：

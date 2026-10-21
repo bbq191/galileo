@@ -1,16 +1,13 @@
 /**
- * Prisma Client Singleton
- * 通过依赖注入容器管理
+ * Prisma Client 单例
  *
- * 此文件保留用于向后兼容，但现在使用 DI 容器
+ * 与 DI 容器中的 PrismaClient 是同一个实例（见 lib/di/factories/prisma.factory.ts）。
+ * 这里直接使用工厂而不是导入 lib/di/setup：后者在导入时会初始化全部服务（Redis、向量索引等），
+ * 种子数据、建用户等命令行脚本只需要数据库，初始化 Redis 会导致脚本结束后进程无法退出。
  */
 
-import { getPrismaClient } from '@/lib/di/setup';
+import { createPrismaClient } from '@/lib/di/factories/prisma.factory';
 
-/**
- * 导出 PrismaClient 实例（向后兼容）
- * 现在通过 DI 容器管理
- */
-const prisma = getPrismaClient();
+const prisma = createPrismaClient();
 
 export default prisma;

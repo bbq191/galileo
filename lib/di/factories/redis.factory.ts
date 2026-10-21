@@ -89,10 +89,8 @@ export function createRedisClient(config?: RedisFactoryConfig): Redis {
     process.once('SIGTERM', cleanup);
   }
 
-  // 保存到 global（开发环境）
-  if (process.env.NODE_ENV !== 'production') {
-    globalThis.redisGlobal = redisClient;
-  }
+  // 所有环境都复用同一个客户端（生产环境若重复创建，每个客户端各自建立连接并注册监听器）
+  globalThis.redisGlobal = redisClient;
 
   return redisClient;
 }

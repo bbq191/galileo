@@ -28,10 +28,17 @@ const getEncryptionKey = (): string => {
 
 /**
  * 加密密码
+ *
+ * 空密码（如本地开发库的无密码账号）原样保存为空字符串：解密结果为空字符串时
+ * 无法区分「密码为空」与「密钥错误」，因此不对空密码加密。
+ *
  * @param password 明文密码
  * @returns 加密后的密码
  */
 export function encryptPassword(password: string): string {
+  if (password === '') {
+    return '';
+  }
   try {
     const key = getEncryptionKey();
     const encrypted = CryptoJS.AES.encrypt(password, key).toString();
@@ -48,6 +55,9 @@ export function encryptPassword(password: string): string {
  * @returns 明文密码
  */
 export function decryptPassword(encryptedPassword: string): string {
+  if (encryptedPassword === '') {
+    return '';
+  }
   try {
     const key = getEncryptionKey();
     const decrypted = CryptoJS.AES.decrypt(encryptedPassword, key);

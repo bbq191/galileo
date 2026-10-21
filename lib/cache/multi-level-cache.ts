@@ -12,6 +12,7 @@ import { CACHE_CONFIGS, generateCacheKey, cacheStats } from './cache-config';
 import type { CacheConfig } from './cache-config';
 import { DI_TOKENS } from '@/lib/di/tokens';
 import { CacheBreakthroughGuard } from './cache-breakthrough-guard';
+import { isRedisReady } from './redis-availability';
 
 /**
  * 自定义 JSON 序列化，支持 BigInt
@@ -221,6 +222,10 @@ export class MultiLevelCache {
     if (config.L2.enabled) {
       try {
         const redis = this.getRedis();
+        if (!isRedisReady(redis)) {
+          console.warn(`[Cache] Redis 不可用，跳过 L2 缓存失效（${cacheKey}）`);
+          return;
+        }
         await redis.del(cacheKey);
       } catch (error) {
         console.error('[Cache] 删除 L2 缓存失败:', error);
@@ -401,6 +406,10 @@ export class MultiLevelCache {
   private async getL2<T>(key: string): Promise<T | null> {
     try {
       const redis = this.getRedis();
+      // Redis 不可用时按未命中处理，不等待重连
+      if (!isRedisReady(redis)) {
+        return null;
+      }
       const data = await redis.get(key);
 
       if (!data) {
@@ -420,6 +429,9 @@ export class MultiLevelCache {
   private async setL2(key: string, value: any, ttl: number): Promise<void> {
     try {
       const redis = this.getRedis();
+      if (!isRedisReady(redis)) {
+        return;
+      }
       await redis.setex(key, ttl, serializeJSON(value));
     } catch (error) {
       console.error('[Cache] L2 缓存写入失败:', error);
@@ -455,6 +467,12 @@ export class MultiLevelCache {
    */
   private async scanKeys(pattern: string): Promise<string[]> {
     const redis = this.getRedis();
+    // Redis 不可用时扫描与随后的删除都会在重试后失败，等待没有意义；
+    // 跳过并告警：Redis 恢复后其中的旧缓存会保留到过期
+    if (!isRedisReady(redis)) {
+      console.warn(`[Cache] Redis 不可用，跳过 L2 缓存失效（${pattern}），Redis 恢复后旧缓存将保留到过期`);
+      return [];
+    }
     const keys: string[] = [];
     let cursor = '0';
     const maxIterations = 1000; // 防止无限循环

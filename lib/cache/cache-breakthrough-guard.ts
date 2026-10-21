@@ -11,6 +11,7 @@
  */
 
 import { injectable, inject } from 'tsyringe';
+import { isRedisReady } from './redis-availability';
 import type { Redis } from 'ioredis';
 import { DI_TOKENS } from '@/lib/di/tokens';
 
@@ -141,6 +142,14 @@ export class CacheBreakthroughGuard {
     fetchFn: () => Promise<T>,
     cacheFn: (data: T) => Promise<void>
   ): Promise<T> {
+    // Redis 不可用时无法加分布式锁，直接获取数据（进程内的 SingleFlight 仍然生效）。
+    // 否则加锁失败会被当作「锁被其他进程持有」，进入最长 maxWaitTime 的轮询等待
+    if (!isRedisReady(this.redis)) {
+      const data = await fetchFn();
+      await cacheFn(data);
+      return data;
+    }
+
     const lockKey = `lock:${key}`;
     const lockValue = this.generateLockValue();
 
@@ -272,7 +281,8 @@ export class CacheBreakthroughGuard {
     const maxWaitTime = this.waitStrategy.maxWaitTime;
     const pollInterval = this.waitStrategy.pollInterval;
 
-    while (Date.now() - startWait < maxWaitTime) {
+    // 等待期间 Redis 断开时不再轮询，立即降级
+    while (Date.now() - startWait < maxWaitTime && isRedisReady(this.redis)) {
       // 检查缓存是否已被写入
       try {
         const cached = await this.redis.get(key);
