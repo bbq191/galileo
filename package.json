@@ -83,5 +83,17 @@
     "ts-jest": "^29.4.5",
     "tsx": "^4.20.6",
     "typescript": "^5.7.2"
+  },
+  "allowScripts": {
+    "prisma": true,
+    "@prisma/engines": true,
+    "esbuild": true,
+    "unrs-resolver": true,
+    "@parcel/watcher": true,
+    "tree-sitter": true,
+    "tree-sitter-json": true,
+    "@tree-sitter-grammars/tree-sitter-yaml": true,
+    "@scarf/scarf": false,
+    "core-js-pure": false
   }
 }
