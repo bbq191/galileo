@@ -1,6 +1,6 @@
 # 上线检查清单
 
-适用版本：`main` @ `4f52566`（包含 P0–P5、增量同步、分表接入、查询反馈 / 保存查询 / 问题推荐、Next.js 16、Prisma 7）。
+适用版本：`main` @ `3596e10`（包含 P0–P5、增量同步、分表接入、查询反馈 / 保存查询 / 问题推荐、Next.js 16、Prisma 7、ESLint 10、数据源收窄为 MySQL / MariaDB）。
 
 按顺序逐项确认。标 **【必须】** 的项不处理会导致无法登录、接口报错或数据问题。
 各项的详细说明见 `manual/operations.md`（下文用「运维 §N」指代章节）。
@@ -33,6 +33,7 @@
 |---|---|
 | `AUTH_COOKIE_SECURE=false` | 生产环境通过纯 HTTP 访问（如内网无 HTTPS）时，否则无法登录 |
 | `ADMIN_INITIAL_PASSWORD` | 首次 `db:seed` 前设置初始管理员密码（≥ 12 字符）；不设置时随机生成并只打印一次 |
+| `DEEPSEEK_NUM_CTX` | 使用 Ollama 时**实际必须设置**（如 `16384`）。不设置时用 Ollama 默认的 4096，表多时放不下 SQL 生成的 Prompt，查询返回 400；值越大占用显存越多。使用官方 API 时忽略 |
 | `DB_ALLOW_PUBLIC_KEY_RETRIEVAL=true` | MySQL 8 未启用 SSL 且连接报认证错误时（仅限内网） |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | 使用 Redis 时 |
 | `UPSTASH_REDIS_REST_URL` / `_TOKEN` | 多实例部署且希望请求限流跨实例共享时；不设置时每个实例各自内存限流 |

@@ -235,6 +235,7 @@ nginx -s reload
 | DEEPSEEK_API_URL | AI 服务地址 | - |
 | DEEPSEEK_MODEL | 模型名称 | deepseek-r1:1.5b |
 | DEEPSEEK_TIMEOUT | 超时(ms) | 30000 |
+| DEEPSEEK_NUM_CTX | Ollama 上下文长度（num_ctx），使用 Ollama 时建议 16384；官方 API 忽略 | 不设置（Ollama 默认 4096，常放不下 SQL Prompt） |
 
 **缓存配置**
 
@@ -422,6 +423,7 @@ Redis 未连接（未启动或正在重连）时，查询缓存、防击穿锁�
 1. Ollama 服务是否运行
 2. API Key 是否有效
 3. 模型是否已下载
+4. 使用 Ollama 时返回 400：通常是 Prompt 超出上下文长度，调大 `DEEPSEEK_NUM_CTX`（如 16384）
 
 相关代码：`lib/ai/deepseek-client.ts`
 
