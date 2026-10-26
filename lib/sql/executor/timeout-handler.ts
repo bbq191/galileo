@@ -37,17 +37,23 @@ export async function withTimeout<T>(
   timeoutMs: number,
   errorMessage?: string
 ): Promise<T> {
-  const timeoutPromise = createTimeoutPromise(timeoutMs, errorMessage);
+  let timeoutId: NodeJS.Timeout | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(
+        new ExecutorError(
+          ExecutorErrorType.TIMEOUT_ERROR,
+          errorMessage || `查询超时（超过 ${timeoutMs}ms）`
+        )
+      );
+    }, timeoutMs);
+  });
 
   try {
     return await Promise.race([promise, timeoutPromise]);
-  } catch (error) {
-    // 如果是超时错误，直接抛出
-    if (error instanceof ExecutorError && error.type === ExecutorErrorType.TIMEOUT_ERROR) {
-      throw error;
-    }
-    // 其他错误也抛出
-    throw error;
+  } finally {
+    // 查询先完成时清除定时器，否则每次查询都会留下一个待触发的定时器
+    clearTimeout(timeoutId);
   }
 }
 

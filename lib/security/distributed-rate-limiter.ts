@@ -103,6 +103,8 @@ class MemoryRateLimiter {
     // 避免在 Edge Runtime 中使用 setInterval（可能不支持）
     if (typeof setInterval !== 'undefined') {
       this.cleanupInterval = setInterval(() => this.cleanup(), 60000);
+      // 防止定时器阻止进程退出（Edge Runtime 的定时器没有 unref）
+      this.cleanupInterval.unref?.();
     }
   }
 

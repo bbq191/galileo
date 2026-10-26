@@ -16,7 +16,7 @@ export class CacheService implements ICacheService {
 
   constructor(@inject(DI_TOKENS.RedisClient) private readonly redis: Redis) {
     // 定期清理过期的 L1 缓存
-    setInterval(() => this.cleanupL1(), 60000); // 每分钟清理一次
+    setInterval(() => this.cleanupL1(), 60000).unref(); // 每分钟清理一次；unref 防止定时器阻止进程退出
   }
 
   /**

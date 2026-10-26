@@ -90,6 +90,8 @@ export class MultiLevelCache {
     if (!this.cleanupInterval) {
       const cleanupInterval = parseInt(process.env.L1_CACHE_CLEANUP_INTERVAL || '60000', 10);
       this.cleanupInterval = setInterval(() => this.cleanupL1(), cleanupInterval);
+      // 防止定时器阻止进程退出
+      this.cleanupInterval.unref();
       console.log('[MultiLevelCache] 自动清理已启动');
     }
   }
@@ -452,12 +454,18 @@ export class MultiLevelCache {
     timeoutMs: number,
     timeoutError: string
   ): Promise<T> {
-    return Promise.race([
-      promise,
-      new Promise<T>((_, reject) =>
-        setTimeout(() => reject(new Error(timeoutError)), timeoutMs)
-      ),
-    ]);
+    let timeoutId: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error(timeoutError)), timeoutMs);
+        }),
+      ]);
+    } finally {
+      // 操作先完成时清除定时器
+      clearTimeout(timeoutId);
+    }
   }
 
   /**

@@ -55,9 +55,6 @@ const config: Config = {
 
   // 显示详细输出
   verbose: true,
-
-  // 强制退出 Jest（解决异步操作未关闭的问题）
-  forceExit: true,
 };
 
 export default config;

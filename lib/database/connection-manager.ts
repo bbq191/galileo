@@ -394,6 +394,9 @@ class ConnectionManager {
         }
       }
     }, this.HEALTH_CHECK_INTERVAL);
+
+    // 防止定时器阻止进程退出
+    this.healthCheckInterval.unref();
   }
 
   /**
