@@ -5,7 +5,7 @@
 - 状态: done
 - 执行方: galileo（本机直接执行；Jarvis 明确要求在 alienware 上复制模板并验收后合并）
 - 分支: chore/notify-afu（从最新 main 切出）
-- 更新时间: 2026-11-12T14:34+08:00
+- 更新时间: 2026-11-12T14:35+08:00
 - 引用: 无
 
 ## 需求原文
@@ -48,13 +48,14 @@
 ```
 
 ## 结果
-- 执行方 / 开始–结束时间：galileo（alienware 本机）/ 2026-11-12T14:33+08:00–2026-11-12T14:34+08:00
-- base..head：`b593663`..本分支提交（提交后回填 hash）
+- 执行方 / 开始–结束时间：galileo（alienware 本机）/ 2026-11-12T14:33+08:00–2026-11-12T14:35+08:00
+- base..head：`b593663`..`de402b8`（工作流与开单）；本回填为后续提交
 - 提交：
 
 | 步骤 | 提交号 | 文件 | 说明 |
 |---|---|---|---|
-| 复制工作流并开单 |  | `.github/workflows/notify-afu.yml`、`.dev/tasks/2026-11-12-notify-afu-setup.md` | 模板原样复制，无占位替换 |
+| 复制工作流并开单 | `de402b8` | `.github/workflows/notify-afu.yml`、`.dev/tasks/2026-11-12-notify-afu-setup.md` | 模板原样复制，无占位替换 |
+| 回填提交号 | （本提交） | `.dev/tasks/2026-11-12-notify-afu-setup.md` | 将 de402b8 写入结果，避免 amend 改变 hash |
 
 - 测试：
 
