@@ -2,10 +2,10 @@
 
 - Task ID: 2026-11-12-notify-afu-setup
 - 负责 bot: galileo
-- 状态: done
+- 状态: verified
 - 执行方: galileo（本机直接执行；Jarvis 明确要求在 alienware 上复制模板并验收后合并）
 - 分支: chore/notify-afu（从最新 main 切出）
-- 更新时间: 2026-11-12T14:43+08:00
+- 更新时间: 2026-11-13T10:12+08:00
 - 引用: 无
 
 ## 当前状态
@@ -63,7 +63,7 @@
 | 复制工作流并开单 | `de402b8` | `.github/workflows/notify-afu.yml`、`.dev/tasks/2026-11-12-notify-afu-setup.md` | 当时复制的是修复前正本（新分支首次 push 会误发历史回执） |
 | 回填提交号 | `c40a111` | `.dev/tasks/2026-11-12-notify-afu-setup.md` | 将 de402b8 写入结果 |
 | 同步修复后正本 | `8fa80e5` | `.github/workflows/notify-afu.yml`、`.dev/tasks/2026-11-12-notify-afu-setup.md` | 整文件替换为已修复正本，sha256 见下 |
-| 状态改为 done | （本提交） | `.dev/tasks/2026-11-12-notify-afu-setup.md` | 验收记录与 Secrets 待填提醒；随后 merge / push |
+| 状态改为 done | `a439f81` | `.dev/tasks/2026-11-12-notify-afu-setup.md` | 验收记录与 Secrets 待填提醒；随后 merge / push |
 
 - 正本核对：
   - 路径：`~/Documents/ikate/Projects/_templates/notify-afu.yml`
@@ -91,8 +91,8 @@
 
 ## 审查
 - 验收：通过。工作流与修复后正本 sha256 `2c3f9ea80688adfb0c14772cb91fed985f31806e564841c5cbebfac060dbd206` 一致；YAML 与语义核对通过（含 merge-base 修复）；diff 仅含工作流与本任务单。Secrets 尚未配置，需用户补填，见「未完成」。
-- 二审：尚未跑。vinci 如需补跑，可用：
-```
-agy --mode plan -p "按 Projects/_templates/review-checklist.md 的「二审」部分，审 galileo 分支 chore/notify-afu（main..HEAD）。输入：任务单 .dev/tasks/2026-11-12-notify-afu-setup.md（含需求原文和结果）、完整 diff。逐条给结论并附 路径:行号；未核实的标「未核实」；结论按 阻断 / 建议 / 线索 分档。" > .dev/tasks/2026-11-12-notify-afu-setup.agy.md
-```
+- 二审：2026-11-13 09:40 在 box 上用 agy-review（gemini-3.8-flash-medium）补跑，在 main `79a2457` 上审，退出码 0，回执见 `2026-11-12-notify-afu-setup.agy.md`。结论：建议通过，无阻断；回执引用已逐条核对属实。唯一建议是回填本表「状态改为 done」的提交号，已回填为 `a439f81`（合并 `d4489d6`）。
+- 二审补充：当前 main 的 `notify-afu.yml` sha256 为 `869ebdf8972f53e22f930c080fa7c9d8a933dc9897eb47776af0ccc97ceca83b`，与上述正本不同，原因是之后的提交 `79a2457`（ci: notify-afu 支持 [skip-notify] 跳过唤醒 A）追加了 9 行；merge-base 逻辑仍在。不属于本单范围。
+- Secrets：`AFU_WEBHOOK_URL` / `AFU_WEBHOOK_TOKEN` 已由用户于 2026-11-12 14:47 配置，2026-11-13 用户本机 `gh secret list -R bbq191/galileo` 复核存在。上文「需用户补填」为当时记录，已过时。
 - 合并：本提交之后，将已重置的 main 以 `git merge --no-ff chore/notify-afu` 合入修复版，再普通 push 分支与 main。不需要真机验收；因二审未跑，状态保持 done，不改为 verified。
+- 验收：2026-11-13 用户本人验收通过，状态改为 verified。
