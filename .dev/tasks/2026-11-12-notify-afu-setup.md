@@ -5,7 +5,7 @@
 - 状态: verified
 - 执行方: galileo（本机直接执行；Jarvis 明确要求在 alienware 上复制模板并验收后合并）
 - 分支: chore/notify-afu（从最新 main 切出）
-- 更新时间: 2026-11-13T10:12+08:00
+- 更新时间: 2026-11-13T14:42+08:00
 - 引用: 无
 
 ## 当前状态
@@ -80,19 +80,19 @@
 | 语义核对：before 为空 / 全 0 / 对象不存在时，fetch origin/默认分支并取 merge-base 再 diff；拿不到才退回全量 ls-tree | 通过 | 对应正本修复点 |
 | 确认文件中无 Secret 值、无仓库/分支名占位需要替换 | 通过 | 仓库与分支使用 `github.repository` / `github.ref_name`；默认分支名使用 `github.event.repository.default_branch` |
 | `actionlint` | 未跑 | 本机未安装 |
-| `gh secret list` | 通过（空列表） | 仓库 `bbq191/galileo` 尚无 Secrets，`AFU_WEBHOOK_URL` / `AFU_WEBHOOK_TOKEN` 待填。只列名字，未读值 |
+| `gh secret list -R bbq191/galileo` | 通过 | `AFU_WEBHOOK_URL` / `AFU_WEBHOOK_TOKEN` 均已存在，更新时间 2026-11-12 14:47（UTC+8，GitHub 显示 06:47Z）；2026-11-13 14:41（UTC+8）在用户本机复核。只列名字，未读值 |
 
 - 遇到的问题：
   - 14:33 首次复制后、提交前，vault 正本于 14:35 被更新；叫停后未把修复前版本推到 origin/main。`de402b8` / 当时的 `origin/chore/notify-afu`（`c40a111`）是修复前版本，已由 `8fa80e5` 在本分支替换。
   - 本地 main 曾有未推送的旧 merge `3f9b1da`（含修复前工作流）。用户确认后已建备份分支 `backup/main-before-notify-afu-reset`（指向 `3f9b1da`），并将本地 main `reset --hard` 到 `origin/main`（`b593663`）。被丢弃的 3 个提交均属本任务：`3f9b1da`、`c40a111`、`de402b8`。
 - 偏离：执行方字段未使用模板里的 `opencode-local` / `box-agent`，因为用户要求负责 bot 在本机直接配置。
-- 未完成：
-  - 仓库 Secrets `AFU_WEBHOOK_URL` / `AFU_WEBHOOK_TOKEN` 需用户从 Jarvis「任务单唤醒路由」面板复制 Webhook URL 和 key，填入 GitHub 仓库 `bbq191/galileo` 的 Settings → Secrets and variables → Actions。不要把值写进仓库、任务单或脚本。未填之前工作流会跑，但会打印「未配置 AFU_WEBHOOK_* ，跳过」并成功结束，不会真正唤醒 Jarvis。
+- 未完成：无。
+  - 仓库 Secrets `AFU_WEBHOOK_URL` / `AFU_WEBHOOK_TOKEN` 已由用户于 2026-11-12 14:47（UTC+8）从 Jarvis「任务单唤醒路由」面板复制填入 GitHub 仓库 `bbq191/galileo`，值未写入仓库、任务单或脚本。
 
 ## 审查
-- 验收：通过。工作流与修复后正本 sha256 `2c3f9ea80688adfb0c14772cb91fed985f31806e564841c5cbebfac060dbd206` 一致；YAML 与语义核对通过（含 merge-base 修复）；diff 仅含工作流与本任务单。Secrets 尚未配置，需用户补填，见「未完成」。
+- 验收：通过。工作流与修复后正本 sha256 `2c3f9ea80688adfb0c14772cb91fed985f31806e564841c5cbebfac060dbd206` 一致；YAML 与语义核对通过（含 merge-base 修复）；diff 仅含工作流与本任务单。Secrets 已于 2026-11-12 14:47（UTC+8）配置。
 - 二审：2026-11-13 09:40 在 box 上用 agy-review（gemini-3.8-flash-medium）补跑，在 main `79a2457` 上审，退出码 0，回执见 `2026-11-12-notify-afu-setup.agy.md`。结论：建议通过，无阻断；回执引用已逐条核对属实。唯一建议是回填本表「状态改为 done」的提交号，已回填为 `a439f81`（合并 `d4489d6`）。
 - 二审补充：当前 main 的 `notify-afu.yml` sha256 为 `869ebdf8972f53e22f930c080fa7c9d8a933dc9897eb47776af0ccc97ceca83b`，与上述正本不同，原因是之后的提交 `79a2457`（ci: notify-afu 支持 [skip-notify] 跳过唤醒 A）追加了 9 行；merge-base 逻辑仍在。不属于本单范围。
-- Secrets：`AFU_WEBHOOK_URL` / `AFU_WEBHOOK_TOKEN` 已由用户于 2026-11-12 14:47 配置，2026-11-13 用户本机 `gh secret list -R bbq191/galileo` 复核存在。上文「需用户补填」为当时记录，已过时。
+- Secrets：`AFU_WEBHOOK_URL` / `AFU_WEBHOOK_TOKEN` 已由用户于 2026-11-12 14:47 配置，2026-11-13 本机 `gh secret list -R bbq191/galileo` 复核存在（只看名字）。
 - 合并：本提交之后，将已重置的 main 以 `git merge --no-ff chore/notify-afu` 合入修复版，再普通 push 分支与 main。不需要真机验收；因二审未跑，状态保持 done，不改为 verified。
 - 验收：2026-11-13 用户本人验收通过，状态改为 verified。
